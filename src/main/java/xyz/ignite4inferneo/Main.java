@@ -1,21 +1,20 @@
 package xyz.ignite4inferneo;
 
-import jdk.jfr.Unsigned;
+import java.util.Arrays;
 
-import java.lang.classfile.Opcode;
 
 public class Main {
     /*
     PROGRAM MEMORY
     Each line represents the multi length op codes
-    We start at counter 0 then inc by lenth of op code randing from 8 bits to 32 bits of data the cpu will grab.
+    We start at counter 0 then inc by length of op code randing from 8 bits to 32 bits of data the cpu will grab.
     */
     static byte[] PROGRAM_DATA = new byte[] {
             OPCode.STORE.code(), 0, Registers.A.address(), // 3, 2, 24bits
             OPCode.STORE.code(), 1, Registers.B.address(), // 3, 5, 24bits
             OPCode.STORE.code(), 127, Registers.C.address(), // 3, 8, 24bits
             OPCode.STORE.code(), 0, Registers.D.address(), // 3, 11, 24bits
-            OPCode.STORE.code(), 3, Registers.E.address(), // 3, 14, 24bits
+            OPCode.STORE.code(), 1, Registers.E.address(), // 3, 14, 24bits
             OPCode.ADD.code(), Registers.A.address(), Registers.B.address(), Registers.A.address(), // 4, 18, 32bits
             OPCode.OUTPUT.code(), Registers.A.address(), // 2, 20, 16bits
             OPCode.COND_JUMP.code(), Registers.A.address(), Registers.C.address(), 32, // 4, 24, 32bits
@@ -41,42 +40,54 @@ public class Main {
             0, // D
             0, // E
             0, // F
-            0 // COUNTER
+            0, // COUNTER
+            0  // MEMORY PAGE
         };
+
+    static byte[] MEMORY = new byte[127];
+
     static boolean running = true;
 
     static long cpuStartTime;
 
     static void main() {
+        Arrays.fill(MEMORY, (byte) 0);
+        IO.println("MEMORY CLEAR");
+
+        System.arraycopy(PROGRAM_DATA, 0, MEMORY, 0, PROGRAM_DATA.length);
+        IO.println("PROGRAM_DATA UPLOAD");
+
         cpuStartTime = System.currentTimeMillis();
+
+
         while (running) {
             int counter = getProgramCounter();
-            byte opcode = PROGRAM_DATA[counter];
+            byte opcode = MEMORY[counter];
 
             switch (opcode) {
                 // --------------------------------
                 // ADD
                 // ADD value, value, register
                 // --------------------------------
-                case 0 -> add(PROGRAM_DATA[counter + 1], PROGRAM_DATA[counter + 2], PROGRAM_DATA[counter + 3]);
+                case 0 -> add(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3]);
 
                 // --------------------------------
                 // SUB
                 // SUB value, value, register
                 // --------------------------------
-                case 1 -> sub(PROGRAM_DATA[counter + 1], PROGRAM_DATA[counter + 2], PROGRAM_DATA[counter + 3]);
+                case 1 -> sub(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3]);
 
                 // --------------------------------
                 // STORE
                 // STORE value, register
                 // --------------------------------
-                case 2 -> store(PROGRAM_DATA[counter + 1], PROGRAM_DATA[counter + 2]);
+                case 2 -> store(MEMORY[counter + 1], MEMORY[counter + 2]);
 
                 // --------------------------------
                 // JMP
                 // JMP address
                 // --------------------------------
-                case 3 -> jump(PROGRAM_DATA[counter + 1]);
+                case 3 -> jump(MEMORY[counter + 1]);
 
 
                 // --------------------------------
@@ -88,21 +99,33 @@ public class Main {
                 // OUTPUT
                 // OUTPUT register
                 // --------------------------------
-                case 5 -> output(PROGRAM_DATA[counter + 1]);
+                case 5 -> output(MEMORY[counter + 1]);
 
 
                 // --------------------------------
                 // COND_JUMP
                 // COND_JUMP register A register B address
                 // --------------------------------
-                case 6 -> cond_jump(PROGRAM_DATA[counter + 1], PROGRAM_DATA[counter + 2], PROGRAM_DATA[counter + 3]);
+                case 6 -> cond_jump(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3]);
 
-                default -> {
-                    throw new IllegalStateException(
-                            "Unknown opcode: " + opcode +
-                                    " at address " + counter
-                    );
-                }
+                // --------------------------------
+                // LOAD_MEM
+                // LOAD_MEM value, register
+                // --------------------------------
+
+                case 7 -> loadMemory(MEMORY[counter + 1], MEMORY[counter + 2]);
+
+                // --------------------------------
+                // STORE_MEM
+                // STORE_MEM value, register
+                // --------------------------------
+
+                case 8 -> storeMemory(MEMORY[counter + 1], MEMORY[counter + 2]);
+
+                default -> throw new IllegalStateException(
+                        "Unknown opcode: " + opcode +
+                                " at address " + counter
+                );
             }
         }
     }
@@ -202,6 +225,16 @@ public class Main {
     }
 
     /*
+    STOP
+
+    STOP
+     */
+    static void stop(){
+        running = false;
+        IO.println("EOF CPU Ran for " + (System.currentTimeMillis() - cpuStartTime) + "ms");
+    }
+
+    /*
     OUTPUT
 
     OUTPUT A
@@ -214,13 +247,29 @@ public class Main {
     }
 
     /*
-    STOP
+    LOAD_MEM
 
-    STOP
+    LOAD_MEM REGISTER A REGISTER B
+
+    REGISTER A = MEMORY[REGISTER B]
      */
-    static void stop(){
-        running = false;
-        IO.println("EOF CPU Ran for " + (System.currentTimeMillis() - cpuStartTime) + "ms");
+    public static void loadMemory(byte A, byte B) {
+        ADDRESSES[A] = MEMORY[B];
+
+        incrementCounter(OPCode.LOAD_MEM.length());
+    }
+
+    /*
+    STORE_MEM
+
+    STORE_MEM REGISTER A REGISTER B
+
+    MEMORY[REGISTER B] = REGISTER A
+     */
+    public static void storeMemory(byte A, byte B) {
+        MEMORY[B] = ADDRESSES[A];
+
+        incrementCounter(OPCode.STORE_MEM.length());
     }
 }
 

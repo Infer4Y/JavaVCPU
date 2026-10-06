@@ -13,10 +13,13 @@ public enum OPCode {
     JMP(3, 1),
     STOP(4, 0),
     OUTPUT(5, 1),
-    COND_JUMP(6, 3);
+    COND_JUMP(6, 3),
+    LOAD_MEM(7, 2),
+    STORE_MEM(8, 2);
 
     private final byte code;
     private final byte inputLength;
+
     OPCode(int code, int inputLength) {
         this.code = (byte) code;
         this.inputLength = (byte) inputLength;
