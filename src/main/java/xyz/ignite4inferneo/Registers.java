@@ -8,8 +8,9 @@ public enum Registers {
     B(1),
     C(2),
     D(3),
-    PTR(4),
-    COUNTER(5);
+    E(4),
+    F(5),
+    COUNTER(6);
     
     private final byte address;
     Registers(int address) {

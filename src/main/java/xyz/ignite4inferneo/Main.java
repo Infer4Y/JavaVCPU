@@ -1,36 +1,30 @@
 package xyz.ignite4inferneo;
 
+import jdk.jfr.Unsigned;
+
 import java.lang.classfile.Opcode;
 
 public class Main {
     /*
     PROGRAM MEMORY
-
-    ADD 4, 5, A
-    OUTPUT A
-    STOP
-
-    Memory:
-
-    0: ADD
-    1: 4
-    2: 5
-    3: A
-
-    4: OUTPUT
-    5: A
-
-    6: STOP
+    Each line represents the multi length op codes
+    We start at counter 0 then inc by lenth of op code randing from 8 bits to 32 bits of data the cpu will grab.
     */
     static byte[] PROGRAM_DATA = new byte[] {
-            OPCode.STORE.code(), 5, Registers.A.address(), // 3
-            OPCode.STORE.code(), 5, Registers.B.address(), // 6
-            OPCode.STORE.code(), 50, Registers.C.address(), // 9
-            OPCode.ADD.code(), Registers.A.address(), Registers.B.address(), Registers.A.address(), // 13
-            OPCode.OUTPUT.code(), Registers.A.address(), // 15
-            OPCode.COND_JUMP.code(), Registers.A.address(), Registers.C.address(), 21, // 19
-            OPCode.JMP.code(), 9, // 20
-            OPCode.STOP.code() // 21
+            OPCode.STORE.code(), 0, Registers.A.address(), // 3, 2, 24bits
+            OPCode.STORE.code(), 1, Registers.B.address(), // 3, 5, 24bits
+            OPCode.STORE.code(), 127, Registers.C.address(), // 3, 8, 24bits
+            OPCode.STORE.code(), 0, Registers.D.address(), // 3, 11, 24bits
+            OPCode.STORE.code(), 3, Registers.E.address(), // 3, 14, 24bits
+            OPCode.ADD.code(), Registers.A.address(), Registers.B.address(), Registers.A.address(), // 4, 18, 32bits
+            OPCode.OUTPUT.code(), Registers.A.address(), // 2, 20, 16bits
+            OPCode.COND_JUMP.code(), Registers.A.address(), Registers.C.address(), 32, // 4, 24, 32bits
+            OPCode.COND_JUMP.code(), Registers.D.address(), Registers.E.address(), 31, // 4, 28, 32bits
+            OPCode.JMP.code(), 15, // 2, 30, 16bits
+            OPCode.STOP.code(), // 1, 31, 8bits
+            OPCode.ADD.code(), Registers.D.address(), Registers.B.address(), Registers.D.address(), // 4, 35, 32bits
+            OPCode.STORE.code(), 0, Registers.A.address(), // 3, 38, 24bits
+            OPCode.JMP.code(), 15 // 2, 40, 16bits
         };
 
     /*
@@ -45,12 +39,16 @@ public class Main {
             0, // B
             0, // C
             0, // D
-            0, // PTR
+            0, // E
+            0, // F
             0 // COUNTER
         };
     static boolean running = true;
 
+    static long cpuStartTime;
+
     static void main() {
+        cpuStartTime = System.currentTimeMillis();
         while (running) {
             int counter = getProgramCounter();
             byte opcode = PROGRAM_DATA[counter];
@@ -60,76 +58,44 @@ public class Main {
                 // ADD
                 // ADD value, value, register
                 // --------------------------------
-                case 0 -> {
-                    add(
-                            PROGRAM_DATA[counter + 1],
-                            PROGRAM_DATA[counter + 2],
-                            PROGRAM_DATA[counter + 3]
-                    );
-                    incrementCounter(OPCode.ADD.length());
-                }
+                case 0 -> add(PROGRAM_DATA[counter + 1], PROGRAM_DATA[counter + 2], PROGRAM_DATA[counter + 3]);
 
                 // --------------------------------
                 // SUB
                 // SUB value, value, register
                 // --------------------------------
-                case 1 -> {
-                    sub(
-                            PROGRAM_DATA[counter + 1],
-                            PROGRAM_DATA[counter + 2],
-                            PROGRAM_DATA[counter + 3]
-                    );
-                    incrementCounter(OPCode.SUB.length());
-                }
+                case 1 -> sub(PROGRAM_DATA[counter + 1], PROGRAM_DATA[counter + 2], PROGRAM_DATA[counter + 3]);
 
                 // --------------------------------
                 // STORE
                 // STORE value, register
                 // --------------------------------
-                case 2 -> {
-                    store(
-                            PROGRAM_DATA[counter + 1],
-                            PROGRAM_DATA[counter + 2]
-                    );
-                    incrementCounter(OPCode.STORE.length());
-                }
+                case 2 -> store(PROGRAM_DATA[counter + 1], PROGRAM_DATA[counter + 2]);
 
                 // --------------------------------
                 // JMP
                 // JMP address
                 // --------------------------------
-                case 3 -> {
-                    jump(
-                            PROGRAM_DATA[counter + 1]
-                    );
-                }
+                case 3 -> jump(PROGRAM_DATA[counter + 1]);
+
 
                 // --------------------------------
                 // STOP
                 // --------------------------------
-                case 4 -> {
-                    running = false;
-                    IO.println("EOF");
-                }
+                case 4 -> stop();
 
                 // --------------------------------
                 // OUTPUT
                 // OUTPUT register
                 // --------------------------------
-                case 5 -> {
-                    output(
-                            PROGRAM_DATA[counter + 1]
-                    );
-                    incrementCounter(OPCode.OUTPUT.length());
-                }
+                case 5 -> output(PROGRAM_DATA[counter + 1]);
 
-                case 6 -> {
-                    cond_jump(
-                        PROGRAM_DATA[counter + 1],
-                        PROGRAM_DATA[counter + 2],
-                        PROGRAM_DATA[counter + 3]
-                    );
-                }
+
+                // --------------------------------
+                // COND_JUMP
+                // COND_JUMP register A register B address
+                // --------------------------------
+                case 6 -> cond_jump(PROGRAM_DATA[counter + 1], PROGRAM_DATA[counter + 2], PROGRAM_DATA[counter + 3]);
 
                 default -> {
                     throw new IllegalStateException(
@@ -142,8 +108,8 @@ public class Main {
     }
 
     // ============================================================
-// PROGRAM COUNTER
-// ============================================================
+    // PROGRAM COUNTER
+    // ============================================================
     static int getProgramCounter() {
         return Byte.toUnsignedInt(
                 ADDRESSES[Registers.COUNTER.address()]
@@ -172,6 +138,8 @@ public class Main {
             byte register
     ) {
         ADDRESSES[register] = (byte) (ADDRESSES[a] + ADDRESSES[b]);
+
+        incrementCounter(OPCode.ADD.length());
     }
 
     /*
@@ -187,6 +155,8 @@ public class Main {
             byte register
     ) {
         ADDRESSES[register] = (byte) (ADDRESSES[a] - ADDRESSES[b]);
+
+        incrementCounter(OPCode.SUB.length());
     }
 
     /*
@@ -201,6 +171,8 @@ public class Main {
             byte register
     ) {
         ADDRESSES[register] = value;
+
+        incrementCounter(OPCode.STORE.length());
     }
 
     /*
@@ -238,6 +210,17 @@ public class Main {
         IO.println(
                 ADDRESSES[register]
         );
+        incrementCounter(OPCode.OUTPUT.length());
+    }
+
+    /*
+    STOP
+
+    STOP
+     */
+    static void stop(){
+        running = false;
+        IO.println("EOF CPU Ran for " + (System.currentTimeMillis() - cpuStartTime) + "ms");
     }
 }
 
