@@ -4,16 +4,15 @@ import java.util.Arrays;
 import java.util.HashMap;
 
 public class Memory {
-    private static final HashMap<Byte, byte[]> PAGED_MEMORY = HashMap.newHashMap(127);
+    private static final byte[][] PAGED_MEMORY = new byte[128][128];
 
     public static void initializeMemoryPages(){
-        PAGED_MEMORY.forEach((_, memory) -> {
-            memory = new byte[127];
-            Arrays.fill(memory, (byte) 0);
-        });
+        for (byte[] page : PAGED_MEMORY) {
+            Arrays.fill(page, (byte) 0);
+        }
     }
 
     public static byte[] getMemoryPage(byte page){
-        return PAGED_MEMORY.get(page);
+        return PAGED_MEMORY[page];
     }
 }

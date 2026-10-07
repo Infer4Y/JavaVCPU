@@ -1,0 +1,72 @@
+package xyz.ignite4inferneo;
+
+public class Programs {
+    /*
+    Writes 11, 22, 33 at address 120 on pages 0, 1, 127, then revisits
+    each page and prints its value. All values and addresses fit signed bytes.
+    CHANGE_PAGE_JUMP takes page and target REGISTERS (F and E).
+    CHANGE_PAGE_COND_JUMP takes a page register, two comparison registers,
+    and a literal target address. Page 1 exercises both false and true cases.
+    */
+    static final byte[] PROGRAM_PAGED_MEMORY_PAGE_0 = new byte[] {
+            OPCode.STORE.code(), 11, Registers.A.address(),                         // 0
+            OPCode.STORE_MEM.code(), Registers.A.address(), 120,                  // 3
+            OPCode.STORE.code(), 1, Registers.F.address(),                      // 6
+            OPCode.STORE.code(), 0, Registers.E.address(),                       // 9
+            OPCode.CHANGE_PAGE_JUMP.code(), Registers.F.address(), Registers.E.address(), // 12
+            OPCode.LOAD_MEM.code(), Registers.A.address(), 120,                   // 15
+            OPCode.OUTPUT.code(), Registers.A.address(),                          // 18
+            OPCode.STORE.code(), 1, Registers.F.address(),                        // 20
+            OPCode.STORE.code(), 15, Registers.E.address(),                       // 23
+            OPCode.CHANGE_PAGE_JUMP.code(), Registers.F.address(), Registers.E.address() // 26
+    };
+
+    static final byte[] PROGRAM_PAGED_MEMORY_PAGE_1 = new byte[] {
+            OPCode.STORE.code(), 22, Registers.A.address(),                         // 0
+            OPCode.STORE_MEM.code(), Registers.A.address(), 120,                  // 3
+            OPCode.STORE.code(), 127, Registers.F.address(),                      // 6
+            OPCode.STORE.code(), 0, Registers.E.address(),                       // 9
+            OPCode.CHANGE_PAGE_JUMP.code(), Registers.F.address(), Registers.E.address(), // 12
+            OPCode.LOAD_MEM.code(), Registers.A.address(), 120,                   // 15
+            OPCode.OUTPUT.code(), Registers.A.address(),                          // 18
+            OPCode.STORE.code(), 0, Registers.B.address(),                        // 20
+            OPCode.STORE.code(), 127, Registers.F.address(),                      // 23
+            OPCode.CHANGE_PAGE_COND_JUMP.code(), Registers.F.address(),
+                    Registers.A.address(), Registers.B.address(), 15,            // 26: false, continue at 31
+            OPCode.STORE.code(), 22, Registers.B.address(),                       // 31
+            OPCode.CHANGE_PAGE_COND_JUMP.code(), Registers.F.address(),
+                    Registers.A.address(), Registers.B.address(), 15,            // 34: true, page 127 address 15
+            OPCode.STOP.code()                                                   // 39: stop if value was incorrect
+    };
+
+    static final byte[] PROGRAM_PAGED_MEMORY_PAGE_127 = new byte[] {
+            OPCode.STORE.code(), 33, Registers.A.address(),                         // 0
+            OPCode.STORE_MEM.code(), Registers.A.address(), 120,                  // 3
+            OPCode.STORE.code(), 0, Registers.F.address(),                      // 6
+            OPCode.STORE.code(), 15, Registers.E.address(),                       // 9
+            OPCode.CHANGE_PAGE_JUMP.code(), Registers.F.address(), Registers.E.address(), // 12
+            OPCode.LOAD_MEM.code(), Registers.A.address(), 120,                   // 15
+            OPCode.OUTPUT.code(), Registers.A.address(),                          // 18
+            OPCode.STOP.code()                                                   // 20
+    };
+
+    /*
+    This Program is for counting to 127 on Register A looping x times with Register D and the stops execution.
+    */
+    static byte[] PROGRAM_LOOP_127_3 = new byte[] {
+            OPCode.STORE.code(), 0, Registers.A.address(),                                          // 3, 2, 24bits  | Line 1
+            OPCode.STORE.code(), 1, Registers.B.address(),                                          // 3, 5, 24bits  | Line 2
+            OPCode.STORE.code(), 127, Registers.C.address(),                                        // 3, 8, 24bits  | Line 3
+            OPCode.STORE.code(), 0, Registers.D.address(),                                          // 3, 11, 24bits | Line 4
+            OPCode.STORE.code(), 2, Registers.E.address(),                                          // 3, 14, 24bits | Line 5
+            OPCode.ADD.code(), Registers.A.address(), Registers.B.address(), Registers.A.address(), // 4, 18, 32bits | Line 6
+            OPCode.OUTPUT.code(), Registers.A.address(),                                            // 2, 20, 16bits | Line 7
+            OPCode.COND_JUMP.code(), Registers.A.address(), Registers.C.address(), 32,              // 4, 24, 32bits | Line 8
+            OPCode.COND_JUMP.code(), Registers.D.address(), Registers.E.address(), 31,              // 4, 28, 32bits | Line 9
+            OPCode.JMP.code(), 15,                                                                  // 2, 30, 16bits | Line 10
+            OPCode.STOP.code(),                                                                     // 1, 31, 8bits  | Line 11
+            OPCode.ADD.code(), Registers.D.address(), Registers.B.address(), Registers.D.address(), // 4, 35, 32bits | Line 12
+            OPCode.STORE.code(), 0, Registers.A.address(),                                          // 3, 38, 24bits | Line 13
+            OPCode.JMP.code(), 15                                                                   // 2, 40, 16bits | Line 14
+    };
+}

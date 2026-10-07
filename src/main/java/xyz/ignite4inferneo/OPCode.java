@@ -15,7 +15,10 @@ public enum OPCode {
     OUTPUT(5, 1),
     COND_JUMP(6, 3),
     LOAD_MEM(7, 2),
-    STORE_MEM(8, 2);
+    STORE_MEM(8, 2),
+    CHANGE_PAGE(9, 1),
+    CHANGE_PAGE_JUMP(10, 2),
+    CHANGE_PAGE_COND_JUMP(11, 4);
 
     private final byte code;
     private final byte inputLength;
