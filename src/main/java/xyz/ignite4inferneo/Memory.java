@@ -6,7 +6,6 @@
 package xyz.ignite4inferneo;
 
 import java.util.Arrays;
-import java.util.HashMap;
 
 public class Memory {
     private static final byte[][] PAGED_MEMORY = new byte[128][128];

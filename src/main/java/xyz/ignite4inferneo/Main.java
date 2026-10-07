@@ -5,9 +5,6 @@
 
 package xyz.ignite4inferneo;
 
-import java.util.Arrays;
-
-
 public class Main {
     /*
     REGISTER MEMORY
@@ -32,31 +29,15 @@ public class Main {
     static boolean running = true;
 
     static long cpuStartTime;
+    static int intructs;
 
     static void main() {
         Memory.initializeMemoryPages();
         IO.println("MEMORY CLEAR");
 
-        if (false) {
-            System.arraycopy(
-                    Programs.PROGRAM_LOOP_127_3,
-                    0,
-                    Memory.getMemoryPage(REGISTERS[Registers.PAGE.address()]),
-                    0,
-                    Programs.PROGRAM_LOOP_127_3.length);
+        Programs.load(Programs.Program.HELLO_CPU);
 
-            IO.println("PROGRAM_LOOP_127_3 UPLOAD to MEMORY");
-        } else {
-            System.arraycopy(Programs.PROGRAM_PAGED_MEMORY_PAGE_0, 0,
-                    Memory.getMemoryPage((byte) 0), 0, Programs.PROGRAM_PAGED_MEMORY_PAGE_0.length);
-            System.arraycopy(Programs.PROGRAM_PAGED_MEMORY_PAGE_1, 0,
-                    Memory.getMemoryPage((byte) 1), 0, Programs.PROGRAM_PAGED_MEMORY_PAGE_1.length);
-            System.arraycopy(Programs.PROGRAM_PAGED_MEMORY_PAGE_127, 0,
-                    Memory.getMemoryPage((byte) 127), 0, Programs.PROGRAM_PAGED_MEMORY_PAGE_127.length);
-            IO.println("PROGRAM_PAGED_MEMORY UPLOAD to PAGES 0, 1, 127");
-        }
-
-        cpuStartTime = System.currentTimeMillis();
+        cpuStartTime = System.nanoTime();
 
 
         while (running) {
@@ -140,6 +121,8 @@ public class Main {
                                 " at address " + counter
                 );
             }
+
+            intructs++;
         }
     }
 
@@ -244,7 +227,7 @@ public class Main {
      */
     static void stop(){
         running = false;
-        IO.println("EOF CPU Ran for " + (System.currentTimeMillis() - cpuStartTime) + "ms");
+        IO.println("EOF CPU Ran for " + (System.nanoTime() - cpuStartTime) + "ns | " + intructs + " instructions ran");
     }
 
     /*

@@ -6,6 +6,78 @@
 package xyz.ignite4inferneo;
 
 public class Programs {
+    public enum Program {
+        HELLO_CPU,
+        LOOP_127_3,
+        PAGED_MEMORY
+    }
+
+    public static void load(Program program) {
+        switch (program) {
+            case HELLO_CPU -> upload(PROGRAM_HELLO_CPU, (byte) 0);
+            case LOOP_127_3 -> upload(PROGRAM_LOOP_127_3, (byte) 0);
+            case PAGED_MEMORY -> {
+                upload(PROGRAM_PAGED_MEMORY_PAGE_0, (byte) 0);
+                upload(PROGRAM_PAGED_MEMORY_PAGE_1, (byte) 1);
+                upload(PROGRAM_PAGED_MEMORY_PAGE_127, (byte) 127);
+            }
+        }
+        Main.REGISTERS[Registers.PAGE.address()] = 0;
+        Main.REGISTERS[Registers.COUNTER.address()] = 0;
+        IO.println(program + " UPLOAD to MEMORY");
+    }
+
+    private static void upload(byte[] program, byte page) {
+        System.arraycopy(program, 0, Memory.getMemoryPage(page), 0, program.length);
+    }
+
+    // Calculate ASCII values with ADD/SUB; OUTPUT prints "hello I'm a cpu"
+    // as decimal bytes. The 117-byte program fits in one 128-byte page.
+    static final byte[] PROGRAM_HELLO_CPU = new byte[] {
+            OPCode.STORE.code(), 52, Registers.B.address(),
+            OPCode.STORE.code(), 3, Registers.C.address(),
+            OPCode.STORE.code(), 7, Registers.D.address(),
+            OPCode.STORE.code(), 32, Registers.E.address(), // reusable space
+            OPCode.STORE.code(), 2, Registers.F.address(),
+
+            OPCode.ADD.code(), Registers.B.address(), Registers.B.address(), Registers.A.address(), // h = 52 + 52
+            OPCode.OUTPUT.code(), Registers.A.address(),
+            OPCode.SUB.code(), Registers.A.address(), Registers.C.address(), Registers.A.address(), // e = 104 - 3
+            OPCode.OUTPUT.code(), Registers.A.address(),
+            OPCode.ADD.code(), Registers.A.address(), Registers.D.address(), Registers.A.address(), // l = 101 + 7
+            OPCode.OUTPUT.code(), Registers.A.address(),
+            OPCode.OUTPUT.code(), Registers.A.address(), // reuse l
+            OPCode.ADD.code(), Registers.A.address(), Registers.C.address(), Registers.A.address(), // o = 108 + 3
+            OPCode.OUTPUT.code(), Registers.A.address(),
+            OPCode.OUTPUT.code(), Registers.E.address(),
+
+            OPCode.SUB.code(), Registers.A.address(), Registers.E.address(), Registers.A.address(),
+            OPCode.SUB.code(), Registers.A.address(), Registers.C.address(), Registers.A.address(),
+            OPCode.SUB.code(), Registers.A.address(), Registers.C.address(), Registers.A.address(), // I = 111 - 32 - 3 - 3
+            OPCode.OUTPUT.code(), Registers.A.address(),
+            OPCode.ADD.code(), Registers.E.address(), Registers.D.address(), Registers.A.address(), // apostrophe = 32 + 7
+            OPCode.OUTPUT.code(), Registers.A.address(),
+            OPCode.ADD.code(), Registers.B.address(), Registers.B.address(), Registers.A.address(),
+            OPCode.ADD.code(), Registers.A.address(), Registers.D.address(), Registers.A.address(),
+            OPCode.SUB.code(), Registers.A.address(), Registers.F.address(), Registers.A.address(), // m = 52 + 52 + 7 - 2
+            OPCode.OUTPUT.code(), Registers.A.address(),
+            OPCode.OUTPUT.code(), Registers.E.address(),
+
+            OPCode.ADD.code(), Registers.B.address(), Registers.B.address(), Registers.A.address(),
+            OPCode.SUB.code(), Registers.A.address(), Registers.D.address(), Registers.A.address(), // a = 52 + 52 - 7
+            OPCode.OUTPUT.code(), Registers.A.address(),
+            OPCode.OUTPUT.code(), Registers.E.address(),
+            OPCode.ADD.code(), Registers.A.address(), Registers.F.address(), Registers.A.address(), // c = 97 + 2
+            OPCode.OUTPUT.code(), Registers.A.address(),
+            OPCode.STORE.code(), 13, Registers.B.address(),
+            OPCode.ADD.code(), Registers.A.address(), Registers.B.address(), Registers.A.address(), // p = 99 + 13
+            OPCode.OUTPUT.code(), Registers.A.address(),
+            OPCode.ADD.code(), Registers.A.address(), Registers.D.address(), Registers.A.address(),
+            OPCode.SUB.code(), Registers.A.address(), Registers.F.address(), Registers.A.address(), // u = 112 + 7 - 2
+            OPCode.OUTPUT.code(), Registers.A.address(),
+            OPCode.STOP.code()
+    };
+
     /*
     Writes 11, 22, 33 at address 120 on pages 0, 1, 127, then revisits
     each page and prints its value. All values and addresses fit signed bytes.
