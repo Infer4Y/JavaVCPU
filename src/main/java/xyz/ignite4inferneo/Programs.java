@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Xavier Dillinger (Infer4Y).
+ * All rights reserved.
+ */
+
 package xyz.ignite4inferneo;
 
 public class Programs {
