@@ -5,14 +5,18 @@
 
 package xyz.ignite4inferneo;
 
+/**
+ * Executes JavaVCPU bytecode and owns the virtual CPU state.
+ *
+ * <p>Instructions use operand bytes as indices into {@link #REGISTERS}, unless their opcode
+ * documents an operand as a literal value or address. Memory accesses operate on the page selected
+ * by {@link Registers#PAGE}.</p>
+ */
 public class Main {
-    /*
-    REGISTER MEMORY
-
-    A, B, C, D = general purpose registers
-    PTR = pointer register
-    COUNTER = program counter
-    */
+    /**
+     * The CPU register file: A through F are general-purpose registers, followed by the instruction
+     * counter and active memory page.
+     */
     static byte[] REGISTERS = new byte[] {
             0, // A
             0, // B
@@ -24,21 +28,29 @@ public class Main {
             0  // MEMORY PAGE
         };
 
+    /** The currently selected 128-byte memory page. */
     static byte[] MEMORY = new byte[128];
 
+    /** Whether the instruction-dispatch loop should continue executing. */
     static boolean running = true;
 
+    /** Wall-clock time recorded immediately before program execution begins. */
     static long cpuStartTime;
+
+    /** Number of instructions dispatched during the current run. */
     static int intructs;
 
-    static void main() {
-        Memory.initializeMemoryPages();
-        IO.println("MEMORY CLEAR");
+    /**
+     * Initializes the display, loads the selected program, and executes instructions until STOP.
+     *
+     * @throws InterruptedException if interrupted while executing the virtual CPU
+     */
+    static void main() throws InterruptedException {
+        Monitor.initialize();
 
-        Programs.load(Programs.Program.HELLO_CPU);
+        cpuStartTime = System.currentTimeMillis();
 
-        cpuStartTime = System.nanoTime();
-
+        Programs.load(Programs.Program.DISPLAY_DIAGONAL);
 
         while (running) {
             int counter = getProgramCounter();
@@ -46,75 +58,47 @@ public class Main {
             byte opcode = MEMORY[counter];
 
             switch (opcode) {
-                // --------------------------------
-                // ADD
-                // ADD value, value, register
-                // --------------------------------
+                // ADD registerA, registerB, destinationRegister
                 case 0 -> add(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3]);
 
-                // --------------------------------
-                // SUB
-                // SUB value, value, register
-                // --------------------------------
+                // SUB registerA, registerB, destinationRegister
                 case 1 -> sub(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3]);
 
-                // --------------------------------
-                // STORE
-                // STORE value, register
-                // --------------------------------
+                // STORE literalValue, destinationRegister
                 case 2 -> store(MEMORY[counter + 1], MEMORY[counter + 2]);
 
-                // --------------------------------
-                // JMP
-                // JMP address
-                // --------------------------------
+                // JMP literalAddress
                 case 3 -> jump(MEMORY[counter + 1]);
 
-
-                // --------------------------------
-                // STOP
-                // --------------------------------
                 case 4 -> stop();
 
-                // --------------------------------
-                // OUTPUT
                 // OUTPUT register
-                // --------------------------------
                 case 5 -> output(MEMORY[counter + 1]);
 
-                // --------------------------------
-                // COND_JUMP
-                // COND_JUMP register A register B address
-                // --------------------------------
+                // COND_JUMP registerA, registerB, literalAddress
                 case 6 -> cond_jump(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3]);
 
-                // --------------------------------
-                // LOAD_MEM
-                // LOAD_MEM value, register
-                // --------------------------------
-
+                // LOAD_MEM destinationRegister, literalAddress
                 case 7 -> loadMemory(MEMORY[counter + 1], MEMORY[counter + 2]);
 
-                // --------------------------------
-                // STORE_MEM
-                // STORE_MEM value, register
-                // --------------------------------
-
+                // STORE_MEM sourceRegister, literalAddress
                 case 8 -> storeMemory(MEMORY[counter + 1], MEMORY[counter + 2]);
 
-                // --------------------------------
-                // CHANGE_PAGE
-                // CHANGE_PAGE register
-                // --------------------------------
+                // CHANGE_PAGE pageRegister
                 case 9 -> changePage(MEMORY[counter + 1]);
 
-                // --------------------------------
-                // CHANGE_PAGE_JUMP
-                // CHANGE_PAGE_JUMP register target
-                // --------------------------------
+                // CHANGE_PAGE_JUMP pageRegister, targetRegister
                 case 10 -> changePageJump(MEMORY[counter + 1], MEMORY[counter + 2]);
 
+                // CHANGE_PAGE_COND_JUMP pageRegister, registerA, registerB, literalAddress
                 case 11 -> changePageCondJump(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3], MEMORY[counter + 4] );
+
+                // PUSH_GRA_MEM xRegister, yRegister, colorRegister
+                case 12 -> pushGraphicsMemory(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3]);
+
+                case 13 -> clearGraphics();
+
+                case  14 -> display();
 
                 default -> throw new IllegalStateException(
                         "Unknown opcode: " + opcode +
@@ -126,31 +110,21 @@ public class Main {
         }
     }
 
-    // ============================================================
-    // PROGRAM COUNTER
-    // ============================================================
+    /** Returns the program counter as an unsigned address in the current page. */
     static int getProgramCounter() {
         return Byte.toUnsignedInt(
                 REGISTERS[Registers.COUNTER.address()]
         );
     }
 
+    /** Advances the program counter by an instruction length. */
     static void incrementCounter(int amount) {
         int counter = getProgramCounter();
         counter += amount;
         REGISTERS[Registers.COUNTER.address()] = (byte) counter;
     }
 
-    // ============================================================
-    // INSTRUCTIONS
-    // ============================================================
-    /*
-    ADD
-
-    ADD REGISTER 1, REGISTER 2, REGISTER OUTPUT
-
-    REGISTER OUTPUT = REGISTER 1 + REGISTER 2
-    */
+    /** Adds two registers, stores the wrapped byte result, and advances the counter. */
     public static void add(
             byte a,
             byte b,
@@ -161,13 +135,7 @@ public class Main {
         incrementCounter(OPCode.ADD.length());
     }
 
-    /*
-    SUB
-
-    SUB REGISTER 1, REGISTER 2, REGISTER OUTPUT
-
-    REGISTER OUTPUT = REGISTER 1 - REGISTER 2
-    */
+    /** Subtracts one register from another, stores the wrapped byte result, and advances the counter. */
     public static void sub(
             byte a,
             byte b,
@@ -178,13 +146,7 @@ public class Main {
         incrementCounter(OPCode.SUB.length());
     }
 
-    /*
-    STORE
-
-    STORE 10, A
-
-    A = 10
-    */
+    /** Stores a literal byte in a register and advances the counter. */
     public static void store(
             byte value,
             byte register
@@ -194,24 +156,12 @@ public class Main {
         incrementCounter(OPCode.STORE.length());
     }
 
-    /*
-    JMP
-
-    JMP 10
-
-    COUNTER = 10
-    */
+    /** Sets the program counter to a literal address. */
     public static void jump(byte address) {
         REGISTERS[Registers.COUNTER.address()] = address;
     }
 
-    /*
-    COND_JMP
-
-    COND_JMP A B 10
-
-    if A == B then COUNTER = 10
-    */
+    /** Jumps to a literal address when two registers contain equal values. */
     public static void cond_jump(byte A, byte B, byte address) {
         if (REGISTERS[A] == REGISTERS[B]) {
             REGISTERS[Registers.COUNTER.address()] = address;
@@ -220,21 +170,13 @@ public class Main {
         }
     }
 
-    /*
-    STOP
-
-    STOP
-     */
+    /** Stops execution and reports elapsed CPU time and the instruction count. */
     static void stop(){
         running = false;
-        IO.println("EOF CPU Ran for " + (System.nanoTime() - cpuStartTime) + "ns | " + intructs + " instructions ran");
+        IO.println("EOF CPU Ran for " + (System.currentTimeMillis() - cpuStartTime) + "ms | " + intructs + " instructions ran");
     }
 
-    /*
-    OUTPUT
-
-    OUTPUT A
-    */
+    /** Prints a register's signed byte value and advances the counter. */
     public static void output(byte register) {
         IO.println(
                 REGISTERS[register]
@@ -242,63 +184,33 @@ public class Main {
         incrementCounter(OPCode.OUTPUT.length());
     }
 
-    /*
-    LOAD_MEM
-
-    LOAD_MEM REGISTER A REGISTER B
-
-    REGISTER A = MEMORY[REGISTER B]
-     */
+    /** Loads a byte from a literal address in the active page into a register. */
     public static void loadMemory(byte A, byte B) {
         REGISTERS[A] = MEMORY[B];
 
         incrementCounter(OPCode.LOAD_MEM.length());
     }
 
-    /*
-    STORE_MEM
-
-    STORE_MEM REGISTER A REGISTER B
-
-    MEMORY[REGISTER B] = REGISTER A
-     */
+    /** Stores a register value at a literal address in the active page. */
     public static void storeMemory(byte A, byte B) {
         MEMORY[B] = REGISTERS[A];
 
         incrementCounter(OPCode.STORE_MEM.length());
     }
 
-    /*
-    CHANGE_PAGE
-
-    CHANGE_PAGE REGISTER A
-
-    points to which page the page register
-     */
+    /** Selects the page stored in a register and advances the counter. */
     public static void changePage(byte A){
         REGISTERS[Registers.PAGE.address()] = REGISTERS[A];
         incrementCounter(OPCode.CHANGE_PAGE.length());
     }
 
-    /*
-    CHANGE_PAGE_JUMP
-
-    CHANGE_PAGE_JUMP REGISTER A REGISTER B
-
-    points to which page the page register and jumps to register
-     */
+    /** Selects a page and sets the counter from a second register. */
     public static void changePageJump(byte A, byte B){
         REGISTERS[Registers.PAGE.address()] = REGISTERS[A];
         REGISTERS[Registers.COUNTER.address()] = REGISTERS[B];
     }
 
-    /*
-    COND_JMP
-
-    COND_JMP A B 10
-
-    if A == B then COUNTER = 10
-    */
+    /** Selects a page and jumps when two registers contain equal values. */
     public static void changePageCondJump(byte A, byte B, byte C, byte address) {
         if (REGISTERS[B] == REGISTERS[C]) {
             REGISTERS[Registers.PAGE.address()] = REGISTERS[A];
@@ -306,6 +218,24 @@ public class Main {
         } else {
             incrementCounter(OPCode.CHANGE_PAGE_COND_JUMP.length());
         }
+    }
+
+    /** Clears the virtual display and advances the counter. */
+    public static void clearGraphics() {
+        Monitor.clear();
+        incrementCounter(OPCode.CLEAR_GRA.length());
+    }
+
+    /** Presents the virtual display framebuffer and advances the counter. */
+    public static void display(){
+        Monitor.display();
+        incrementCounter(OPCode.DISPLAY.length());
+    }
+
+    /** Writes a pixel using x, y, and color values from three registers, then advances the counter. */
+    public static void pushGraphicsMemory(byte A, byte B, byte color) {
+        Monitor.pushMemory(REGISTERS[A], REGISTERS[B], REGISTERS[color]);
+        incrementCounter(OPCode.PUSH_GRA_MEM.length());
     }
 }
 

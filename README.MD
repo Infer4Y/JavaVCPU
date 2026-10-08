@@ -23,6 +23,9 @@ The Gradle wrapper can build the project:
 
 On Linux or macOS, use `./gradlew build`. The project currently uses the Java plugin without a Gradle `run` task.
 
+The current default program is `DISPLAY_DIAGONAL`. It opens a 256-by-256 window and draws a scaled,
+one-pixel-wide yellow diagonal from the top-left to the bottom-right.
+
 ## CPU and memory
 
 There are **128 memory pages**, each containing **128 bytes**, for a total of **16 KiB**. Page numbers and addresses range from **0 to 127**. Java byte values range from **-128 to 127**; arithmetic wraps when a result is cast back to a byte.
@@ -55,18 +58,46 @@ Each instruction occupies one opcode byte followed by its operands. In the table
 | 9 | `CHANGE_PAGE r` | 2 | Set `PAGE = R[r]`, then advance `COUNTER` by 2 |
 | 10 | `CHANGE_PAGE_JUMP r, target` | 3 | Set `PAGE = R[r]` and `COUNTER = R[target]`; both operands are register indices |
 | 11 | `CHANGE_PAGE_COND_JUMP r, a, b, address` | 5 | If `R[a] == R[b]`, set `PAGE = R[r]` and jump to the literal address; otherwise advance by 5 on the current page |
+| 12 | `PUSH_GRA_MEM x, y, color` | 4 | Write palette color `R[color]` at framebuffer coordinate `(R[x], R[y])` |
+| 13 | `CLEAR_GRA` | 1 | Clear the display framebuffer to black |
+| 14 | `DISPLAY` | 1 | Schedule the completed framebuffer for painting in the display window |
 
 `LOAD_MEM` and `STORE_MEM` currently use a **literal memory address**, even though some comments in `Main.java` describe a register-based address.
 
 `CHANGE_PAGE` continues at the next instruction address on the destination page. The two page-jump instructions explicitly select a destination address, allowing different programs to occupy each page without padding.
 
+## Display
+
+`Monitor` owns a 128-by-128 RGB framebuffer. `PUSH_GRA_MEM` writes one pixel using register values
+for its x coordinate, y coordinate, and color. Coordinates must be in the range `0` through `127`.
+Call `DISPLAY` after a group of writes to show the completed frame; `CLEAR_GRA` resets it to black.
+
+The display window scales the framebuffer to 256-by-256 pixels with nearest-neighbor interpolation,
+so each virtual pixel appears as a 2-by-2 square.
+
+Colors use the seven low bits of one byte in `RRGGGBB` order:
+
+| Bits | Channel | Levels |
+| --- | --- | --- |
+| 6-5 | Red | 4 |
+| 4-2 | Green | 8 |
+| 1-0 | Blue | 4 |
+
+The high bit is ignored. For example, `0b11_111_00` is full red plus full green, producing yellow.
+
 ## Included programs
 
 Programs are defined in [Programs.java](src/main/java/xyz/ignite4inferneo/Programs.java) and uploaded by [Main.java](src/main/java/xyz/ignite4inferneo/Main.java).
 
+### Display diagonal
+
+`DISPLAY_DIAGONAL` is the default sample. It clears the framebuffer, writes yellow pixels from
+`(0, 0)` through `(127, 127)`, presents the frame, and stops. Select another member of
+`Programs.Program` in `Main.main()` to run one of the CPU-only examples.
+
 ### Paged memory demo
 
-The default program uses three separate byte arrays for pages **0**, **1**, and **127**:
+`PAGED_MEMORY` uses three separate byte arrays for pages **0**, **1**, and **127**:
 
 1. Write **11** to address 120 on page 0.
 2. Jump to page 1 and write **22** at the same address.
@@ -88,7 +119,7 @@ Elapsed time varies. The three values show that the same address can retain diff
 
 ### Counter loop
 
-`PROGRAM_LOOP_127_3` uses arithmetic, output, and conditional jumps to count in register A, with register D tracking repetitions. To select it, change the `if (false)` program selection in `Main.main()` to `if (true)`.
+`PROGRAM_LOOP_127_3` uses arithmetic, output, and conditional jumps to count in register A, with register D tracking repetitions. Select `LOOP_127_3` in `Main.main()` to run it.
 
 The current bytecode checks the repetition limit after incrementing and printing A. It prints 1 through 127 twice, then prints 1 and stops; the `_3` name does not currently represent three complete passes.
 
@@ -122,3 +153,4 @@ Calculate jump targets by counting **bytes**, including each opcode and its oper
 | `OPCode.java` | Opcode values and instruction lengths |
 | `Registers.java` | Register indices |
 | `Programs.java` | Literal bytecode programs |
+| `Monitor.java` | Swing display window, framebuffer, and palette conversion |

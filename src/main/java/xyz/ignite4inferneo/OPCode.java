@@ -5,13 +5,8 @@
 
 package xyz.ignite4inferneo;
 
-// ============================================================
-// OPCODES
-// ============================================================
+/** Defines the byte values and operand counts for every JavaVCPU instruction. */
 public enum OPCode {
-    /*
-    code, operand count
-    */
     ADD(0, 3),
     SUB(1, 3),
     STORE(2, 2),
@@ -23,9 +18,15 @@ public enum OPCode {
     STORE_MEM(8, 2),
     CHANGE_PAGE(9, 1),
     CHANGE_PAGE_JUMP(10, 2),
-    CHANGE_PAGE_COND_JUMP(11, 4);
+    CHANGE_PAGE_COND_JUMP(11, 4),
+    PUSH_GRA_MEM(12, 3),
+    CLEAR_GRA(13, 0),
+    DISPLAY(14, 0);
 
+    /** Encoded instruction byte. */
     private final byte code;
+
+    /** Number of operand bytes following {@link #code}. */
     private final byte inputLength;
 
     OPCode(int code, int inputLength) {
@@ -33,22 +34,17 @@ public enum OPCode {
         this.inputLength = (byte) inputLength;
     }
     
+    /** Returns this instruction's opcode byte. */
     public byte code() {
         return code;
     }
 
+    /** Returns the number of operand bytes following this instruction's opcode. */
     public byte inputLength() {
         return inputLength;
     }
 
-    /*
-    Total instruction size.
-    
-    Every instruction contains:
-    
-    1 byte opcode
-    N bytes operands
-    */
+    /** Returns the total encoded instruction length: one opcode byte plus its operands. */
     public int length() {
         return inputLength + 1;
     }

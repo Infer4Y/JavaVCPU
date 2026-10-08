@@ -5,17 +5,17 @@
 
 package xyz.ignite4inferneo;
 
-import java.util.Arrays;
-
+/** Stores the virtual CPU's 128 independently addressable memory pages. */
 public class Memory {
+    /** Backing storage: 128 pages of 128 bytes each. */
     private static final byte[][] PAGED_MEMORY = new byte[128][128];
 
-    public static void initializeMemoryPages(){
-        for (byte[] page : PAGED_MEMORY) {
-            Arrays.fill(page, (byte) 0);
-        }
-    }
-
+    /**
+     * Returns the requested memory page.
+     *
+     * @param page unsigned page number from {@code 0} through {@code 127}
+     * @return the mutable 128-byte page backing the supplied page number
+     */
     public static byte[] getMemoryPage(byte page){
         return PAGED_MEMORY[page];
     }

@@ -5,13 +5,21 @@
 
 package xyz.ignite4inferneo;
 
+/** Provides the sample bytecode programs that can be loaded into virtual memory. */
 public class Programs {
+    /** Names the built-in programs supported by {@link #load(Program)}. */
     public enum Program {
         HELLO_CPU,
         LOOP_127_3,
-        PAGED_MEMORY
+        PAGED_MEMORY,
+        DISPLAY_DIAGONAL
     }
 
+    /**
+     * Uploads a built-in program and resets execution to page {@code 0}, address {@code 0}.
+     *
+     * @param program program to upload into virtual memory
+     */
     public static void load(Program program) {
         switch (program) {
             case HELLO_CPU -> upload(PROGRAM_HELLO_CPU, (byte) 0);
@@ -21,18 +29,22 @@ public class Programs {
                 upload(PROGRAM_PAGED_MEMORY_PAGE_1, (byte) 1);
                 upload(PROGRAM_PAGED_MEMORY_PAGE_127, (byte) 127);
             }
+            case DISPLAY_DIAGONAL -> upload(PROGRAM_DISPLAY_DIAGONAL, (byte) 0);
         }
         Main.REGISTERS[Registers.PAGE.address()] = 0;
         Main.REGISTERS[Registers.COUNTER.address()] = 0;
         IO.println(program + " UPLOAD to MEMORY");
     }
 
+    /** Copies a program to the beginning of one memory page. */
     private static void upload(byte[] program, byte page) {
         System.arraycopy(program, 0, Memory.getMemoryPage(page), 0, program.length);
     }
 
-    // Calculate ASCII values with ADD/SUB; OUTPUT prints "hello I'm a cpu"
-    // as decimal bytes. The 117-byte program fits in one 128-byte page.
+    /**
+     * Builds the ASCII byte values for {@code "hello I'm a cpu"} with arithmetic instructions and
+     * outputs them as decimal values. The 117-byte program occupies only page {@code 0}.
+     */
     static final byte[] PROGRAM_HELLO_CPU = new byte[] {
             OPCode.STORE.code(), 52, Registers.B.address(),
             OPCode.STORE.code(), 3, Registers.C.address(),
@@ -78,13 +90,29 @@ public class Programs {
             OPCode.STOP.code()
     };
 
-    /*
-    Writes 11, 22, 33 at address 120 on pages 0, 1, 127, then revisits
-    each page and prints its value. All values and addresses fit signed bytes.
-    CHANGE_PAGE_JUMP takes page and target REGISTERS (F and E).
-    CHANGE_PAGE_COND_JUMP takes a page register, two comparison registers,
-    and a literal target address. Page 1 exercises both false and true cases.
-    */
+    /**
+     * Clears the display, draws a yellow diagonal from {@code (0, 0)} through {@code (127, 127)},
+     * presents the completed framebuffer, and stops.
+     */
+    static final byte[] PROGRAM_DISPLAY_DIAGONAL = new byte[] {
+            OPCode.CLEAR_GRA.code(),                                                    // 0
+            OPCode.STORE.code(), 0, Registers.A.address(),                             // 1: x and y
+            OPCode.STORE.code(), 1, Registers.B.address(),                             // 4: increment
+            OPCode.STORE.code(), 0b11_111_00, Registers.C.address(),                   // 7: yellow
+            OPCode.STORE.code(), 127, Registers.D.address(),                           // 10: final coordinate
+            OPCode.PUSH_GRA_MEM.code(), Registers.A.address(), Registers.A.address(),
+                    Registers.C.address(),                                              // 13: pixel(x, x, yellow)
+            OPCode.COND_JUMP.code(), Registers.A.address(), Registers.D.address(), 27, // 17: display at x = 127
+            OPCode.ADD.code(), Registers.A.address(), Registers.B.address(), Registers.A.address(), // 21
+            OPCode.JMP.code(), 13,                                                      // 25
+            OPCode.DISPLAY.code(),                                                      // 27
+            OPCode.STOP.code()                                                          // 28
+    };
+
+    /**
+     * First page of the paged-memory example. It stores {@code 11} at address {@code 120}, then
+     * changes to page {@code 1}.
+     */
     static final byte[] PROGRAM_PAGED_MEMORY_PAGE_0 = new byte[] {
             OPCode.STORE.code(), 11, Registers.A.address(),                         // 0
             OPCode.STORE_MEM.code(), Registers.A.address(), 120,                  // 3
@@ -98,6 +126,10 @@ public class Programs {
             OPCode.CHANGE_PAGE_JUMP.code(), Registers.F.address(), Registers.E.address() // 26
     };
 
+    /**
+     * Second page of the paged-memory example. It stores {@code 22} and exercises both outcomes
+     * of the conditional page-jump instruction.
+     */
     static final byte[] PROGRAM_PAGED_MEMORY_PAGE_1 = new byte[] {
             OPCode.STORE.code(), 22, Registers.A.address(),                         // 0
             OPCode.STORE_MEM.code(), Registers.A.address(), 120,                  // 3
@@ -116,6 +148,10 @@ public class Programs {
             OPCode.STOP.code()                                                   // 39: stop if value was incorrect
     };
 
+    /**
+     * Final page of the paged-memory example. It stores {@code 33}, prints the values stored on
+     * this page, and stops execution after the earlier pages have printed their values.
+     */
     static final byte[] PROGRAM_PAGED_MEMORY_PAGE_127 = new byte[] {
             OPCode.STORE.code(), 33, Registers.A.address(),                         // 0
             OPCode.STORE_MEM.code(), Registers.A.address(), 120,                  // 3
@@ -127,9 +163,10 @@ public class Programs {
             OPCode.STOP.code()                                                   // 20
     };
 
-    /*
-    This Program is for counting to 127 on Register A looping x times with Register D and the stops execution.
-    */
+    /**
+     * Counts register A from {@code 1} through {@code 127}; register D tracks the loop count.
+     * The program currently performs two full passes and prints {@code 1} once more before stopping.
+     */
     static byte[] PROGRAM_LOOP_127_3 = new byte[] {
             OPCode.STORE.code(), 0, Registers.A.address(),                                          // 3, 2, 24bits  | Line 1
             OPCode.STORE.code(), 1, Registers.B.address(),                                          // 3, 5, 24bits  | Line 2
