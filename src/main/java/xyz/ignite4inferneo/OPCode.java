@@ -21,7 +21,8 @@ public enum OPCode {
     CHANGE_PAGE_COND_JUMP(11, 4),
     PUSH_GRA_MEM(12, 3),
     CLEAR_GRA(13, 0),
-    DISPLAY(14, 0);
+    DISPLAY(14, 0),
+    READ_GRA_MEM(15, 3);
 
     /** Encoded instruction byte. */
     private final byte code;

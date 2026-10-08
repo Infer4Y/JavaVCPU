@@ -12,7 +12,7 @@ public class Programs {
         HELLO_CPU,
         LOOP_127_3,
         PAGED_MEMORY,
-        DISPLAY_DIAGONAL
+        SNOWFALL
     }
 
     /**
@@ -29,7 +29,7 @@ public class Programs {
                 upload(PROGRAM_PAGED_MEMORY_PAGE_1, (byte) 1);
                 upload(PROGRAM_PAGED_MEMORY_PAGE_127, (byte) 127);
             }
-            case DISPLAY_DIAGONAL -> upload(PROGRAM_DISPLAY_DIAGONAL, (byte) 0);
+            case SNOWFALL -> upload(PROGRAM_SNOWFALL, (byte) 0);
         }
         Main.REGISTERS[Registers.PAGE.address()] = 0;
         Main.REGISTERS[Registers.COUNTER.address()] = 0;
@@ -91,22 +91,42 @@ public class Programs {
     };
 
     /**
-     * Clears the display, draws a yellow diagonal from {@code (0, 0)} through {@code (127, 127)},
-     * presents the completed framebuffer, and stops.
+     * Animates a white snowflake that falls until it reaches the bottom or an occupied pixel.
+     * Settled flakes remain in the framebuffer, building a snowbank across all 128 columns.
      */
-    static final byte[] PROGRAM_DISPLAY_DIAGONAL = new byte[] {
-            OPCode.CLEAR_GRA.code(),                                                    // 0
-            OPCode.STORE.code(), 0, Registers.A.address(),                             // 1: x and y
-            OPCode.STORE.code(), 1, Registers.B.address(),                             // 4: increment
-            OPCode.STORE.code(), 0b11_111_00, Registers.C.address(),                   // 7: yellow
-            OPCode.STORE.code(), 127, Registers.D.address(),                           // 10: final coordinate
-            OPCode.PUSH_GRA_MEM.code(), Registers.A.address(), Registers.A.address(),
-                    Registers.C.address(),                                              // 13: pixel(x, x, yellow)
-            OPCode.COND_JUMP.code(), Registers.A.address(), Registers.D.address(), 27, // 17: display at x = 127
-            OPCode.ADD.code(), Registers.A.address(), Registers.B.address(), Registers.A.address(), // 21
-            OPCode.JMP.code(), 13,                                                      // 25
-            OPCode.DISPLAY.code(),                                                      // 27
-            OPCode.STOP.code()                                                          // 28
+    static final byte[] PROGRAM_SNOWFALL = new byte[] {
+            OPCode.CLEAR_GRA.code(),                                                   // 0
+            OPCode.STORE.code(), 0, Registers.A.address(),                             // 1: current row
+            OPCode.STORE.code(), 0, Registers.B.address(),                             // 4: current column
+            OPCode.STORE.code(), 1, Registers.C.address(),                             // 7: increment
+            OPCode.STORE.code(), 0b11_111_11, Registers.D.address(),                   // 10: white and final coordinate
+            OPCode.STORE.code(), 0, Registers.E.address(),                             // 13: black
+
+            OPCode.STORE.code(), 0b11_111_11, Registers.D.address(),                   // 16: restore white
+            OPCode.PUSH_GRA_MEM.code(), Registers.B.address(), Registers.A.address(),
+                    Registers.D.address(),                                              // 19: draw falling flake
+            OPCode.COND_JUMP.code(), Registers.A.address(), Registers.D.address(), 39, // 23: bottom row
+            OPCode.ADD.code(), Registers.A.address(), Registers.C.address(), Registers.F.address(), // 27: row below
+            OPCode.READ_GRA_MEM.code(), Registers.B.address(), Registers.F.address(),
+                    Registers.D.address(),                                              // 31: color below
+            OPCode.COND_JUMP.code(), Registers.D.address(), Registers.E.address(), 58, // 35: fall if black
+
+            OPCode.STORE.code(), 0, Registers.A.address(),                             // 39: settle and respawn
+            OPCode.COND_JUMP.code(), Registers.B.address(), Registers.D.address(), 52, // 42: reset column after 127
+            OPCode.ADD.code(), Registers.B.address(), Registers.C.address(), Registers.B.address(), // 46
+            OPCode.JMP.code(), 55,                                                      // 50
+            OPCode.STORE.code(), 0, Registers.B.address(),                            // 52
+            OPCode.DISPLAY.code(),                                                      // 55
+            OPCode.JMP.code(), 16,                                                      // 56
+
+            OPCode.SUB.code(), Registers.F.address(), Registers.C.address(), Registers.A.address(), // 58: restore current row
+            OPCode.PUSH_GRA_MEM.code(), Registers.B.address(), Registers.A.address(),
+                    Registers.E.address(),                                              // 62: erase previous flake position
+            OPCode.ADD.code(), Registers.A.address(), Registers.C.address(), Registers.A.address(), // 66: move down
+            OPCode.STORE.code(), 0b11_111_11, Registers.D.address(),                   // 70
+            OPCode.PUSH_GRA_MEM.code(), Registers.B.address(), Registers.A.address(),
+                    Registers.D.address(),                                              // 73: draw moved flake
+            OPCode.JMP.code(), 55                                                       // 77
     };
 
     /**

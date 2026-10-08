@@ -9,13 +9,13 @@ import javax.swing.*;
 import module java.desktop;
 
 /**
- * Provides the virtual CPU's 128-by-128-pixel display.
+ * Provides the virtual CPU's 128-by-128-pixel framebuffer and scaled Swing display.
  *
  * <p>Graphics instructions update an off-screen framebuffer through {@link #pushMemory(byte, byte,
  * byte)}. Call {@link #display()} to schedule the completed framebuffer for painting in the Swing
- * window. A color
- * operand uses seven bits in {@code RRGGGBB} order: red and blue each have four intensity levels,
- * and green has eight.</p>
+ * window. The window renders the framebuffer at 512 by 512 pixels with nearest-neighbor scaling.
+ * A color operand uses seven bits in {@code RRGGGBB} order: red and blue each have four intensity
+ * levels, and green has eight.</p>
  */
 public class Monitor {
     /** The Swing window used to present the framebuffer. */
@@ -27,7 +27,7 @@ public class Monitor {
     /** Guards framebuffer updates while Swing paints the image. */
     private static final Object bufferLock = new Object();
 
-    /** Component responsible for rendering the framebuffer. */
+    /** Component that renders the framebuffer with nearest-neighbor scaling. */
     private static final JPanel displayPanel = new JPanel() {
         @Override
         protected void paintComponent(Graphics graphics) {
@@ -41,7 +41,7 @@ public class Monitor {
     };
 
     /**
-     * Creates and shows the display window.
+     * Creates and shows the 512-by-512 display window.
      *
      * <p>This method must be called before {@link #display()} presents the framebuffer.</p>
      */
@@ -52,7 +52,7 @@ public class Monitor {
             }
 
             display = new JFrame("JavaVCPU display out");
-            displayPanel.setPreferredSize(new Dimension(256, 256));
+            displayPanel.setPreferredSize(new Dimension(512, 512));
             display.setContentPane(displayPanel);
             display.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
             display.pack();
@@ -118,6 +118,7 @@ public class Monitor {
         return (red << 16) | (green << 8) | blue;
     }
 
+    /** Runs an action synchronously on Swing's event-dispatch thread. */
     private static void runOnEventDispatchThread(Runnable action) {
         if (SwingUtilities.isEventDispatchThread()) {
             action.run();
@@ -130,6 +131,30 @@ public class Monitor {
             throw new IllegalStateException("Unable to initialize display", exception);
         }
     }
+    /**
+     * Returns the palette color stored at one framebuffer pixel.
+     *
+     * @param x horizontal pixel coordinate, from {@code 0} through {@code 127}
+     * @param y vertical pixel coordinate, from {@code 0} through {@code 127}
+     * @return seven-bit palette value encoded as {@code RRGGGBB}
+     * @throws ArrayIndexOutOfBoundsException if either coordinate is outside the framebuffer
+     */
+    public static byte fetchMemory(byte x, byte y) {
+        synchronized (bufferLock) {
+            return rgbToByte(buffer.getRGB(x, y));
+        }
+    }
 
+    /** Converts a 24-bit RGB framebuffer value back to the virtual CPU palette format. */
+    private static byte rgbToByte(int rgb) {
+        int red = (rgb >> 16) & 0xFF;
+        int green = (rgb >> 8) & 0xFF;
+        int blue = rgb & 0xFF;
 
+        int packedRed = red * 3 / 255;       // 0–3
+        int packedGreen = green * 7 / 255;   // 0–7
+        int packedBlue = blue * 3 / 255;     // 0–3
+
+        return (byte) ((packedRed << 5) | (packedGreen << 2) | packedBlue);
+    }
 }

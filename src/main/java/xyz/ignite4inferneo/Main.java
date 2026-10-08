@@ -50,7 +50,7 @@ public class Main {
 
         cpuStartTime = System.currentTimeMillis();
 
-        Programs.load(Programs.Program.DISPLAY_DIAGONAL);
+        Programs.load(Programs.Program.SNOWFALL);
 
         while (running) {
             int counter = getProgramCounter();
@@ -99,6 +99,9 @@ public class Main {
                 case 13 -> clearGraphics();
 
                 case  14 -> display();
+
+                // READ_GRA_MEM xRegister, yRegister, destinationRegister
+                case 15 -> pullGraphicsMemory(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3]);
 
                 default -> throw new IllegalStateException(
                         "Unknown opcode: " + opcode +
@@ -226,9 +229,13 @@ public class Main {
         incrementCounter(OPCode.CLEAR_GRA.length());
     }
 
-    /** Presents the virtual display framebuffer and advances the counter. */
-    public static void display(){
+    /**
+     * Presents the virtual display framebuffer, waits about 33 milliseconds, and advances the
+     * counter. The delay limits animations to approximately 30 frames per second.
+     */
+    public static void display() throws InterruptedException {
         Monitor.display();
+        Thread.sleep(33);
         incrementCounter(OPCode.DISPLAY.length());
     }
 
@@ -236,6 +243,15 @@ public class Main {
     public static void pushGraphicsMemory(byte A, byte B, byte color) {
         Monitor.pushMemory(REGISTERS[A], REGISTERS[B], REGISTERS[color]);
         incrementCounter(OPCode.PUSH_GRA_MEM.length());
+    }
+
+    /**
+     * Reads the palette value at coordinates held in two registers into a destination register,
+     * then advances the counter.
+     */
+    public static void pullGraphicsMemory(byte A, byte B, byte target) {
+        REGISTERS[target] = Monitor.fetchMemory(REGISTERS[A], REGISTERS[B]);
+        incrementCounter(OPCode.READ_GRA_MEM.length());
     }
 }
 
