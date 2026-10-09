@@ -43,7 +43,7 @@ public class Main {
     static int intructs;
 
     /**
-     * Initializes the display, loads the selected program, and executes instructions until STOP.
+     * Initializes the display, loads the BOS into virtual memory, and executes it.
      *
      * @throws InterruptedException if interrupted while executing the virtual CPU
      */
@@ -52,7 +52,7 @@ public class Main {
 
         cpuStartTime = System.currentTimeMillis();
 
-        Programs.load(Programs.Program.DISPLAY_HELLO_CPU);
+        Programs.load(Programs.Program.BOS_POST);
 
         while (running) {
             int counter = getProgramCounter();
@@ -112,6 +112,8 @@ public class Main {
             }
 
             intructs++;
+
+            Thread.sleep(0, 1000);
         }
     }
 
@@ -258,12 +260,10 @@ public class Main {
     }
 
     /**
-     * Presents the virtual display framebuffer, waits about 33 milliseconds, and advances the
-     * counter. The delay limits animations to approximately 30 frames per second.
+     * Presents the virtual display framebuffer and advances the counter.
      */
     public static void display() throws InterruptedException {
         Monitor.display();
-        Thread.sleep(33);
         incrementCounter(OPCode.DISPLAY.length());
     }
 

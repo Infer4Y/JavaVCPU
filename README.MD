@@ -14,7 +14,9 @@ To build from the command line:
 
 On Linux or macOS, run `./gradlew build`. The Gradle project has no `run` task; launch `xyz.ignite4inferneo.Main` from the IDE or with `java` after compilation.
 
-The default program is `DISPLAY_HELLO_CPU`, which writes `HELLO CPU` to the framebuffer with graphics instructions.
+The default startup path loads the BOS (Boot Output System) bytecode into virtual memory. It runs a
+colored POST screen from pages at the start of memory, then jumps to a display program loaded on the
+following pages. It is a BOS rather than a full BIOS because JavaVCPU has no input device yet.
 
 ## CPU model
 
@@ -75,6 +77,10 @@ The high bit is ignored on writes. `0b11_111_00` is yellow and `0b11_111_11` is 
 ## Included programs
 
 Programs live in `Programs.java` and are selected in `Main.main()`.
+
+On startup, `Main` loads `Program.BOS_POST`. Its pages draw and present the POST status, then use
+`CHANGE_PAGE_JUMP` to transfer to the bundled `DISPLAY_HELLO_CPU` program stored after the BOS.
+After its greeting pause, that program jumps to `SNOWFALL` on the following page.
 
 - `DISPLAY_HELLO_CPU` uses only existing graphics bytecode instructions to draw `HELLO CPU`.
 - `SNOWFALL` drops white flakes until they reach the bottom or an occupied pixel, then starts the next flake in the next column.

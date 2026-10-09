@@ -14,6 +14,7 @@ import java.util.List;
 public class Programs {
     /** Names the built-in programs supported by {@link #load(Program)}. */
     public enum Program {
+        BOS_POST,
         HELLO_CPU,
         DISPLAY_HELLO_CPU,
         LOOP_127_3,
@@ -28,6 +29,7 @@ public class Programs {
      */
     public static void load(Program program) {
         switch (program) {
+            case BOS_POST -> uploadPages(PROGRAM_BOS_POST);
             case HELLO_CPU -> upload(PROGRAM_HELLO_CPU, (byte) 0);
             case DISPLAY_HELLO_CPU -> uploadPages(PROGRAM_DISPLAY_HELLO_CPU);
             case LOOP_127_3 -> upload(PROGRAM_LOOP_127_3, (byte) 0);
@@ -104,14 +106,71 @@ public class Programs {
             OPCode.STOP.code()
     };
 
+    private static byte[][] createBosPostProgram() {
+        int payloadFirstPage = 0;
+        int snowfallFirstPage = 0;
+        byte[][] bosPages;
+        byte[][] payloadPages;
+        do {
+            bosPages = createBosPostPages(payloadFirstPage);
+            int requiredPayloadFirstPage = bosPages.length;
+            payloadPages = createDisplayHelloCpuProgram(requiredPayloadFirstPage, snowfallFirstPage);
+            int requiredSnowfallFirstPage = requiredPayloadFirstPage + payloadPages.length;
+            if (requiredPayloadFirstPage == payloadFirstPage
+                    && requiredSnowfallFirstPage == snowfallFirstPage) {
+                break;
+            }
+            payloadFirstPage = requiredPayloadFirstPage;
+            snowfallFirstPage = requiredSnowfallFirstPage;
+        } while (true);
+
+        byte[][] image = Arrays.copyOf(bosPages, bosPages.length + payloadPages.length + 1);
+        System.arraycopy(payloadPages, 0, image, bosPages.length, payloadPages.length);
+        image[snowfallFirstPage] = PROGRAM_SNOWFALL;
+        return image;
+    }
+
+    private static byte[][] createBosPostPages(int payloadFirstPage) {
+        TextProgramBuilder program = new TextProgramBuilder(0);
+        program.instruction(OPCode.CLEAR_GRA.code());
+        program.instruction(OPCode.STORE.code(), 0, Registers.H.address());
+
+        // Exercise the processor and graphics readback before reporting POST. Page transitions are
+        // exercised by the generated display code itself as it crosses the BOS page boundaries.
+        program.instruction(OPCode.STORE.code(), 0x55, Registers.A.address());
+        program.instruction(OPCode.STORE.code(), 0x55, Registers.B.address());
+        program.instruction(OPCode.ADD.code(), Registers.A.address(), Registers.B.address(), Registers.C.address());
+        program.instruction(OPCode.STORE.code(), 126, Registers.A.address());
+        program.instruction(OPCode.STORE.code(), 126, Registers.B.address());
+        program.instruction(OPCode.STORE.code(), 0b00_111_00, Registers.C.address());
+        program.instruction(OPCode.PUSH_GRA_MEM.code(), Registers.A.address(), Registers.B.address(), Registers.C.address());
+        program.instruction(OPCode.READ_GRA_MEM.code(), Registers.A.address(), Registers.B.address(), Registers.D.address());
+
+        drawText(program, "JAVAVCPU BOS", 20, 8, 2, 0b00_111_11);
+        drawText(program, "POWER ON SELF TEST", 8, 26, 1, 0b11_111_00);
+        drawText(program, "CPU OK", 18, 43, 1, 0b00_111_00);
+        drawText(program, "PAGE MAP OK", 18, 55, 1, 0b00_111_00);
+        drawText(program, "DISPLAY OK", 18, 67, 1, 0b00_111_00);
+        drawText(program, "POST PASSED", 20, 84, 2, 0b00_111_00);
+        drawText(program, "LOADING PROGRAM", 31, 106, 1, 0b00_111_11);
+        // Keep the presented POST frame on screen for about one second before booting the payload.
+        for (int frame = 0; frame < 1_000; frame++) {
+            program.instruction(OPCode.DISPLAY.code());
+        }
+        program.instruction(OPCode.STORE.code(), 0, Registers.H.address());
+        program.instruction(OPCode.STORE.code(), payloadFirstPage, Registers.G.address());
+        program.instruction(OPCode.CHANGE_PAGE_JUMP.code(), Registers.G.address(), Registers.H.address());
+        return program.finish();
+    }
+
     /** Computes {@code "hello I'm a cpu"}, then draws it with existing graphics bytecode. */
-    static final byte[][] PROGRAM_DISPLAY_HELLO_CPU = createDisplayHelloCpuProgram();
+    static final byte[][] PROGRAM_DISPLAY_HELLO_CPU = createDisplayHelloCpuProgram(0, -1);
 
-    private static byte[][] createDisplayHelloCpuProgram() {
+    private static byte[][] createDisplayHelloCpuProgram(int firstPage, int snowfallFirstPage) {
         List<byte[]> pages = new ArrayList<>();
-        pages.add(computeHelloCpuPage());
+        pages.add(computeHelloCpuPage(firstPage + 1));
 
-        TextProgramBuilder program = new TextProgramBuilder(1);
+        TextProgramBuilder program = new TextProgramBuilder(firstPage + 1);
         program.instruction(OPCode.CLEAR_GRA.code());
         program.instruction(OPCode.STORE.code(), 0b11_111_11, Registers.C.address()); // white
         program.instruction(OPCode.STORE.code(), 0, Registers.H.address()); // page-zero address
@@ -136,21 +195,31 @@ public class Programs {
             }
             x += 4;
         }
-        program.instruction(OPCode.DISPLAY.code());
-        program.instruction(OPCode.STOP.code());
+        if (snowfallFirstPage < 0) {
+            program.instruction(OPCode.DISPLAY.code());
+            program.instruction(OPCode.STOP.code());
+        } else {
+            // Leave the completed greeting visible before transferring to the animation page.
+            for (int frame = 0; frame < 1_000; frame++) {
+                program.instruction(OPCode.DISPLAY.code());
+            }
+            program.instruction(OPCode.STORE.code(), 0, Registers.H.address());
+            program.instruction(OPCode.STORE.code(), snowfallFirstPage, Registers.G.address());
+            program.instruction(OPCode.CHANGE_PAGE_JUMP.code(), Registers.G.address(), Registers.H.address());
+        }
         pages.addAll(Arrays.asList(program.finish()));
         return pages.toArray(byte[][]::new);
     }
 
-    /** Replaces HELLO_CPU's stop instruction with a jump to address zero on display page one. */
-    private static byte[] computeHelloCpuPage() {
+    /** Replaces HELLO_CPU's stop instruction with a jump to address zero on the display page. */
+    private static byte[] computeHelloCpuPage(int displayFirstPage) {
         int stopAddress = PROGRAM_HELLO_CPU.length - 1;
         byte[] page = Arrays.copyOf(PROGRAM_HELLO_CPU, PROGRAM_HELLO_CPU.length + 8);
         page[stopAddress] = OPCode.STORE.code();
         page[stopAddress + 1] = 0;
         page[stopAddress + 2] = Registers.H.address();
         page[stopAddress + 3] = OPCode.STORE.code();
-        page[stopAddress + 4] = 1;
+        page[stopAddress + 4] = (byte) displayFirstPage;
         page[stopAddress + 5] = Registers.G.address();
         page[stopAddress + 6] = OPCode.CHANGE_PAGE_JUMP.code();
         page[stopAddress + 7] = Registers.G.address();
@@ -164,17 +233,75 @@ public class Programs {
             case 'A' -> "010/101/111/101/101";
             case 'C' -> "111/100/100/100/111";
             case 'E' -> "111/100/110/100/111";
+            case 'G' -> "111/100/101/101/111";
             case 'H' -> "101/101/111/101/101";
             case 'I' -> "111/010/010/010/111";
+            case 'K' -> "101/101/110/101/101";
             case 'L' -> "100/100/100/100/111";
             case 'M' -> "101/111/111/101/101";
             case 'O' -> "111/101/101/101/111";
             case 'P' -> "110/101/110/100/100";
             case 'U' -> "101/101/101/101/111";
+            case 'W' -> "101/101/111/111/101";
             case '\'' -> "010/010/000/000/000";
             case ' ' -> null;
-            default -> throw new IllegalArgumentException("No display glyph for: " + character);
+            case 'B' -> "110/101/110/101/110";
+            case 'D' -> "110/101/101/101/110";
+            case 'F' -> "111/100/110/100/100";
+            case 'J' -> "001/001/001/101/010";
+            case 'N' -> "101/111/111/111/101";
+            case 'R' -> "110/101/110/101/101";
+            case 'S' -> "111/100/111/001/111";
+            case 'T' -> "111/010/010/010/010";
+            case 'V' -> "101/101/101/101/010";
+            case 'Y' -> "101/101/010/010/010";
+            case '0' -> "111/101/101/101/111";
+            case '1' -> "010/110/010/010/111";
+            case '2' -> "110/001/010/100/111";
+            case '3' -> "110/001/010/001/110";
+            case '4' -> "101/101/111/001/001";
+            case '5' -> "111/100/110/001/110";
+            case '6' -> "011/100/111/101/111";
+            case '7' -> "111/001/010/010/010";
+            case '8' -> "111/101/111/101/111";
+            case '9' -> "111/101/111/001/110";
+            default -> throw new IllegalArgumentException("No BOS glyph for: " + character);
         };
+    }
+
+    /** Emits pixel-writing bytecode for a three-by-five text string. */
+    private static void drawText(
+            TextProgramBuilder program,
+            String text,
+            int x,
+            int y,
+            int scale,
+            int color
+    ) {
+        program.instruction(OPCode.STORE.code(), color, Registers.C.address());
+        for (char character : text.toCharArray()) {
+            String glyph = glyph(character);
+            if (glyph != null) {
+                String[] rows = glyph.split("/");
+                for (int row = 0; row < rows.length; row++) {
+                    for (int column = 0; column < rows[row].length(); column++) {
+                        if (rows[row].charAt(column) == '1') {
+                            for (int yOffset = 0; yOffset < scale; yOffset++) {
+                                for (int xOffset = 0; xOffset < scale; xOffset++) {
+                                    program.instruction(OPCode.STORE.code(), x + column * scale + xOffset,
+                                            Registers.A.address());
+                                    program.instruction(OPCode.STORE.code(), y + row * scale + yOffset,
+                                            Registers.B.address());
+                                    program.instruction(OPCode.PUSH_GRA_MEM.code(), Registers.A.address(),
+                                            Registers.B.address(), Registers.C.address());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            x += 4 * scale;
+        }
     }
 
     /** Builds fixed-size pages of existing bytecode instructions for the display-text program. */
@@ -220,35 +347,45 @@ public class Programs {
             OPCode.STORE.code(), 0, Registers.A.address(),                             // 1: current row
             OPCode.STORE.code(), 0, Registers.B.address(),                             // 4: current column
             OPCode.STORE.code(), 1, Registers.C.address(),                             // 7: increment
-            OPCode.STORE.code(), 0b11_111_11, Registers.D.address(),                   // 10: white and final coordinate
-            OPCode.STORE.code(), 0, Registers.E.address(),                             // 13: black
+            OPCode.STORE.code(), 0b11_111_11, Registers.D.address(),                   // 10: white
+            OPCode.STORE.code(), 127, Registers.G.address(),                           // 13: final coordinate
+            OPCode.STORE.code(), 0, Registers.E.address(),                             // 16: black
 
-            OPCode.STORE.code(), 0b11_111_11, Registers.D.address(),                   // 16: restore white
+            OPCode.STORE.code(), 0b11_111_11, Registers.D.address(),                   // 19: restore white
             OPCode.PUSH_GRA_MEM.code(), Registers.B.address(), Registers.A.address(),
-                    Registers.D.address(),                                              // 19: draw falling flake
-            OPCode.COND_JUMP.code(), Registers.A.address(), Registers.D.address(), 39, // 23: bottom row
-            OPCode.ADD.code(), Registers.A.address(), Registers.C.address(), Registers.F.address(), // 27: row below
+                    Registers.D.address(),                                              // 22: draw falling flake
+            OPCode.COND_JUMP.code(), Registers.A.address(), Registers.G.address(), 42, // 26: bottom row
+            OPCode.ADD.code(), Registers.A.address(), Registers.C.address(), Registers.F.address(), // 30: row below
             OPCode.READ_GRA_MEM.code(), Registers.B.address(), Registers.F.address(),
-                    Registers.D.address(),                                              // 31: color below
-            OPCode.COND_JUMP.code(), Registers.D.address(), Registers.E.address(), 58, // 35: fall if black
+                    Registers.D.address(),                                              // 34: color below
+            OPCode.COND_JUMP.code(), Registers.D.address(), Registers.E.address(), 61, // 38: fall if black
 
-            OPCode.STORE.code(), 0, Registers.A.address(),                             // 39: settle and respawn
-            OPCode.COND_JUMP.code(), Registers.B.address(), Registers.D.address(), 52, // 42: reset column after 127
-            OPCode.ADD.code(), Registers.B.address(), Registers.C.address(), Registers.B.address(), // 46
-            OPCode.JMP.code(), 55,                                                      // 50
-            OPCode.STORE.code(), 0, Registers.B.address(),                              // 52
-            OPCode.DISPLAY.code(),                                                      // 55
-            OPCode.JMP.code(), 16,                                                      // 56
+            OPCode.STORE.code(), 0, Registers.A.address(),                             // 42: settle and respawn
+            OPCode.COND_JUMP.code(), Registers.B.address(), Registers.G.address(), 55, // 45: reset column after 127
+            OPCode.ADD.code(), Registers.B.address(), Registers.C.address(), Registers.B.address(), // 49
+            OPCode.JMP.code(), 58,                                                      // 53
+            OPCode.STORE.code(), 0, Registers.B.address(),                             // 55
+            OPCode.DISPLAY.code(),                                                      // 58
+            OPCode.JMP.code(), 19,                                                      // 59
 
-            OPCode.SUB.code(), Registers.F.address(), Registers.C.address(), Registers.A.address(), // 58: restore current row
+            OPCode.SUB.code(), Registers.F.address(), Registers.C.address(), Registers.A.address(), // 61: restore current row
             OPCode.PUSH_GRA_MEM.code(), Registers.B.address(), Registers.A.address(),
-                    Registers.E.address(),                                              // 62: erase previous flake position
-            OPCode.ADD.code(), Registers.A.address(), Registers.C.address(), Registers.A.address(), // 66: move down
-            OPCode.STORE.code(), 0b11_111_11, Registers.D.address(),                   // 70
+                    Registers.E.address(),                                              // 65: erase previous flake position
+            OPCode.ADD.code(), Registers.A.address(), Registers.C.address(), Registers.A.address(), // 69: move down
+            OPCode.STORE.code(), 0b11_111_11, Registers.D.address(),                   // 73
             OPCode.PUSH_GRA_MEM.code(), Registers.B.address(), Registers.A.address(),
-                    Registers.D.address(),                                              // 73: draw moved flake
-            OPCode.JMP.code(), 55                                                       // 77
+                    Registers.D.address(),                                              // 76: draw moved flake
+            OPCode.JMP.code(), 58                                                       // 80
     };
+
+    /**
+     * Boot program loaded at page zero. Its POST screen occupies consecutive pages and transfers
+     * to the display demo, which in turn starts the snowfall program on its own page.
+     *
+     * <p>This declaration follows {@link #PROGRAM_SNOWFALL} so the boot image can include the
+     * fully initialized snowfall bytecode.</p>
+     */
+    static final byte[][] PROGRAM_BOS_POST = createBosPostProgram();
 
     /**
      * First page of the paged-memory example. It stores {@code 11} at address {@code 120}, then
