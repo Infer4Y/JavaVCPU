@@ -5,11 +5,17 @@
 
 package xyz.ignite4inferneo;
 
+import java.io.ByteArrayOutputStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 /** Provides the sample bytecode programs that can be loaded into virtual memory. */
 public class Programs {
     /** Names the built-in programs supported by {@link #load(Program)}. */
     public enum Program {
         HELLO_CPU,
+        DISPLAY_HELLO_CPU,
         LOOP_127_3,
         PAGED_MEMORY,
         SNOWFALL
@@ -23,6 +29,7 @@ public class Programs {
     public static void load(Program program) {
         switch (program) {
             case HELLO_CPU -> upload(PROGRAM_HELLO_CPU, (byte) 0);
+            case DISPLAY_HELLO_CPU -> uploadPages(PROGRAM_DISPLAY_HELLO_CPU);
             case LOOP_127_3 -> upload(PROGRAM_LOOP_127_3, (byte) 0);
             case PAGED_MEMORY -> {
                 upload(PROGRAM_PAGED_MEMORY_PAGE_0, (byte) 0);
@@ -39,6 +46,13 @@ public class Programs {
     /** Copies a program to the beginning of one memory page. */
     private static void upload(byte[] program, byte page) {
         System.arraycopy(program, 0, Memory.getMemoryPage(page), 0, program.length);
+    }
+
+    /** Copies consecutive program pages into virtual memory starting at page zero. */
+    private static void uploadPages(byte[][] pages) {
+        for (int page = 0; page < pages.length; page++) {
+            upload(pages[page], (byte) page);
+        }
     }
 
     /**
@@ -90,6 +104,113 @@ public class Programs {
             OPCode.STOP.code()
     };
 
+    /** Computes {@code "hello I'm a cpu"}, then draws it with existing graphics bytecode. */
+    static final byte[][] PROGRAM_DISPLAY_HELLO_CPU = createDisplayHelloCpuProgram();
+
+    private static byte[][] createDisplayHelloCpuProgram() {
+        List<byte[]> pages = new ArrayList<>();
+        pages.add(computeHelloCpuPage());
+
+        TextProgramBuilder program = new TextProgramBuilder(1);
+        program.instruction(OPCode.CLEAR_GRA.code());
+        program.instruction(OPCode.STORE.code(), 0b11_111_11, Registers.C.address()); // white
+        program.instruction(OPCode.STORE.code(), 0, Registers.H.address()); // page-zero address
+
+        int x = 17;
+        for (char character : "hello I'm a cpu".toCharArray()) {
+            String glyph = glyph(character);
+            if (glyph == null) {
+                x += 2;
+                continue;
+            }
+            String[] rows = glyph.split("/");
+            for (int row = 0; row < rows.length; row++) {
+                program.instruction(OPCode.STORE.code(), 55 + row, Registers.B.address());
+                for (int column = 0; column < rows[row].length(); column++) {
+                    if (rows[row].charAt(column) == '1') {
+                        program.instruction(OPCode.STORE.code(), x + column, Registers.A.address());
+                        program.instruction(OPCode.PUSH_GRA_MEM.code(), Registers.A.address(),
+                                Registers.B.address(), Registers.C.address());
+                    }
+                }
+            }
+            x += 4;
+        }
+        program.instruction(OPCode.DISPLAY.code());
+        program.instruction(OPCode.STOP.code());
+        pages.addAll(Arrays.asList(program.finish()));
+        return pages.toArray(byte[][]::new);
+    }
+
+    /** Replaces HELLO_CPU's stop instruction with a jump to address zero on display page one. */
+    private static byte[] computeHelloCpuPage() {
+        int stopAddress = PROGRAM_HELLO_CPU.length - 1;
+        byte[] page = Arrays.copyOf(PROGRAM_HELLO_CPU, PROGRAM_HELLO_CPU.length + 8);
+        page[stopAddress] = OPCode.STORE.code();
+        page[stopAddress + 1] = 0;
+        page[stopAddress + 2] = Registers.H.address();
+        page[stopAddress + 3] = OPCode.STORE.code();
+        page[stopAddress + 4] = 1;
+        page[stopAddress + 5] = Registers.G.address();
+        page[stopAddress + 6] = OPCode.CHANGE_PAGE_JUMP.code();
+        page[stopAddress + 7] = Registers.G.address();
+        page[stopAddress + 8] = Registers.H.address();
+        return page;
+    }
+
+    /** Returns a three-by-five glyph layout for the bytecode pixel writer. */
+    private static String glyph(char character) {
+        return switch (Character.toUpperCase(character)) {
+            case 'A' -> "010/101/111/101/101";
+            case 'C' -> "111/100/100/100/111";
+            case 'E' -> "111/100/110/100/111";
+            case 'H' -> "101/101/111/101/101";
+            case 'I' -> "111/010/010/010/111";
+            case 'L' -> "100/100/100/100/111";
+            case 'M' -> "101/111/111/101/101";
+            case 'O' -> "111/101/101/101/111";
+            case 'P' -> "110/101/110/100/100";
+            case 'U' -> "101/101/101/101/111";
+            case '\'' -> "010/010/000/000/000";
+            case ' ' -> null;
+            default -> throw new IllegalArgumentException("No display glyph for: " + character);
+        };
+    }
+
+    /** Builds fixed-size pages of existing bytecode instructions for the display-text program. */
+    private static final class TextProgramBuilder {
+        private static final int PAGE_SIZE = 256;
+        private static final int PAGE_JUMP_SIZE = 6;
+        private final int firstPage;
+        private final List<byte[]> pages = new ArrayList<>();
+        private ByteArrayOutputStream page = new ByteArrayOutputStream(PAGE_SIZE);
+
+        TextProgramBuilder(int firstPage) {
+            this.firstPage = firstPage;
+        }
+
+        void instruction(int... bytes) {
+            if (page.size() + bytes.length + PAGE_JUMP_SIZE > PAGE_SIZE) {
+                page.write(OPCode.STORE.code());
+                page.write(firstPage + pages.size() + 1);
+                page.write(Registers.G.address());
+                page.write(OPCode.CHANGE_PAGE_JUMP.code());
+                page.write(Registers.G.address());
+                page.write(Registers.H.address());
+                pages.add(page.toByteArray());
+                page = new ByteArrayOutputStream(PAGE_SIZE);
+            }
+            for (int value : bytes) {
+                page.write(value);
+            }
+        }
+
+        byte[][] finish() {
+            pages.add(page.toByteArray());
+            return pages.toArray(byte[][]::new);
+        }
+    }
+
     /**
      * Animates a white snowflake that falls until it reaches the bottom or an occupied pixel.
      * Settled flakes remain in the framebuffer, building a snowbank across all 128 columns.
@@ -115,7 +236,7 @@ public class Programs {
             OPCode.COND_JUMP.code(), Registers.B.address(), Registers.D.address(), 52, // 42: reset column after 127
             OPCode.ADD.code(), Registers.B.address(), Registers.C.address(), Registers.B.address(), // 46
             OPCode.JMP.code(), 55,                                                      // 50
-            OPCode.STORE.code(), 0, Registers.B.address(),                            // 52
+            OPCode.STORE.code(), 0, Registers.B.address(),                              // 52
             OPCode.DISPLAY.code(),                                                      // 55
             OPCode.JMP.code(), 16,                                                      // 56
 

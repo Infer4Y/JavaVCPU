@@ -14,7 +14,7 @@ package xyz.ignite4inferneo;
  */
 public class Main {
     /**
-     * The CPU register file: A through F are general-purpose registers, followed by the instruction
+     * The CPU register file: A through H are general-purpose registers, followed by the instruction
      * counter and active memory page.
      */
     static byte[] REGISTERS = new byte[] {
@@ -24,12 +24,14 @@ public class Main {
             0, // D
             0, // E
             0, // F
+            0, // G
+            0, // H
             0, // COUNTER
             0  // MEMORY PAGE
         };
 
-    /** The currently selected 128-byte memory page. */
-    static byte[] MEMORY = new byte[128];
+    /** The currently selected 256-byte memory page. */
+    static byte[] MEMORY = new byte[256];
 
     /** Whether the instruction-dispatch loop should continue executing. */
     static boolean running = true;
@@ -50,7 +52,7 @@ public class Main {
 
         cpuStartTime = System.currentTimeMillis();
 
-        Programs.load(Programs.Program.SNOWFALL);
+        Programs.load(Programs.Program.DISPLAY_HELLO_CPU);
 
         while (running) {
             int counter = getProgramCounter();
@@ -133,7 +135,10 @@ public class Main {
             byte b,
             byte register
     ) {
-        REGISTERS[register] = (byte) (REGISTERS[a] + REGISTERS[b]);
+        int A = Byte.toUnsignedInt(a);
+        int B = Byte.toUnsignedInt(b);
+        int Register = Byte.toUnsignedInt(register);
+        REGISTERS[Register] = (byte) (REGISTERS[B] + REGISTERS[A]);
 
         incrementCounter(OPCode.ADD.length());
     }
@@ -144,7 +149,10 @@ public class Main {
             byte b,
             byte register
     ) {
-        REGISTERS[register] = (byte) (REGISTERS[a] - REGISTERS[b]);
+        int A = Byte.toUnsignedInt(a);
+        int B = Byte.toUnsignedInt(b);
+        int Register = Byte.toUnsignedInt(register);
+        REGISTERS[Register] = (byte) (REGISTERS[A] - REGISTERS[B]);
 
         incrementCounter(OPCode.SUB.length());
     }
@@ -154,7 +162,8 @@ public class Main {
             byte value,
             byte register
     ) {
-        REGISTERS[register] = value;
+        int Register = Byte.toUnsignedInt(register);
+        REGISTERS[Register] = value;
 
         incrementCounter(OPCode.STORE.length());
     }
@@ -165,7 +174,9 @@ public class Main {
     }
 
     /** Jumps to a literal address when two registers contain equal values. */
-    public static void cond_jump(byte A, byte B, byte address) {
+    public static void cond_jump(byte a, byte b, byte address) {
+        int A = Byte.toUnsignedInt(a);
+        int B = Byte.toUnsignedInt(b);
         if (REGISTERS[A] == REGISTERS[B]) {
             REGISTERS[Registers.COUNTER.address()] = address;
         } else {
@@ -181,40 +192,57 @@ public class Main {
 
     /** Prints a register's signed byte value and advances the counter. */
     public static void output(byte register) {
+        int Register = Byte.toUnsignedInt(register);
         IO.println(
-                REGISTERS[register]
+                REGISTERS[Register]
         );
         incrementCounter(OPCode.OUTPUT.length());
     }
 
     /** Loads a byte from a literal address in the active page into a register. */
-    public static void loadMemory(byte A, byte B) {
+    public static void loadMemory(byte a, byte b) {
+        int A = Byte.toUnsignedInt(a);
+        int B = Byte.toUnsignedInt(b);
+
         REGISTERS[A] = MEMORY[B];
 
         incrementCounter(OPCode.LOAD_MEM.length());
     }
 
     /** Stores a register value at a literal address in the active page. */
-    public static void storeMemory(byte A, byte B) {
+    public static void storeMemory(byte a, byte b) {
+        int A = Byte.toUnsignedInt(a);
+        int B = Byte.toUnsignedInt(b);
+
         MEMORY[B] = REGISTERS[A];
 
         incrementCounter(OPCode.STORE_MEM.length());
     }
 
     /** Selects the page stored in a register and advances the counter. */
-    public static void changePage(byte A){
+    public static void changePage(byte a){
+
+        int A = Byte.toUnsignedInt(a);
+
         REGISTERS[Registers.PAGE.address()] = REGISTERS[A];
         incrementCounter(OPCode.CHANGE_PAGE.length());
     }
 
     /** Selects a page and sets the counter from a second register. */
-    public static void changePageJump(byte A, byte B){
+    public static void changePageJump(byte a, byte b){
+        int A = Byte.toUnsignedInt(a);
+        int B = Byte.toUnsignedInt(b);
+
         REGISTERS[Registers.PAGE.address()] = REGISTERS[A];
         REGISTERS[Registers.COUNTER.address()] = REGISTERS[B];
     }
 
     /** Selects a page and jumps when two registers contain equal values. */
-    public static void changePageCondJump(byte A, byte B, byte C, byte address) {
+    public static void changePageCondJump(byte a, byte b, byte c, byte address) {
+        int A = Byte.toUnsignedInt(a);
+        int B = Byte.toUnsignedInt(b);
+        int C = Byte.toUnsignedInt(c);
+
         if (REGISTERS[B] == REGISTERS[C]) {
             REGISTERS[Registers.PAGE.address()] = REGISTERS[A];
             REGISTERS[Registers.COUNTER.address()] = address;
@@ -240,8 +268,12 @@ public class Main {
     }
 
     /** Writes a pixel using x, y, and color values from three registers, then advances the counter. */
-    public static void pushGraphicsMemory(byte A, byte B, byte color) {
-        Monitor.pushMemory(REGISTERS[A], REGISTERS[B], REGISTERS[color]);
+    public static void pushGraphicsMemory(byte a, byte b, byte color) {
+        int A = Byte.toUnsignedInt(a);
+        int B = Byte.toUnsignedInt(b);
+        int Color = Byte.toUnsignedInt(color);
+
+        Monitor.pushMemory(REGISTERS[A], REGISTERS[B], REGISTERS[Color]);
         incrementCounter(OPCode.PUSH_GRA_MEM.length());
     }
 
@@ -249,8 +281,12 @@ public class Main {
      * Reads the palette value at coordinates held in two registers into a destination register,
      * then advances the counter.
      */
-    public static void pullGraphicsMemory(byte A, byte B, byte target) {
-        REGISTERS[target] = Monitor.fetchMemory(REGISTERS[A], REGISTERS[B]);
+    public static void pullGraphicsMemory(byte a, byte b, byte target) {
+        int A = Byte.toUnsignedInt(a);
+        int B = Byte.toUnsignedInt(b);
+        int Target = Byte.toUnsignedInt(target);
+
+        REGISTERS[Target] = Monitor.fetchMemory(REGISTERS[A], REGISTERS[B]);
         incrementCounter(OPCode.READ_GRA_MEM.length());
     }
 }
