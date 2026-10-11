@@ -9,20 +9,24 @@ import javax.swing.*;
 import module java.desktop;
 
 /**
- * Provides the virtual CPU's 128-by-128-pixel framebuffer and scaled Swing display.
+ * Provides the virtual CPU's 256-by-256-pixel framebuffer and scaled Swing display.
  *
  * <p>Graphics instructions update an off-screen framebuffer through {@link #pushMemory(byte, byte,
  * byte)}. Call {@link #display()} to schedule the completed framebuffer for painting in the Swing
- * window. The window renders the framebuffer at 512 by 512 pixels with nearest-neighbor scaling.
+ * window. The window renders the framebuffer at 800 by 800 pixels with nearest-neighbor scaling.
  * A color operand uses seven bits in {@code RRGGGBB} order: red and blue each have four intensity
  * levels, and green has eight.</p>
  */
 public class Monitor {
+    /** Width and height of the byte-addressable framebuffer. */
+    public static final int FRAMEBUFFER_SIZE = 256;
+
     /** The Swing window used to present the framebuffer. */
     private static JFrame display;
 
-    /** The 128-by-128 framebuffer updated by the virtual CPU. */
-    private static final BufferedImage buffer = new BufferedImage(128, 128, BufferedImage.TYPE_INT_RGB);
+    /** The 256-by-256 framebuffer updated by the virtual CPU. */
+    private static final BufferedImage buffer = new BufferedImage(
+            FRAMEBUFFER_SIZE, FRAMEBUFFER_SIZE, BufferedImage.TYPE_INT_RGB);
 
     /** Guards framebuffer updates while Swing paints the image. */
     private static final Object bufferLock = new Object();
@@ -41,7 +45,7 @@ public class Monitor {
     };
 
     /**
-     * Creates and shows the 512-by-512 display window.
+     * Creates and shows the scaled display window.
      *
      * <p>This method must be called before {@link #display()} presents the framebuffer.</p>
      */
@@ -52,8 +56,9 @@ public class Monitor {
             }
 
             display = new JFrame("JavaVCPU display out");
-            displayPanel.setPreferredSize(new Dimension(512, 512));
+            displayPanel.setPreferredSize(new Dimension(800, 800));
             display.setContentPane(displayPanel);
+            Input.installMouse(displayPanel);
             display.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
             display.pack();
             display.setVisible(true);
@@ -75,14 +80,14 @@ public class Monitor {
     /**
      * Stores a palette color at one framebuffer pixel.
      *
-     * @param x horizontal pixel coordinate, from {@code 0} through {@code 127}
-     * @param y vertical pixel coordinate, from {@code 0} through {@code 127}
+     * @param x horizontal pixel coordinate, from {@code 0} through {@code 255}
+     * @param y vertical pixel coordinate, from {@code 0} through {@code 255}
      * @param color seven-bit palette value encoded as {@code RRGGGBB}
      * @throws ArrayIndexOutOfBoundsException if either coordinate is outside the framebuffer
      */
     public static void pushMemory(byte x, byte y, byte color){
         synchronized (bufferLock) {
-            buffer.setRGB(x, y, getRGB(color));
+            buffer.setRGB(Byte.toUnsignedInt(x), Byte.toUnsignedInt(y), getRGB(color));
         }
     }
 
@@ -134,14 +139,14 @@ public class Monitor {
     /**
      * Returns the palette color stored at one framebuffer pixel.
      *
-     * @param x horizontal pixel coordinate, from {@code 0} through {@code 127}
-     * @param y vertical pixel coordinate, from {@code 0} through {@code 127}
+     * @param x horizontal pixel coordinate, from {@code 0} through {@code 255}
+     * @param y vertical pixel coordinate, from {@code 0} through {@code 255}
      * @return seven-bit palette value encoded as {@code RRGGGBB}
      * @throws ArrayIndexOutOfBoundsException if either coordinate is outside the framebuffer
      */
     public static byte fetchMemory(byte x, byte y) {
         synchronized (bufferLock) {
-            return rgbToByte(buffer.getRGB(x, y));
+            return rgbToByte(buffer.getRGB(Byte.toUnsignedInt(x), Byte.toUnsignedInt(y)));
         }
     }
 

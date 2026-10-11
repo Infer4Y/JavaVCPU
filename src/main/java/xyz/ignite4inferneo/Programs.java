@@ -14,7 +14,9 @@ import java.util.List;
 public class Programs {
     /** Names the built-in programs supported by {@link #load(Program)}. */
     public enum Program {
-        BOS_POST,
+        BIOS_POST,
+        DEMO_OS,
+        PERIPHERAL_DIAGNOSTICS,
         HELLO_CPU,
         DISPLAY_HELLO_CPU,
         LOOP_127_3,
@@ -29,7 +31,9 @@ public class Programs {
      */
     public static void load(Program program) {
         switch (program) {
-            case BOS_POST -> uploadPages(PROGRAM_BOS_POST);
+            case BIOS_POST -> uploadPages(PROGRAM_BIOS_POST);
+            case DEMO_OS -> uploadPages(PROGRAM_DEMO_OS);
+            case PERIPHERAL_DIAGNOSTICS -> upload(PROGRAM_PERIPHERAL_DIAGNOSTICS, (byte) 0);
             case HELLO_CPU -> upload(PROGRAM_HELLO_CPU, (byte) 0);
             case DISPLAY_HELLO_CPU -> uploadPages(PROGRAM_DISPLAY_HELLO_CPU);
             case LOOP_127_3 -> upload(PROGRAM_LOOP_127_3, (byte) 0);
@@ -106,37 +110,34 @@ public class Programs {
             OPCode.STOP.code()
     };
 
-    private static byte[][] createBosPostProgram() {
+    /** Builds the boot image: BIOS POST followed by the resident DOS-like monitor. */
+    private static byte[][] createBiosPostProgram() {
         int payloadFirstPage = 0;
-        int snowfallFirstPage = 0;
-        byte[][] bosPages;
+        byte[][] biosPages;
         byte[][] payloadPages;
         do {
-            bosPages = createBosPostPages(payloadFirstPage);
-            int requiredPayloadFirstPage = bosPages.length;
-            payloadPages = createDisplayHelloCpuProgram(requiredPayloadFirstPage, snowfallFirstPage);
-            int requiredSnowfallFirstPage = requiredPayloadFirstPage + payloadPages.length;
-            if (requiredPayloadFirstPage == payloadFirstPage
-                    && requiredSnowfallFirstPage == snowfallFirstPage) {
+            biosPages = createBiosPostPages(payloadFirstPage);
+            int requiredPayloadFirstPage = biosPages.length;
+            payloadPages = createMicroDosProgram(requiredPayloadFirstPage);
+            if (requiredPayloadFirstPage == payloadFirstPage) {
                 break;
             }
             payloadFirstPage = requiredPayloadFirstPage;
-            snowfallFirstPage = requiredSnowfallFirstPage;
         } while (true);
 
-        byte[][] image = Arrays.copyOf(bosPages, bosPages.length + payloadPages.length + 1);
-        System.arraycopy(payloadPages, 0, image, bosPages.length, payloadPages.length);
-        image[snowfallFirstPage] = PROGRAM_SNOWFALL;
+        byte[][] image = Arrays.copyOf(biosPages, biosPages.length + payloadPages.length);
+        System.arraycopy(payloadPages, 0, image, biosPages.length, payloadPages.length);
         return image;
     }
 
-    private static byte[][] createBosPostPages(int payloadFirstPage) {
+    /** Creates the BIOS power-on self-test and transfers control to the demo OS. */
+    private static byte[][] createBiosPostPages(int payloadFirstPage) {
         TextProgramBuilder program = new TextProgramBuilder(0);
         program.instruction(OPCode.CLEAR_GRA.code());
         program.instruction(OPCode.STORE.code(), 0, Registers.H.address());
 
         // Exercise the processor and graphics readback before reporting POST. Page transitions are
-        // exercised by the generated display code itself as it crosses the BOS page boundaries.
+        // exercised by the generated display code itself as it crosses the BIOS page boundaries.
         program.instruction(OPCode.STORE.code(), 0x55, Registers.A.address());
         program.instruction(OPCode.STORE.code(), 0x55, Registers.B.address());
         program.instruction(OPCode.ADD.code(), Registers.A.address(), Registers.B.address(), Registers.C.address());
@@ -146,15 +147,15 @@ public class Programs {
         program.instruction(OPCode.PUSH_GRA_MEM.code(), Registers.A.address(), Registers.B.address(), Registers.C.address());
         program.instruction(OPCode.READ_GRA_MEM.code(), Registers.A.address(), Registers.B.address(), Registers.D.address());
 
-        drawText(program, "JAVAVCPU BOS", 20, 8, 2, 0b00_111_11);
+        drawText(program, "JAVAVCPU BIOS", 16, 8, 2, 0b00_111_11);
         drawText(program, "POWER ON SELF TEST", 8, 26, 1, 0b11_111_00);
         drawText(program, "CPU OK", 18, 43, 1, 0b00_111_00);
         drawText(program, "PAGE MAP OK", 18, 55, 1, 0b00_111_00);
         drawText(program, "DISPLAY OK", 18, 67, 1, 0b00_111_00);
         drawText(program, "POST PASSED", 20, 84, 2, 0b00_111_00);
-        drawText(program, "LOADING PROGRAM", 31, 106, 1, 0b00_111_11);
-        // Keep the presented POST frame on screen for about one second before booting the payload.
-        for (int frame = 0; frame < 1_000; frame++) {
+        drawText(program, "BOOTING DEMO OS", 27, 106, 1, 0b00_111_11);
+        // Keep the presented POST frame on screen for about one second before booting the monitor.
+        for (int frame = 0; frame < 30; frame++) {
             program.instruction(OPCode.DISPLAY.code());
         }
         program.instruction(OPCode.STORE.code(), 0, Registers.H.address());
@@ -163,8 +164,292 @@ public class Programs {
         return program.finish();
     }
 
-    /** Computes {@code "hello I'm a cpu"}, then draws it with existing graphics bytecode. */
+    /** Resident opcode-only CP/M-style command environment. */
+    static final byte[][] PROGRAM_DEMO_OS = createMicroDosProgram(0);
+
+    /** @deprecated Use {@link #PROGRAM_DEMO_OS}; retained for the original display sample name. */
+    @Deprecated
     static final byte[][] PROGRAM_DISPLAY_HELLO_CPU = createDisplayHelloCpuProgram(0, -1);
+
+    /**
+     * Builds JVCPM: a small, opcode-only CP/M/DOS-style command environment.
+     *
+     * <p>The directory and file bytes live at storage addresses {@code 01:yy:yy}.  That form is
+     * intentional: it is addressable by the storage instructions exactly as they are implemented.
+     * The command pages only emit VCPU instructions; Java is used solely to assemble those pages.
+     * {@code R} is a real loader: it copies HELLO COM's nine disk bytes to RAM and jumps to them.</p>
+     */
+    private static byte[][] createMicroDosProgram(int firstPage) {
+        int helpPage = firstPage;
+        int directoryPage = firstPage;
+        int createPage = firstPage;
+        int writePage = firstPage;
+        int typePage = firstPage;
+        int deletePage = firstPage;
+        int runPage = firstPage;
+        int runnerPage = firstPage;
+        byte[][] home;
+        byte[][] help;
+        byte[][] directory;
+        byte[][] create;
+        byte[][] write;
+        byte[][] type;
+        byte[][] delete;
+        byte[][] run;
+        byte[] runner;
+        byte[][] parser;
+        while (true) {
+            int parserPage = runnerPage + 1;
+            home = buildPromptScreen(firstPage, parserPage);
+            help = buildScreen(helpPage, new String[] {"HELP", "DIR NEW PUT", "CAT DEL RUN", "HLP B HOME"},
+                    jump('B', firstPage));
+            directory = buildScreen(directoryPage, new String[] {"DIR", "HELLO COM", "NOTES TXT", "B HOME"}, jump('B', firstPage));
+            create = buildScreenWithPrefix(createPage, createHelloCom(runPage),
+                    new String[] {"CREATED", "HELLO COM", "B HOME"}, jump('B', firstPage));
+            write = buildScreenWithPrefix(writePage, writeNotes(),
+                    new String[] {"WRITTEN", "NOTES TXT", "B HOME"}, jump('B', firstPage));
+            type = buildScreenWithPrefix(typePage, readNotes(firstPage),
+                    new String[] {"READ", "HELLO FROM DISK", "B HOME"}, jump('B', firstPage));
+            delete = buildScreenWithPrefix(deletePage, deleteFiles(),
+                    new String[] {"DELETED", "FILES", "B HOME"}, jump('B', firstPage));
+            run = buildScreen(runPage, new String[] {"HELLO COM", "EXECUTED", "B HOME ESC"}, jump('B', firstPage));
+            runner = buildRunnerPage(firstPage, runPage);
+            parser = buildCommandParser(parserPage, firstPage, helpPage, directoryPage, createPage, writePage,
+                    typePage, deletePage, runnerPage);
+            int nextHelp = firstPage + home.length;
+            int nextDirectory = nextHelp + help.length;
+            int nextCreate = nextDirectory + directory.length;
+            int nextWrite = nextCreate + create.length;
+            int nextType = nextWrite + write.length;
+            int nextDelete = nextType + type.length;
+            int nextRun = nextDelete + delete.length;
+            int nextRunner = nextRun + run.length;
+            if (helpPage == nextHelp && directoryPage == nextDirectory && createPage == nextCreate && writePage == nextWrite
+                    && typePage == nextType && deletePage == nextDelete && runPage == nextRun
+                    && runnerPage == nextRunner) break;
+            helpPage = nextHelp;
+            directoryPage = nextDirectory;
+            createPage = nextCreate;
+            writePage = nextWrite;
+            typePage = nextType;
+            deletePage = nextDelete;
+            runPage = nextRun;
+            runnerPage = nextRunner;
+        }
+
+        byte[][] image = new byte[home.length + help.length + directory.length + create.length + write.length + type.length
+                + delete.length + run.length + 1 + parser.length][];
+        int offset = 0;
+        for (byte[][] screen : new byte[][][] {home, help, directory, create, write, type, delete, run}) {
+            System.arraycopy(screen, 0, image, offset, screen.length);
+            offset += screen.length;
+        }
+        image[offset] = runner;
+        offset++;
+        System.arraycopy(parser, 0, image, offset, parser.length);
+        return image;
+    }
+
+    private record MenuAction(int key, int[] bytes, boolean returnToPoll) { }
+
+    private static MenuAction jump(int key, int page) {
+        return new MenuAction(key, new int[] {OPCode.STORE.code(), page, Registers.G.address(), OPCode.STORE.code(), 0, Registers.H.address(), OPCode.CHANGE_PAGE_JUMP.code(), Registers.G.address(), Registers.H.address()}, false);
+    }
+
+    private static int[] createHelloCom(int runPage) {
+        // HELLO COM contains STORE run-page,G; STORE 0,H; CHANGE_PAGE_JUMP G,H.
+        return storageWrites(40, new int[] {'H', 2, runPage, Registers.G.address(), 2, 0,
+                Registers.H.address(), 10, Registers.G.address(), Registers.H.address()});
+    }
+
+    private static int[] writeNotes() {
+        return storageWrites(60, "NHELLO FROM DISK".chars().toArray());
+    }
+
+    private static int[] readNotes(int homePage) {
+        // A deleted directory entry returns to the command page instead of exposing stale bytes.
+        int[] bytes = new int[27 + 15 * 8];
+        int index = 0;
+        bytes[index++] = OPCode.STORE.code(); bytes[index++] = 1; bytes[index++] = Registers.A.address();
+        bytes[index++] = OPCode.STORE.code(); bytes[index++] = 60; bytes[index++] = Registers.B.address();
+        bytes[index++] = OPCode.READ_BYTE_FROM_STORAGE.code(); bytes[index++] = Registers.A.address();
+        bytes[index++] = Registers.B.address(); bytes[index++] = Registers.B.address(); bytes[index++] = Registers.D.address();
+        bytes[index++] = OPCode.STORE.code(); bytes[index++] = 'N'; bytes[index++] = Registers.C.address();
+        bytes[index++] = OPCode.COND_JUMP.code(); bytes[index++] = Registers.D.address(); bytes[index++] = Registers.C.address(); bytes[index++] = 27;
+        bytes[index++] = OPCode.STORE.code(); bytes[index++] = homePage; bytes[index++] = Registers.G.address();
+        bytes[index++] = OPCode.STORE.code(); bytes[index++] = 0; bytes[index++] = Registers.H.address();
+        bytes[index++] = OPCode.CHANGE_PAGE_JUMP.code(); bytes[index++] = Registers.G.address(); bytes[index++] = Registers.H.address();
+        for (int address = 61; address <= 75; address++) {
+            bytes[index++] = OPCode.STORE.code(); bytes[index++] = address; bytes[index++] = Registers.B.address();
+            bytes[index++] = OPCode.READ_BYTE_FROM_STORAGE.code(); bytes[index++] = Registers.A.address();
+            bytes[index++] = Registers.B.address(); bytes[index++] = Registers.B.address(); bytes[index++] = Registers.D.address();
+        }
+        return bytes;
+    }
+
+    private static int[] deleteFiles() {
+        return concat(storageWrites(40, new int[] {0}), storageWrites(60, new int[] {0}));
+    }
+
+    private static int[] storageWrites(int firstAddress, int[] values) {
+        int[] bytes = new int[values.length * 11];
+        int index = 0;
+        for (int offset = 0; offset < values.length; offset++) {
+            bytes[index++] = OPCode.STORE.code(); bytes[index++] = firstAddress + offset; bytes[index++] = Registers.B.address();
+            bytes[index++] = OPCode.STORE.code(); bytes[index++] = values[offset]; bytes[index++] = Registers.D.address();
+            bytes[index++] = OPCode.WRITE_BYTE_TO_STORAGE.code(); bytes[index++] = Registers.A.address();
+            bytes[index++] = Registers.B.address(); bytes[index++] = Registers.B.address(); bytes[index++] = Registers.D.address();
+        }
+        return withStorageBank(bytes);
+    }
+
+    private static int[] withStorageBank(int[] body) {
+        int[] prefix = {OPCode.STORE.code(), 1, Registers.A.address()};
+        return concat(prefix, body);
+    }
+
+    private static int[] concat(int[] first, int[] second) {
+        int[] result = Arrays.copyOf(first, first.length + second.length);
+        System.arraycopy(second, 0, result, first.length, second.length);
+        return result;
+    }
+
+    /** The one-page disk loader used by the R command. */
+    private static byte[] buildRunnerPage(int homePage, int runPage) {
+        ByteArrayOutputStream page = new ByteArrayOutputStream();
+        // Verify HELLO COM's directory byte before loading its nine instruction bytes.
+        write(page, OPCode.STORE.code(), 1, Registers.A.address(), OPCode.STORE.code(), 40, Registers.B.address(),
+                OPCode.READ_BYTE_FROM_STORAGE.code(), Registers.A.address(), Registers.B.address(), Registers.B.address(), Registers.D.address(),
+                OPCode.STORE.code(), 'H', Registers.C.address(), OPCode.COND_JUMP.code(), Registers.D.address(), Registers.C.address(), 27,
+                OPCode.STORE.code(), homePage, Registers.G.address(), OPCode.STORE.code(), 0, Registers.H.address(),
+                OPCode.CHANGE_PAGE_JUMP.code(), Registers.G.address(), Registers.H.address());
+        for (int offset = 0; offset < 9; offset++) {
+            write(page, OPCode.STORE.code(), 41 + offset, Registers.B.address(), OPCode.READ_BYTE_FROM_STORAGE.code(),
+                    Registers.A.address(), Registers.B.address(), Registers.B.address(), Registers.D.address(),
+                    OPCode.STORE_MEM.code(), Registers.D.address(), 128 + offset);
+        }
+        write(page, OPCode.JMP.code(), 128);
+        return page.toByteArray();
+    }
+
+    private static void write(ByteArrayOutputStream page, int... bytes) {
+        for (int value : bytes) page.write(value);
+    }
+
+    /** Draws the command prompt, then transfers to the first bytecode parser state. */
+    private static byte[][] buildPromptScreen(int firstPage, int parserPage) {
+        TextProgramBuilder program = new TextProgramBuilder(firstPage);
+        program.instruction(OPCode.CLEAR_GRA.code());
+        program.instruction(OPCode.STORE.code(), 0, Registers.H.address());
+        drawText(program, "JVCPM", 12, 12, 1, 0b00_111_11);
+        drawText(program, "A>", 12, 30, 1, 0b00_111_00);
+        drawText(program, "DIR NEW PUT CAT", 12, 48, 1, 0b00_111_00);
+        drawText(program, "DEL RUN HLP ESC", 12, 60, 1, 0b00_111_00);
+        program.reserve(10);
+        program.instruction(OPCode.DISPLAY.code());
+        program.instruction(OPCode.STORE.code(), parserPage, Registers.G.address());
+        program.instruction(OPCode.STORE.code(), 0, Registers.H.address());
+        program.instruction(OPCode.CHANGE_PAGE_JUMP.code(), Registers.G.address(), Registers.H.address());
+        return program.finish();
+    }
+
+    /**
+     * Builds the command-line finite-state machine. Each page accepts one character of a command,
+     * then jumps to the state for its next character. This keeps parsing entirely in VCPU opcodes.
+     */
+    private static byte[][] buildCommandParser(int firstPage, int homePage, int helpPage, int directoryPage,
+            int createPage, int writePage, int typePage, int deletePage, int runnerPage) {
+        int d = firstPage + 1, di = firstPage + 2, de = firstPage + 3;
+        int n = firstPage + 4, ne = firstPage + 5, p = firstPage + 6, pu = firstPage + 7;
+        int c = firstPage + 8, ca = firstPage + 9, r = firstPage + 10, ru = firstPage + 11;
+        int h = firstPage + 12, hl = firstPage + 13, stop = firstPage + 14;
+        return new byte[][] {
+                commandStatePage(homePage, 0, new int[] {'D', 'N', 'P', 'C', 'R', 'H', 27}, new int[] {d, n, p, c, r, h, stop}),
+                commandStatePage(homePage, 1, new int[] {'I', 'E'}, new int[] {di, de}),
+                commandStatePage(homePage, 2, new int[] {'R'}, new int[] {directoryPage}),
+                commandStatePage(homePage, 2, new int[] {'L'}, new int[] {deletePage}),
+                commandStatePage(homePage, 1, new int[] {'E'}, new int[] {ne}),
+                commandStatePage(homePage, 2, new int[] {'W'}, new int[] {createPage}),
+                commandStatePage(homePage, 1, new int[] {'U'}, new int[] {pu}),
+                commandStatePage(homePage, 2, new int[] {'T'}, new int[] {writePage}),
+                commandStatePage(homePage, 1, new int[] {'A'}, new int[] {ca}),
+                commandStatePage(homePage, 2, new int[] {'T'}, new int[] {typePage}),
+                commandStatePage(homePage, 1, new int[] {'U'}, new int[] {ru}),
+                commandStatePage(homePage, 2, new int[] {'N'}, new int[] {runnerPage}),
+                commandStatePage(homePage, 1, new int[] {'L'}, new int[] {hl}),
+                commandStatePage(homePage, 2, new int[] {'P'}, new int[] {helpPage}),
+                new byte[] {OPCode.STOP.code()}
+        };
+    }
+
+    private static byte[] commandStatePage(int homePage, int characterOffset, int[] keys, int[] targets) {
+        if (keys.length != targets.length) throw new IllegalArgumentException("Command parser table is malformed");
+        int[] acceptedKeys = Arrays.copyOf(keys, keys.length + 1);
+        int[] acceptedTargets = Arrays.copyOf(targets, targets.length + 1);
+        acceptedKeys[keys.length] = 27; // ESC abandons a partial command and restores the prompt.
+        acceptedTargets[targets.length] = homePage;
+        ByteArrayOutputStream page = new ByteArrayOutputStream();
+        int handlers = 12 + acceptedKeys.length * 7;
+        write(page, OPCode.READ_INPUT.code(), Input.KEYBOARD_EVENT, Registers.D.address(), OPCode.STORE.code(), 0,
+                Registers.E.address(), OPCode.COND_JUMP.code(), Registers.D.address(), Registers.E.address(), 0);
+        for (int index = 0; index < acceptedKeys.length; index++) {
+            write(page, OPCode.STORE.code(), acceptedKeys[index], Registers.A.address(), OPCode.COND_JUMP.code(),
+                    Registers.D.address(), Registers.A.address(), handlers + index * 23);
+        }
+        // Key releases and unknown characters are not commands; keep waiting in this parser state.
+        write(page, OPCode.JMP.code(), 0);
+        for (int target : acceptedTargets) {
+            // Visible input echo: one green cursor mark for each accepted command character.
+            write(page, OPCode.STORE.code(), 20 + characterOffset * 6, Registers.A.address(), OPCode.STORE.code(), 35,
+                    Registers.B.address(), OPCode.STORE.code(), 0b00_111_00, Registers.C.address(),
+                    OPCode.PUSH_GRA_MEM.code(), Registers.A.address(), Registers.B.address(), Registers.C.address(), OPCode.DISPLAY.code(),
+                    OPCode.STORE.code(), target, Registers.G.address(), OPCode.STORE.code(), 0,
+                    Registers.H.address(), OPCode.CHANGE_PAGE_JUMP.code(), Registers.G.address(), Registers.H.address());
+        }
+        return page.toByteArray();
+    }
+
+    private static byte[][] buildScreenWithPrefix(int firstPage, int[] prefix, String[] lines, MenuAction... actions) {
+        TextProgramBuilder program = new TextProgramBuilder(firstPage);
+        program.instruction(prefix);
+        return finishScreen(program, lines, actions);
+    }
+
+    private static byte[][] buildScreen(int firstPage, String[] lines, MenuAction... actions) {
+        TextProgramBuilder program = new TextProgramBuilder(firstPage);
+        return finishScreen(program, lines, actions);
+    }
+
+    private static byte[][] finishScreen(TextProgramBuilder program, String[] lines, MenuAction... actions) {
+        program.instruction(OPCode.CLEAR_GRA.code());
+        program.instruction(OPCode.STORE.code(), 0, Registers.H.address());
+        for (int index = 0; index < lines.length; index++) {
+            drawText(program, lines[index], 12, 12 + index * 12, 1, index == 0 ? 0b00_111_11 : 0b00_111_00);
+        }
+        int tailSize = 21 + actions.length * 7;
+        for (MenuAction action : actions) tailSize += action.bytes().length + (action.returnToPoll() ? 2 : 0);
+        program.reserve(tailSize);
+        program.instruction(OPCode.DISPLAY.code());
+        program.instruction(OPCode.STORE.code(), 0, Registers.E.address());
+        program.instruction(OPCode.STORE.code(), 27, Registers.F.address());
+        int poll = program.currentAddress();
+        int handler = poll + 14 + actions.length * 7;
+        program.instruction(OPCode.READ_INPUT.code(), Input.KEYBOARD_EVENT, Registers.D.address());
+        program.instruction(OPCode.COND_JUMP.code(), Registers.D.address(), Registers.E.address(), poll);
+        program.instruction(OPCode.COND_JUMP.code(), Registers.D.address(), Registers.F.address(), poll + 13 + actions.length * 7);
+        for (MenuAction action : actions) {
+            program.instruction(OPCode.STORE.code(), action.key(), Registers.A.address());
+            program.instruction(OPCode.COND_JUMP.code(), Registers.D.address(), Registers.A.address(), handler);
+            handler += action.bytes().length + (action.returnToPoll() ? 2 : 0);
+        }
+        program.instruction(OPCode.JMP.code(), poll);
+        program.instruction(OPCode.STOP.code());
+        for (MenuAction action : actions) {
+            program.instruction(action.bytes());
+            if (action.returnToPoll()) program.instruction(OPCode.JMP.code(), poll);
+        }
+        return program.finish();
+    }
 
     private static byte[][] createDisplayHelloCpuProgram(int firstPage, int snowfallFirstPage) {
         List<byte[]> pages = new ArrayList<>();
@@ -254,7 +539,9 @@ public class Programs {
             case 'S' -> "111/100/111/001/111";
             case 'T' -> "111/010/010/010/010";
             case 'V' -> "101/101/101/101/010";
+            case 'X' -> "101/101/010/101/101";
             case 'Y' -> "101/101/010/010/010";
+            case '>' -> "100/010/001/010/100";
             case '0' -> "111/101/101/101/111";
             case '1' -> "010/110/010/010/111";
             case '2' -> "110/001/010/100/111";
@@ -265,7 +552,7 @@ public class Programs {
             case '7' -> "111/001/010/010/010";
             case '8' -> "111/101/111/101/111";
             case '9' -> "111/101/111/001/110";
-            default -> throw new IllegalArgumentException("No BOS glyph for: " + character);
+            default -> throw new IllegalArgumentException("No BIOS glyph for: " + character);
         };
     }
 
@@ -317,19 +604,30 @@ public class Programs {
         }
 
         void instruction(int... bytes) {
-            if (page.size() + bytes.length + PAGE_JUMP_SIZE > PAGE_SIZE) {
-                page.write(OPCode.STORE.code());
-                page.write(firstPage + pages.size() + 1);
-                page.write(Registers.G.address());
-                page.write(OPCode.CHANGE_PAGE_JUMP.code());
-                page.write(Registers.G.address());
-                page.write(Registers.H.address());
-                pages.add(page.toByteArray());
-                page = new ByteArrayOutputStream(PAGE_SIZE);
-            }
+            reserve(bytes.length);
             for (int value : bytes) {
                 page.write(value);
             }
+        }
+
+        /** Starts a new page when the requested instruction sequence would not fit safely. */
+        void reserve(int bytes) {
+            if (page.size() + bytes + PAGE_JUMP_SIZE <= PAGE_SIZE) {
+                return;
+            }
+            page.write(OPCode.STORE.code());
+            page.write(firstPage + pages.size() + 1);
+            page.write(Registers.G.address());
+            page.write(OPCode.CHANGE_PAGE_JUMP.code());
+            page.write(Registers.G.address());
+            page.write(Registers.H.address());
+            pages.add(page.toByteArray());
+            page = new ByteArrayOutputStream(PAGE_SIZE);
+        }
+
+        /** Returns the address of the next instruction in the current page. */
+        int currentAddress() {
+            return page.size();
         }
 
         byte[][] finish() {
@@ -339,53 +637,94 @@ public class Programs {
     }
 
     /**
-     * Animates a white snowflake that falls until it reaches the bottom or an occupied pixel.
-     * Settled flakes remain in the framebuffer, building a snowbank across all 128 columns.
+     * Animates a bright-white snowflake that falls until it reaches the bottom or an occupied
+     * pixel. Register H keeps a softer white for settled snow, so the active flake remains visible
+     * above the snowbank while graphics readback still treats either shade as occupied.
      */
     static final byte[] PROGRAM_SNOWFALL = new byte[] {
             OPCode.CLEAR_GRA.code(),                                                   // 0
             OPCode.STORE.code(), 0, Registers.A.address(),                             // 1: current row
             OPCode.STORE.code(), 0, Registers.B.address(),                             // 4: current column
             OPCode.STORE.code(), 1, Registers.C.address(),                             // 7: increment
-            OPCode.STORE.code(), 0b11_111_11, Registers.D.address(),                   // 10: white
+            OPCode.STORE.code(), 0b11_111_11, Registers.D.address(),                   // 10: falling white
             OPCode.STORE.code(), 127, Registers.G.address(),                           // 13: final coordinate
             OPCode.STORE.code(), 0, Registers.E.address(),                             // 16: black
+            OPCode.STORE.code(), 0b10_101_10, Registers.H.address(),                   // 19: settled soft white
 
-            OPCode.STORE.code(), 0b11_111_11, Registers.D.address(),                   // 19: restore white
+            OPCode.STORE.code(), 0b11_111_11, Registers.D.address(),                   // 22: restore falling white
             OPCode.PUSH_GRA_MEM.code(), Registers.B.address(), Registers.A.address(),
-                    Registers.D.address(),                                              // 22: draw falling flake
-            OPCode.COND_JUMP.code(), Registers.A.address(), Registers.G.address(), 42, // 26: bottom row
-            OPCode.ADD.code(), Registers.A.address(), Registers.C.address(), Registers.F.address(), // 30: row below
+                    Registers.D.address(),                                              // 25: draw falling flake
+            OPCode.COND_JUMP.code(), Registers.A.address(), Registers.G.address(), 45, // 29: bottom row
+            OPCode.ADD.code(), Registers.A.address(), Registers.C.address(), Registers.F.address(), // 33: row below
             OPCode.READ_GRA_MEM.code(), Registers.B.address(), Registers.F.address(),
-                    Registers.D.address(),                                              // 34: color below
-            OPCode.COND_JUMP.code(), Registers.D.address(), Registers.E.address(), 61, // 38: fall if black
+                    Registers.D.address(),                                              // 37: color below
+            OPCode.COND_JUMP.code(), Registers.D.address(), Registers.E.address(), 68, // 41: fall if black
 
-            OPCode.STORE.code(), 0, Registers.A.address(),                             // 42: settle and respawn
-            OPCode.COND_JUMP.code(), Registers.B.address(), Registers.G.address(), 55, // 45: reset column after 127
-            OPCode.ADD.code(), Registers.B.address(), Registers.C.address(), Registers.B.address(), // 49
-            OPCode.JMP.code(), 58,                                                      // 53
-            OPCode.STORE.code(), 0, Registers.B.address(),                             // 55
-            OPCode.DISPLAY.code(),                                                      // 58
-            OPCode.JMP.code(), 19,                                                      // 59
+            OPCode.PUSH_GRA_MEM.code(), Registers.B.address(), Registers.A.address(),
+                    Registers.H.address(),                                              // 45: settle as soft white
+            OPCode.STORE.code(), 0, Registers.A.address(),                             // 49: respawn at top
+            OPCode.COND_JUMP.code(), Registers.B.address(), Registers.G.address(), 62, // 52: reset column after 127
+            OPCode.ADD.code(), Registers.B.address(), Registers.C.address(), Registers.B.address(), // 56
+            OPCode.JMP.code(), 65,                                                      // 60
+            OPCode.STORE.code(), 0, Registers.B.address(),                             // 62
+            OPCode.DISPLAY.code(),                                                      // 65
+            OPCode.JMP.code(), 22,                                                      // 66
 
-            OPCode.SUB.code(), Registers.F.address(), Registers.C.address(), Registers.A.address(), // 61: restore current row
+            OPCode.SUB.code(), Registers.F.address(), Registers.C.address(), Registers.A.address(), // 68: restore current row
             OPCode.PUSH_GRA_MEM.code(), Registers.B.address(), Registers.A.address(),
-                    Registers.E.address(),                                              // 65: erase previous flake position
-            OPCode.ADD.code(), Registers.A.address(), Registers.C.address(), Registers.A.address(), // 69: move down
-            OPCode.STORE.code(), 0b11_111_11, Registers.D.address(),                   // 73
+                    Registers.E.address(),                                              // 72: erase previous flake position
+            OPCode.ADD.code(), Registers.A.address(), Registers.C.address(), Registers.A.address(), // 76: move down
+            OPCode.STORE.code(), 0b11_111_11, Registers.D.address(),                   // 80
             OPCode.PUSH_GRA_MEM.code(), Registers.B.address(), Registers.A.address(),
-                    Registers.D.address(),                                              // 76: draw moved flake
-            OPCode.JMP.code(), 58                                                       // 80
+                    Registers.D.address(),                                              // 83: draw moved flake
+            OPCode.JMP.code(), 65                                                       // 87
     };
 
     /**
-     * Boot program loaded at page zero. Its POST screen occupies consecutive pages and transfers
-     * to the display demo, which in turn starts the snowfall program on its own page.
+     * BIOS boot image loaded at page zero. Its POST screen occupies consecutive pages and transfers
+     * to the demo OS, which in turn starts the snowfall program on its own page.
      *
      * <p>This declaration follows {@link #PROGRAM_SNOWFALL} so the boot image can include the
      * fully initialized snowfall bytecode.</p>
      */
-    static final byte[][] PROGRAM_BOS_POST = createBosPostProgram();
+    static final byte[][] PROGRAM_BIOS_POST = createBiosPostProgram();
+
+    /** Returns the bytecode image that firmware installs to and boots from storage. */
+    static byte[][] bootImage() {
+        return PROGRAM_BIOS_POST;
+    }
+
+    /**
+     * A console-oriented exercise for the newer peripheral and arithmetic instructions. It writes
+     * and reads one storage byte, polls the keyboard event port, then multiplies and increments.
+     * Audio is enabled and immediately disabled so the instruction can be verified without a
+     * sustained tone.
+     */
+    static final byte[] PROGRAM_PERIPHERAL_DIAGNOSTICS = new byte[] {
+            OPCode.STORE.code(), 0, Registers.A.address(),
+            OPCode.STORE.code(), 0, Registers.B.address(),
+            OPCode.STORE.code(), 1, Registers.C.address(),
+            OPCode.STORE.code(), 42, Registers.D.address(),
+            OPCode.WRITE_BYTE_TO_STORAGE.code(), Registers.A.address(), Registers.B.address(),
+                    Registers.C.address(), Registers.D.address(),
+            OPCode.READ_BYTE_FROM_STORAGE.code(), Registers.A.address(), Registers.B.address(),
+                    Registers.C.address(), Registers.E.address(),
+            OPCode.OUTPUT.code(), Registers.E.address(),
+            OPCode.READ_INPUT.code(), Input.KEYBOARD_EVENT, Registers.F.address(),
+            OPCode.OUTPUT.code(), Registers.F.address(),
+            OPCode.STORE.code(), 6, Registers.A.address(),
+            OPCode.STORE.code(), 7, Registers.B.address(),
+            OPCode.MULTIPLY.code(), Registers.A.address(), Registers.B.address(), Registers.G.address(),
+            OPCode.INCREMENT_REGISTER.code(), Registers.G.address(),
+            OPCode.OUTPUT.code(), Registers.G.address(),
+            OPCode.STORE.code(), 0, Registers.A.address(),
+            OPCode.STORE.code(), 60, Registers.B.address(),
+            OPCode.STORE.code(), (byte) 0b1000_0000, Registers.C.address(),
+            OPCode.OUTPUT_AUDIO.code(), Registers.A.address(), Registers.B.address(), Registers.C.address(),
+            OPCode.STORE.code(), 0, Registers.C.address(),
+            OPCode.OUTPUT_AUDIO.code(), Registers.A.address(), Registers.B.address(), Registers.C.address(),
+            OPCode.STOP.code()
+    };
 
     /**
      * First page of the paged-memory example. It stores {@code 11} at address {@code 120}, then

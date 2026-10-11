@@ -1,96 +1,45 @@
 # JavaVCPU
 
-JavaVCPU is a small Java bytecode virtual machine with paged memory, eight general-purpose byte registers, two control registers, and a palette-based framebuffer rendered in Swing.
+> **An experimental virtual CPU, built in Java.**
+>
+> JavaVCPU executes byte-sized instructions to work with its own paged memory and palette display. It is a small place to experiment with the pieces beneath a computer: registers, opcodes, jumps, memory pages, and pixels.
 
-## Run
+```
+ bytecode program  ──►  JavaVCPU  ──►  memory pages
+                         │
+                         └────────►  256 × 256 display
+```
 
-Use JDK 26. In IntelliJ IDEA, select JDK 26 and run `Main.java`.
+## See it run
 
-To build from the command line:
+The default program boots a small **BIOS** (Basic Input/Output System), runs a colored POST screen, and transfers to **MicroDOS 80**, an opcode-only 8-bit-style menu. `H` opens help; `D` runs disk read/write tests; `M` runs memory read/write tests; `S` opens sound control; and `ESC` shuts the virtual machine down safely. The project is deliberately experimental, but it includes keyboard, audio, and storage instructions for programs to explore.
+
+Click the JavaVCPU display window before typing.
+
+On first launch, `DiskInstaller` writes the BIOS and MicroDOS bytecode image to `storage.img`. Later launches execute a small bootstrap program that reads the image through the storage instruction, writes it into virtual memory, and begins at its BIOS entry page.
+
+## Get started
+
+JavaVCPU requires **JDK 26**.
 
 ```powershell
 ./gradlew.bat build
 ```
 
-On Linux or macOS, run `./gradlew build`. The Gradle project has no `run` task; launch `xyz.ignite4inferneo.Main` from the IDE or with `java` after compilation.
+Then run `xyz.ignite4inferneo.Main` from IntelliJ IDEA with JDK 26 selected. There is currently no Gradle `run` task.
 
-The default startup path loads the BOS (Boot Output System) bytecode into virtual memory. It runs a
-colored POST screen from pages at the start of memory, then jumps to a display program loaded on the
-following pages. It is a BOS rather than a full BIOS because JavaVCPU has no input device yet.
+## What is inside?
 
-## CPU model
-
-The VM has 256 memory pages of 256 bytes each, for 64 KiB total. Pages and addresses range from `0` through `255`. Register and memory values are Java `byte` values, so arithmetic wraps when cast back to a byte.
-
-Each page holds instructions and data. `PAGE` selects the page used for instruction fetches and memory instructions; switching pages preserves all registers. Byte operands that name pages, addresses, or registers are interpreted as unsigned values.
-
-| Register | Index | Purpose |
-| --- | --- | --- |
-| A-F | 0-5 | General-purpose byte registers |
-| G-H | 6-7 | General-purpose byte registers |
-| COUNTER | 8 | Address of the next instruction on the active page |
-| PAGE | 9 | Active memory page |
-
-`Programs.load` uploads the selected bytecode and resets `PAGE` and `COUNTER` to zero. It does not clear memory pages before uploading, so it replaces only the byte range in the program.
-
-## Instruction set
-
-Every instruction is one opcode byte followed by zero or more operand bytes. In the table, `r`, `a`, `b`, and `out` are register indices; `value` and `address` are literal bytes. `R[r]` means a register value and `M[address]` means an address in the active page.
-
-| Opcode | Instruction | Bytes | Behavior |
-| --- | --- | --- | --- |
-| 0 | `ADD a, b, out` | 4 | `R[out] = R[a] + R[b]` |
-| 1 | `SUB a, b, out` | 4 | `R[out] = R[a] - R[b]` |
-| 2 | `STORE value, r` | 3 | `R[r] = value` |
-| 3 | `JMP address` | 2 | Set `COUNTER` to `address` |
-| 4 | `STOP` | 1 | End execution and print timing information |
-| 5 | `OUTPUT r` | 2 | Print the signed value of `R[r]` |
-| 6 | `COND_JUMP a, b, address` | 4 | Jump when `R[a] == R[b]`; otherwise continue |
-| 7 | `LOAD_MEM r, address` | 3 | `R[r] = M[address]` |
-| 8 | `STORE_MEM r, address` | 3 | `M[address] = R[r]` |
-| 9 | `CHANGE_PAGE r` | 2 | Set `PAGE = R[r]`, then continue |
-| 10 | `CHANGE_PAGE_JUMP r, target` | 3 | Set `PAGE = R[r]` and `COUNTER = R[target]` |
-| 11 | `CHANGE_PAGE_COND_JUMP r, a, b, address` | 5 | If equal, select the page and jump; otherwise continue |
-| 12 | `PUSH_GRA_MEM x, y, color` | 4 | Write `R[color]` at `(R[x], R[y])` |
-| 13 | `CLEAR_GRA` | 1 | Fill the framebuffer with black |
-| 14 | `DISPLAY` | 1 | Present the framebuffer and pause for about 33 ms |
-| 15 | `READ_GRA_MEM x, y, out` | 4 | Store the palette color at `(R[x], R[y])` in `R[out]` |
-
-`LOAD_MEM` and `STORE_MEM` use literal addresses. The page-jump instructions select an explicit destination address, so programs can occupy different pages without matching layouts.
-
-## Display and colors
-
-`Monitor` stores a 128 by 128 framebuffer and renders it in a 512 by 512 Swing window with nearest-neighbor scaling. Each virtual pixel appears as a 4 by 4 block.
-
-`PUSH_GRA_MEM` and `READ_GRA_MEM` take coordinates from registers. Coordinates must be between `0` and `127`. Call `DISPLAY` after drawing a frame; it also limits animation speed to roughly 30 frames per second.
-
-Colors use the low seven bits of a byte in `RRGGGBB` order:
-
-| Bits | Channel | Levels |
-| --- | --- | --- |
-| 6-5 | Red | 4 |
-| 4-2 | Green | 8 |
-| 1-0 | Blue | 4 |
-
-The high bit is ignored on writes. `0b11_111_00` is yellow and `0b11_111_11` is white.
-
-## Included programs
-
-Programs live in `Programs.java` and are selected in `Main.main()`.
-
-On startup, `Main` loads `Program.BOS_POST`. Its pages draw and present the POST status, then use
-`CHANGE_PAGE_JUMP` to transfer to the bundled `DISPLAY_HELLO_CPU` program stored after the BOS.
-After its greeting pause, that program jumps to `SNOWFALL` on the following page.
-
-- `DISPLAY_HELLO_CPU` uses only existing graphics bytecode instructions to draw `HELLO CPU`.
-- `SNOWFALL` drops white flakes until they reach the bottom or an occupied pixel, then starts the next flake in the next column.
-- `PAGED_MEMORY` stores `11`, `22`, and `33` at address `120` on pages `0`, `1`, and `127`, showing that each page has independent storage.
-- `LOOP_127_3` counts register A from `1` through `127` while register D tracks passes.
-- `HELLO_CPU` constructs the ASCII values for `hello I'm a cpu` with arithmetic and prints their decimal values.
+| Part | What it does |
+| --- | --- |
+| **CPU** | Executes bytecode through eight general-purpose registers plus a program counter and active-page register. |
+| **Memory** | Provides 256 pages of 256 bytes: **64 KiB** in total. |
+| **Display** | Renders a 256 × 256 palette framebuffer in an 800 × 800 Swing window. |
+| **Programs** | Includes a POST boot flow, text rendering, a snowfall animation, and memory-page examples. |
 
 ## Write a program
 
-Use `OPCode.code()` for instruction bytes and `Registers.address()` for register operands:
+Programs are byte arrays assembled with the opcode and register helpers:
 
 ```java
 static final byte[] PROGRAM_EXAMPLE = new byte[] {
@@ -100,15 +49,97 @@ static final byte[] PROGRAM_EXAMPLE = new byte[] {
 };
 ```
 
-Add the program to `Programs`, add a matching `Program` enum value and `load` case, then select it in `Main.main()`. Calculate jump targets in bytes, including every opcode and operand. Keep instructions and data within the active 256-byte page, avoid overwriting live instructions, and use valid register indices and framebuffer coordinates.
+Add the bytecode to `Programs`, add a matching `Program` enum value and loader case, then select it in `Main.main()`. Jump targets are byte addresses, so include every opcode and operand when calculating them.
 
-## Source files
+## Included programs
+
+| Program | Demonstrates |
+| --- | --- |
+| `BIOS_POST` | The default BIOS POST and handoff to the resident monitor. |
+| `DEMO_OS` | MicroDOS 80: bytecode-only help, disk, memory, sound, and safe-exit screens. |
+| `PERIPHERAL_DIAGNOSTICS` | Storage read/write, keyboard polling, audio control, multiplication, and increment. |
+| `DISPLAY_HELLO_CPU` | Drawing **HELLO CPU** with graphics bytecode. |
+| `SNOWFALL` | Pixel reads and writes for falling, accumulating snow. |
+| `PAGED_MEMORY` | Independent values at the same address on different pages. |
+| `LOOP_127_3` | Register arithmetic and conditional looping. |
+| `HELLO_CPU` | Building ASCII values with arithmetic and printing them. |
+
+## Architecture reference
+
+<details>
+<summary><strong>Memory and registers</strong></summary>
+
+JavaVCPU has 256 memory pages of 256 bytes each. `PAGE` selects the page used for instruction fetches and memory instructions; changing pages preserves register values. Page numbers, addresses, and register operands are interpreted as unsigned bytes. Arithmetic wraps when stored back into a register.
+
+| Register | Index | Purpose |
+| --- | --- | --- |
+| A–H | 0–7 | General-purpose byte registers |
+| COUNTER | 8 | Next instruction address on the active page |
+| PAGE | 9 | Active memory page |
+
+`Programs.load` uploads a program and resets `PAGE` and `COUNTER` to zero. It replaces only the uploaded byte range; it does not clear the rest of memory.
+
+</details>
+
+<details>
+<summary><strong>Instruction set</strong></summary>
+
+Each instruction is one opcode byte followed by zero or more operands. In the table, `r`, `a`, `b`, and `out` are register indices; `value` and `address` are literal bytes. `R[r]` is a register value and `M[address]` is an address on the active page.
+
+| Opcode | Instruction | Bytes | Behavior |
+| --- | --- | --- | --- |
+| 0 | `ADD a, b, out` | 4 | `R[out] = R[a] + R[b]` |
+| 1 | `SUB a, b, out` | 4 | `R[out] = R[a] - R[b]` |
+| 2 | `STORE value, r` | 3 | `R[r] = value` |
+| 3 | `JMP address` | 2 | Set `COUNTER` to `address` |
+| 4 | `STOP` | 1 | End execution and print timing information |
+| 5 | `OUTPUT r` | 2 | Print the signed value of `R[r]` |
+| 6 | `COND_JUMP a, b, address` | 4 | Jump when `R[a] == R[b]` |
+| 7 | `LOAD_MEM r, address` | 3 | `R[r] = M[address]` |
+| 8 | `STORE_MEM r, address` | 3 | `M[address] = R[r]` |
+| 9 | `CHANGE_PAGE r` | 2 | Set `PAGE = R[r]` |
+| 10 | `CHANGE_PAGE_JUMP r, target` | 3 | Set `PAGE = R[r]`, then `COUNTER = R[target]` |
+| 11 | `CHANGE_PAGE_COND_JUMP r, a, b, address` | 5 | On equality, select the page and jump |
+| 12 | `PUSH_GRA_MEM x, y, color` | 4 | Write `R[color]` at `(R[x], R[y])` |
+| 13 | `CLEAR_GRA` | 1 | Fill the framebuffer with black |
+| 14 | `DISPLAY` | 1 | Present the framebuffer and limit execution to roughly 30 frames/second |
+| 15 | `READ_GRA_MEM x, y, out` | 4 | Store the palette color at `(R[x], R[y])` in `R[out]` |
+| 16 | `READ_INPUT device, out` | 3 | Read a device port into `R[out]` |
+| 17 | `OUTPUT_AUDIO voice, note, control` | 4 | Configure an audio voice from registers |
+| 18 | `READ_BYTE_FROM_STORAGE x, y, z, out` | 5 | Read storage byte `(R[x], R[y], R[z])` into `R[out]` |
+| 19 | `WRITE_BYTE_TO_STORAGE x, y, z, value` | 5 | Write `R[value]` to storage byte `(R[x], R[y], R[z])` |
+| 20 | `MULTIPLY a, b, out` | 4 | `R[out] = R[a] * R[b]` |
+| 21 | `INCREMENT_REGISTER r` | 2 | Increment `R[r]` |
+| 22 | `STORE_MEM_ON_PAGE value, page, address` | 4 | `Memory[R[page]][R[address]] = R[value]` |
+
+</details>
+
+<details>
+<summary><strong>Display and colors</strong></summary>
+
+`Monitor` stores a 256 × 256 framebuffer and uses nearest-neighbor scaling for an 800 × 800 Swing window. Call `DISPLAY` after drawing a frame.
+
+`PUSH_GRA_MEM` and `READ_GRA_MEM` read their coordinates from registers. Valid coordinates are `0` through `255`; coordinates are interpreted as unsigned bytes.
+
+Colors use the low seven bits of a byte in `RRGGGBB` order:
+
+| Bits | Channel | Levels |
+| --- | --- | --- |
+| 6–5 | Red | 4 |
+| 4–2 | Green | 8 |
+| 1–0 | Blue | 4 |
+
+The high bit is ignored on writes. `0b11_111_00` is yellow and `0b11_111_11` is white.
+
+</details>
+
+## Project map
 
 | File | Purpose |
 | --- | --- |
-| `Main.java` | CPU state, instruction dispatch, and instruction implementations |
-| `Memory.java` | Backing storage for paged memory |
-| `Monitor.java` | Thread-safe framebuffer access and Swing rendering |
-| `OPCode.java` | Opcode values and encoded instruction lengths |
-| `Programs.java` | Built-in bytecode programs and their loader |
-| `Registers.java` | Register-file indices |
+| `Main.java` | CPU state, instruction dispatch, and implementations |
+| `Memory.java` | Paged-memory storage |
+| `Monitor.java` | Framebuffer access and Swing rendering |
+| `OPCode.java` | Opcode values and instruction lengths |
+| `Programs.java` | Built-in bytecode and its loader |
+| `Registers.java` | Register indices |

@@ -5,12 +5,14 @@
 
 package xyz.ignite4inferneo;
 
+import java.io.IOException;
+
 /**
  * Executes JavaVCPU bytecode and owns the virtual CPU state.
  *
  * <p>Instructions use operand bytes as indices into {@link #REGISTERS}, unless their opcode
  * documents an operand as a literal value or address. Memory accesses operate on the page selected
- * by {@link Registers#PAGE}.</p>
+ * by {@link Registers#PAGE}, except instructions that explicitly take a page register.</p>
  */
 public class Main {
     /**
@@ -27,7 +29,8 @@ public class Main {
             0, // G
             0, // H
             0, // COUNTER
-            0  // MEMORY PAGE
+            0, // MEMORY PAGE
+            0  // STORAGE PAGE
         };
 
     /** The currently selected 256-byte memory page. */
@@ -40,19 +43,23 @@ public class Main {
     static long cpuStartTime;
 
     /** Number of instructions dispatched during the current run. */
-    static int intructs;
+    static long intructs;
 
     /**
-     * Initializes the display, loads the BOS into virtual memory, and executes it.
+     * Initializes the devices, loads the BIOS boot image into virtual memory, and executes it.
      *
      * @throws InterruptedException if interrupted while executing the virtual CPU
      */
-    static void main() throws InterruptedException {
+    public static void main(String[] args) throws InterruptedException, IOException {
         Monitor.initialize();
+        Audio.initialize();
+        Input.initialize();
+        Storage.load();
+        DiskInstaller.installIfMissing();
 
         cpuStartTime = System.currentTimeMillis();
 
-        Programs.load(Programs.Program.BOS_POST);
+        DiskInstaller.boot();
 
         while (running) {
             int counter = getProgramCounter();
@@ -105,6 +112,26 @@ public class Main {
                 // READ_GRA_MEM xRegister, yRegister, destinationRegister
                 case 15 -> pullGraphicsMemory(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3]);
 
+                // READ_INPUT deviceId, destinationRegister
+                case 16 -> readInput(MEMORY[counter + 1], MEMORY[counter + 2]);
+
+                // OUTPUT_AUDIO voiceRegister, midiNoteRegister, controlRegister
+                case 17 -> outputAudio(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3]);
+
+                // READ_BYTE_FROM_STORAGE xRegister, yRegister, zRegister, destinationRegister
+                case 18 -> readStorage(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3], MEMORY[counter + 4]);
+
+                case 19 -> writeStorage(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3], MEMORY[counter + 4]);
+
+                // MULTIPLY registerA, registerB, targetRegister
+                case 20 -> multiply(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3]);
+
+                // INCREMENT registerA
+                case 21 -> incrementRegister(MEMORY[counter + 1]);
+
+                // STORE_MEM_ON_PAGE sourceRegister, pageRegister, addressRegister
+                case 22 -> storeMemoryOnPage(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3]);
+
                 default -> throw new IllegalStateException(
                         "Unknown opcode: " + opcode +
                                 " at address " + counter
@@ -112,8 +139,6 @@ public class Main {
             }
 
             intructs++;
-
-            Thread.sleep(0, 1000);
         }
     }
 
@@ -128,6 +153,7 @@ public class Main {
     static void incrementCounter(int amount) {
         int counter = getProgramCounter();
         counter += amount;
+
         REGISTERS[Registers.COUNTER.address()] = (byte) counter;
     }
 
@@ -140,6 +166,7 @@ public class Main {
         int A = Byte.toUnsignedInt(a);
         int B = Byte.toUnsignedInt(b);
         int Register = Byte.toUnsignedInt(register);
+
         REGISTERS[Register] = (byte) (REGISTERS[B] + REGISTERS[A]);
 
         incrementCounter(OPCode.ADD.length());
@@ -154,6 +181,7 @@ public class Main {
         int A = Byte.toUnsignedInt(a);
         int B = Byte.toUnsignedInt(b);
         int Register = Byte.toUnsignedInt(register);
+
         REGISTERS[Register] = (byte) (REGISTERS[A] - REGISTERS[B]);
 
         incrementCounter(OPCode.SUB.length());
@@ -165,6 +193,7 @@ public class Main {
             byte register
     ) {
         int Register = Byte.toUnsignedInt(register);
+
         REGISTERS[Register] = value;
 
         incrementCounter(OPCode.STORE.length());
@@ -189,15 +218,16 @@ public class Main {
     /** Stops execution and reports elapsed CPU time and the instruction count. */
     static void stop(){
         running = false;
+        Audio.shutdown();
         IO.println("EOF CPU Ran for " + (System.currentTimeMillis() - cpuStartTime) + "ms | " + intructs + " instructions ran");
     }
 
     /** Prints a register's signed byte value and advances the counter. */
     public static void output(byte register) {
         int Register = Byte.toUnsignedInt(register);
-        IO.println(
-                REGISTERS[Register]
-        );
+
+        IO.println(REGISTERS[Register]);
+
         incrementCounter(OPCode.OUTPUT.length());
     }
 
@@ -221,12 +251,25 @@ public class Main {
         incrementCounter(OPCode.STORE_MEM.length());
     }
 
+    /** Stores a register value at a register-selected address on a register-selected page. */
+    public static void storeMemoryOnPage(byte value, byte page, byte address) {
+        int valueRegister = Byte.toUnsignedInt(value);
+        int pageRegister = Byte.toUnsignedInt(page);
+        int addressRegister = Byte.toUnsignedInt(address);
+
+        Memory.getMemoryPage(REGISTERS[pageRegister])[Byte.toUnsignedInt(REGISTERS[addressRegister])]
+                = REGISTERS[valueRegister];
+
+        incrementCounter(OPCode.STORE_MEM_ON_PAGE.length());
+    }
+
     /** Selects the page stored in a register and advances the counter. */
     public static void changePage(byte a){
 
         int A = Byte.toUnsignedInt(a);
 
         REGISTERS[Registers.PAGE.address()] = REGISTERS[A];
+
         incrementCounter(OPCode.CHANGE_PAGE.length());
     }
 
@@ -256,6 +299,7 @@ public class Main {
     /** Clears the virtual display and advances the counter. */
     public static void clearGraphics() {
         Monitor.clear();
+
         incrementCounter(OPCode.CLEAR_GRA.length());
     }
 
@@ -264,6 +308,9 @@ public class Main {
      */
     public static void display() throws InterruptedException {
         Monitor.display();
+
+        Thread.sleep(33);
+
         incrementCounter(OPCode.DISPLAY.length());
     }
 
@@ -274,6 +321,7 @@ public class Main {
         int Color = Byte.toUnsignedInt(color);
 
         Monitor.pushMemory(REGISTERS[A], REGISTERS[B], REGISTERS[Color]);
+
         incrementCounter(OPCode.PUSH_GRA_MEM.length());
     }
 
@@ -287,8 +335,70 @@ public class Main {
         int Target = Byte.toUnsignedInt(target);
 
         REGISTERS[Target] = Monitor.fetchMemory(REGISTERS[A], REGISTERS[B]);
+
         incrementCounter(OPCode.READ_GRA_MEM.length());
     }
+
+    public static void readInput(byte device, byte target) {
+        int targetRegister = Byte.toUnsignedInt(target);
+
+        REGISTERS[targetRegister] = Input.read(device);
+
+        incrementCounter(OPCode.READ_INPUT.length());
+    }
+
+    public static void outputAudio(byte voice, byte midiNote, byte control) {
+        int voiceRegister = Byte.toUnsignedInt(voice);
+        int noteRegister = Byte.toUnsignedInt(midiNote);
+        int controlRegister = Byte.toUnsignedInt(control);
+
+        Audio.setVoice(
+                Byte.toUnsignedInt(REGISTERS[voiceRegister]),
+                Byte.toUnsignedInt(REGISTERS[noteRegister]),
+                Byte.toUnsignedInt(REGISTERS[controlRegister])
+        );
+
+        incrementCounter(OPCode.OUTPUT_AUDIO.length());
+    }
+
+    public static void readStorage(byte a, byte b, byte c, byte target) {
+        int A = Byte.toUnsignedInt(a);
+        int B = Byte.toUnsignedInt(b);
+        int C = Byte.toUnsignedInt(c);
+        int Target = Byte.toUnsignedInt(target);
+
+        REGISTERS[Target] = Storage.readData(REGISTERS[A], REGISTERS[B], REGISTERS[C]);
+
+        incrementCounter(OPCode.READ_BYTE_FROM_STORAGE.length());
+    }
+
+    public static void writeStorage(byte a, byte b, byte c, byte target) {
+        int A = Byte.toUnsignedInt(a);
+        int B = Byte.toUnsignedInt(b);
+        int C = Byte.toUnsignedInt(c);
+        int Target = Byte.toUnsignedInt(target);
+
+        Storage.writeData(REGISTERS[A], REGISTERS[B], REGISTERS[C], REGISTERS[Target]);
+
+        incrementCounter(OPCode.WRITE_BYTE_TO_STORAGE.length());
+    }
+
+    public static void multiply(byte a, byte b, byte target){
+        int A = Byte.toUnsignedInt(a);
+        int B = Byte.toUnsignedInt(b);
+        int Target = Byte.toUnsignedInt(target);
+
+        REGISTERS[Target] = (byte) (REGISTERS[A] * REGISTERS[B]);
+
+        incrementCounter(OPCode.MULTIPLY.length());
+    }
+
+    public static void incrementRegister(byte a) {
+        int A = Byte.toUnsignedInt(a);
+
+        REGISTERS[A]++;
+
+        incrementCounter(OPCode.INCREMENT_REGISTER.length());
+    }
+
 }
-
-

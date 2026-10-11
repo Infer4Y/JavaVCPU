@@ -22,7 +22,14 @@ public enum OPCode {
     PUSH_GRA_MEM(12, 3),
     CLEAR_GRA(13, 0),
     DISPLAY(14, 0),
-    READ_GRA_MEM(15, 3);
+    READ_GRA_MEM(15, 3),
+    READ_INPUT(16, 2),             // READ INPUT   -> PERIPHERAL TARGET
+    OUTPUT_AUDIO(17, 3),           // OUTPUT AUDIO -> VOICE, HZ, SHAPE
+    READ_BYTE_FROM_STORAGE(18, 4), // READ BYTE FROM STORAGE ->  X, Y, Z TARGET
+    WRITE_BYTE_TO_STORAGE(19, 4),  // READ BYTE FROM STORAGE ->  X, Y, Z VALUE
+    MULTIPLY(20, 3),               // MULTIPLY -> A B TARGET
+    INCREMENT_REGISTER(21, 1),     // INCREMENT -> A
+    STORE_MEM_ON_PAGE(22, 3);      // STORE MEMORY ON PAGE -> VALUE, PAGE, ADDRESS
 
     /** Encoded instruction byte. */
     private final byte code;
