@@ -12,9 +12,13 @@
 
 ## See it run
 
-The default program boots a small **BIOS** (Basic Input/Output System), runs a colored POST screen, and transfers to **MicroDOS 80**, an opcode-only 8-bit-style menu. `H` opens help; `D` runs disk read/write tests; `M` runs memory read/write tests; `S` opens sound control; and `ESC` shuts the virtual machine down safely. The project is deliberately experimental, but it includes keyboard, audio, and storage instructions for programs to explore.
+The default BIOS boots **JV-DOS 1.1**, implemented using the existing VCPU opcodes. It provides an editable command line, persistent named files, a source editor with highlighting, runnable JVS programs, COM bytecode loading, palette images, a document pager, and a four-voice music player. Type `HELP` or `CODEHELP` in the display window.
 
 Click the JavaVCPU display window before typing.
+
+Open [Disk Workshop](tools/disk-workshop/index.html) locally to import small text/source/binary files, convert images or MIDI clips, and download an updated `storage.img`. Stop the VM before replacing its disk, then restart. The tool preserves the BIOS and OS bytes. [Format documentation and limits](tools/disk-workshop/README.md) explain the 16-file, 240-byte-per-file directory and media conversions.
+
+Use `VIEW FILE.TXT` to page through documents, `IMAGE FILE.IMG` to display a palette image, and `PLAY FILE.JMT` to play imported MIDI-note streams. Arrow keys navigate documents; Esc closes a viewer or stops music. `RUN` also recognizes imported image/music types. Shift supplies punctuation, including symbols, braces and quotes; keypad keys work. `SOUND OFF` disables keyboard clicks.
 
 On first launch, `DiskInstaller` writes the BIOS and MicroDOS bytecode image to `storage.img`. Later launches execute a small bootstrap program that reads the image through the storage instruction, writes it into virtual memory, and begins at its BIOS entry page.
 
@@ -56,7 +60,7 @@ Add the bytecode to `Programs`, add a matching `Program` enum value and loader c
 | Program | Demonstrates |
 | --- | --- |
 | `BIOS_POST` | The default BIOS POST and handoff to the resident monitor. |
-| `DEMO_OS` | MicroDOS 80: bytecode-only help, disk, memory, sound, and safe-exit screens. |
+| `DEMO_OS` | Legacy enum name for the resident JV-DOS 1.1 bytecode operating system. |
 | `PERIPHERAL_DIAGNOSTICS` | Storage read/write, keyboard polling, audio control, multiplication, and increment. |
 | `DISPLAY_HELLO_CPU` | Drawing **HELLO CPU** with graphics bytecode. |
 | `SNOWFALL` | Pixel reads and writes for falling, accumulating snow. |
@@ -142,4 +146,6 @@ The high bit is ignored on writes. `0b11_111_00` is yellow and `0b11_111_11` is 
 | `Monitor.java` | Framebuffer access and Swing rendering |
 | `OPCode.java` | Opcode values and instruction lengths |
 | `Programs.java` | Built-in bytecode and its loader |
+| `JvDosImage.java` | Assembles the guest DOS kernel, editor, source interpreter, and media tools |
+| `tools/disk-workshop/index.html` | Browser-local disk importer/editor and image/MIDI converters |
 | `Registers.java` | Register indices |

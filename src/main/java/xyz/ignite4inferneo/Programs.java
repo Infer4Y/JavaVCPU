@@ -118,7 +118,7 @@ public class Programs {
         do {
             biosPages = createBiosPostPages(payloadFirstPage);
             int requiredPayloadFirstPage = biosPages.length;
-            payloadPages = createMicroDosProgram(requiredPayloadFirstPage);
+            payloadPages = JvDosImage.assemble(requiredPayloadFirstPage);
             if (requiredPayloadFirstPage == payloadFirstPage) {
                 break;
             }
@@ -147,13 +147,9 @@ public class Programs {
         program.instruction(OPCode.PUSH_GRA_MEM.code(), Registers.A.address(), Registers.B.address(), Registers.C.address());
         program.instruction(OPCode.READ_GRA_MEM.code(), Registers.A.address(), Registers.B.address(), Registers.D.address());
 
-        drawText(program, "JAVAVCPU BIOS", 16, 8, 2, 0b00_111_11);
-        drawText(program, "POWER ON SELF TEST", 8, 26, 1, 0b11_111_00);
-        drawText(program, "CPU OK", 18, 43, 1, 0b00_111_00);
-        drawText(program, "PAGE MAP OK", 18, 55, 1, 0b00_111_00);
-        drawText(program, "DISPLAY OK", 18, 67, 1, 0b00_111_00);
-        drawText(program, "POST PASSED", 20, 84, 2, 0b00_111_00);
-        drawText(program, "BOOTING DEMO OS", 27, 106, 1, 0b00_111_11);
+        drawText(program, "JVCPU BIOS", 16, 8, 1, 0b00_111_11);
+        drawText(program, "POST OK", 16, 26, 1, 0b00_111_00);
+        drawText(program, "BOOT JV DOS", 16, 44, 1, 0b00_111_11);
         // Keep the presented POST frame on screen for about one second before booting the monitor.
         for (int frame = 0; frame < 30; frame++) {
             program.instruction(OPCode.DISPLAY.code());
@@ -165,7 +161,7 @@ public class Programs {
     }
 
     /** Resident opcode-only CP/M-style command environment. */
-    static final byte[][] PROGRAM_DEMO_OS = createMicroDosProgram(0);
+    static final byte[][] PROGRAM_DEMO_OS = JvDosImage.assemble(0);
 
     /** @deprecated Use {@link #PROGRAM_DEMO_OS}; retained for the original display sample name. */
     @Deprecated

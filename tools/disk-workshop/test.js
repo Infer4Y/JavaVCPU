@@ -1,0 +1,23 @@
+globalThis.runDiskTests = function () {
+  const D=DosDisk,check=(condition,message)=>{if(!condition)throw new Error(message);};
+  const rejects=fn=>{let threw=false;try{fn();}catch{threw=true;}check(threw,'Expected rejection');};
+  const bytes=new Uint8Array(D.SIZE);bytes.set([74,86,67,80,77,4,253,1]);bytes[1000]=77;
+  const disk=new D.Disk(bytes);disk.put('HELLO.TXT',D.textBytes('Hello!\r\nA\tB'),1);
+  check(D.textOf(disk.list()[0].data)==='Hello!\nA    B','Text normalization');
+  check(disk.bytes[1000]===77&&bytes[D.BASE]===0,'Original/boot preservation');
+  rejects(()=>disk.put('BIG.TXT',new Uint8Array(241),1));rejects(()=>D.textBytes('é'));
+  const rgba=new Uint8Array([255,0,0,255,0,255,0,255,0,0,255,255,255,255,255,255]);
+  const image=D.image(2,2,rgba);check(D.decodeImage(image).pixels.join()==='96,28,3,127','Palette conversion');disk.put('PIC.IMG',image,2);
+  const tune=D.notes('60 3\n64 3\n67 6');check(D.decodeTune(tune).length===6,'Tune composer');disk.put('TUNE.JMT',tune,3);
+  const file=track=>Uint8Array.from([77,84,104,100,0,0,0,6,0,0,0,1,1,224,77,84,114,107,0,0,track.length>>8,track.length&255,...track]);
+  const midi=file([0,144,60,100,131,96,128,60,0,0,255,47,0]);
+  const events=D.decodeTune(D.midi(midi));check(events.length===2&&events[0].frames===15&&events[1].control===0,'MIDI note-on/off');
+  const running=D.decodeTune(D.midi(file([0,144,60,100,131,96,60,0,0,255,47,0])));check(running[1].control===0,'Running status');
+  const tempo=D.decodeTune(D.midi(file([0,255,81,3,3,208,144,0,144,60,100,131,96,128,60,0,0,255,47,0])));check(tempo[0].frames===8,'Tempo conversion');
+  const long=D.decodeTune(D.midi(file([0,144,60,100,129,160,0,128,60,0,0,255,47,0])));check(long.reduce((n,e)=>n+e.frames,0)===646,'Long duration splitting');
+  rejects(()=>D.midi(midi.slice(0,-1)));rejects(()=>D.midi(file([0,144,60,100,0,144,61,100,0,144,62,100,0,144,63,100,0,144,64,100])));
+  rejects(()=>D.tune(Array.from({length:60},()=>({frames:1,voice:0,note:60,control:129}))));
+  disk.remove(0);check(disk.list().length===2,'Delete');for(let i=0;i<14;i++)disk.put(`F${i}.TXT`,D.textBytes('X'),1);
+  rejects(()=>disk.put('FULL.TXT',D.textBytes('Y'),1));check(new D.Disk(disk.bytes).list().length===16,'Disk round trip');
+  return 'PASS: disk round trip, preservation, size limits, text encoding, palette images, MIDI tempo/running status/polyphony, malformed inputs and long durations.';
+};

@@ -1,0 +1,4 @@
+# A=0, B=5. Loop at byte 6 prints A, increments, exits when A=B.
+02 00 00 02 05 01
+05 00 15 00 06 00 01 10 03 06
+04

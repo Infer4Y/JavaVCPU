@@ -1,0 +1,2 @@
+# Clear, set x=128 y=128 color=127, draw white pixel, display, halt.
+0D 02 80 00 02 80 01 02 7F 02 0C 00 01 02 0E 04

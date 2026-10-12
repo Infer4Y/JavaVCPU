@@ -6,6 +6,7 @@
 package xyz.ignite4inferneo;
 
 import java.io.IOException;
+import java.math.BigInteger;
 
 /**
  * Executes JavaVCPU bytecode and owns the virtual CPU state.
@@ -43,7 +44,7 @@ public class Main {
     static long cpuStartTime;
 
     /** Number of instructions dispatched during the current run. */
-    static long intructs;
+    static BigInteger intructs = new BigInteger("0");
 
     /**
      * Initializes the devices, loads the BIOS boot image into virtual memory, and executes it.
@@ -138,7 +139,7 @@ public class Main {
                 );
             }
 
-            intructs++;
+            intructs = intructs.add(new BigInteger("1"));
         }
     }
 

@@ -1,0 +1,8 @@
+# Print H via page 249:0; return to 248:18.
+02 48 03 02 F8 00 02 12 01 02 F9 06 02 00 07 0A 06 07
+# Print I; return to 248:36. Restore every service argument after calls.
+02 49 03 02 F8 00 02 24 01 02 F9 06 02 00 07 0A 06 07
+# Print newline; return to 248:54.
+02 0A 03 02 F8 00 02 36 01 02 F9 06 02 00 07 0A 06 07
+# Return to DOS via page 249:9. Never use CPU STOP as a DOS return.
+02 F9 06 02 09 07 0A 06 07
