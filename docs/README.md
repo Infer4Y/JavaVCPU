@@ -2,11 +2,17 @@
 
 `wiki/` contains GitHub Wiki-compatible Markdown pages. Begin with [Home](wiki/Home.md). `_Sidebar.md` supplies wiki navigation; page links omit `.md` to match GitHub Wiki routes. When reading directly on disk, open the corresponding `.md` file in that folder.
 
+The [screenshot gallery](wiki/Screenshots.md) covers boot, shell/help, directory, source editing, documents, images, music, program execution, graphics demos and Disk Workshop. Screenshots also appear beside the relevant instructions in the guides.
+
+![JV-DOS 1.1 startup and command prompt](wiki/images/dos-shell.png)
+
 ```text
 docs/
   README.md
   wiki/
     Home.md
+    Screenshots.md
+    images/  # PNG screenshots shared by the wiki and READMEs
     _Sidebar.md
     Getting-started.md
     Architecture.md
@@ -24,4 +30,4 @@ examples/
   dos/         # .JVS source, HI.hex and generated HI.COM
 ```
 
-This is a local documentation package; no GitHub wiki has been published. If you later choose to publish, the contents of `docs/wiki/` belong at the root of the repository's separate `.wiki.git` checkout. Keep example programs in the main repository.
+This is a local documentation package; no GitHub wiki has been published. If you later choose to publish, the contents of `docs/wiki/`, including `images/`, belong at the root of the repository's separate `.wiki.git` checkout. Keep example programs in the main repository. Image links are relative to each page so they work both in the repository and in that wiki checkout.

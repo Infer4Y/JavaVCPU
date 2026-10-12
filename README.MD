@@ -12,11 +12,19 @@
 
 ## See it run
 
+| JV-DOS shell | Highlighted source editor |
+| --- | --- |
+| ![JV-DOS 1.1 startup and command prompt](docs/wiki/images/dos-shell.png) | ![JV-DOS editor showing an arithmetic JVS program](docs/wiki/images/dos-editor.png) |
+
+The [complete screenshot gallery](docs/wiki/Screenshots.md) shows boot, help, directory, documents, images, music, program execution, graphics demos and Disk Workshop.
+
 The default BIOS boots **JV-DOS 1.1**, implemented using the existing VCPU opcodes. It provides an editable command line, persistent named files, a source editor with highlighting, runnable JVS programs, COM bytecode loading, palette images, a document pager, and a four-voice music player. Type `HELP` or `CODEHELP` in the display window.
 
 Click the JavaVCPU display window before typing.
 
 Open [Disk Workshop](tools/disk-workshop/index.html) locally to import small text/source/binary files, convert images or MIDI clips, and download an updated `storage.img`. Stop the VM before replacing its disk, then restart. The tool preserves the BIOS and OS bytes. [Format documentation and limits](tools/disk-workshop/README.md) explain the 16-file, 240-byte-per-file directory and media conversions.
+
+![Disk Workshop directory and JVS source editor](docs/wiki/images/workshop-text.png)
 
 Use `VIEW FILE.TXT` to page through documents, `IMAGE FILE.IMG` to display a palette image, and `PLAY FILE.JMT` to play imported MIDI-note streams. Arrow keys navigate documents; Esc closes a viewer or stops music. `RUN` also recognizes imported image/music types. Shift supplies punctuation, including symbols, braces and quotes; keypad keys work. `SOUND OFF` disables keyboard clicks.
 

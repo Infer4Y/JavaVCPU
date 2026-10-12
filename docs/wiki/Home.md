@@ -4,8 +4,13 @@ JavaVCPU is an experimental Java virtual machine with a byte instruction set, 64
 
 Start with [Getting started](Getting-started). Open [Tooling and Disk Workshop](Tooling-and-Disk-Workshop) to move host files onto a virtual disk, or [Example programs](Example-programs) to run your first program.
 
+![JV-DOS startup banner and command prompt](images/dos-shell.png)
+
+Browse [Screenshots](Screenshots) for every display view, media tool and Disk Workshop view.
+
 | Guide | Contents |
 | --- | --- |
+| [Screenshots](Screenshots) | Boot, shell, help, editor, viewers, program output, graphics demos and Workshop |
 | [Getting started](Getting-started) | JDK 26, builds, launching, boot flow, project map |
 | [Architecture](Architecture) | Registers, pages, display, input, audio and storage |
 | [Instruction set](Instruction-set) | All 23 opcodes and operand conventions |

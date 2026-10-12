@@ -4,6 +4,10 @@ COM files contain flat JavaVCPU instructions. They are not x86 executables. DOS 
 
 ## Stable guest services
 
+The seeded `HELLO.COM` uses guest services to print a greeting and return to the shell:
+
+![HELLO.COM running in JV-DOS and returning to the prompt](images/dos-com-run.png)
+
 | Entry | Inputs | Result |
 | --- | --- | --- |
 | page 249, offset 0 | D = ASCII character; A = return page; B = return offset | Prints one character and jumps back to A:B |

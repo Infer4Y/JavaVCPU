@@ -1,4 +1,5 @@
 * [Home](Home)
+* [Screenshots](Screenshots)
 * [Getting started](Getting-started)
 * [Architecture](Architecture)
 * [Instruction set](Instruction-set)

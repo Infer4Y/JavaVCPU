@@ -2,6 +2,8 @@
 
 Disk Workshop is the browser-local tool at `tools/disk-workshop/index.html`. Open that file directly after cloning the project; keep `disk.js` beside it. It requires no web server and uploads nothing. The selected disk is copied into browser memory; edits do not replace the host file automatically.
 
+![Disk Workshop directory and text source editor](images/workshop-text.png)
+
 ## Import and install files
 
 1. Run normal JavaVCPU at least once to install the system and initialize the directory, then stop the VM.
@@ -32,6 +34,12 @@ Imported names are normalized to an eight-character base plus a three-character 
 MIDI supports running status, tempo changes, note-on/off and four-note polyphony. Program changes and controller effects are not preserved; percussion becomes noise. More than four simultaneous notes or more than 59 output events requires shortening the input. The tune composer takes `MIDI_NOTE FRAME_DURATION` per line, up to 29 notes; e.g. `60 6`, `64 6`, `67 12` produces `THEME.JMT`.
 
 **Add sample files** adds `WELCOME.TXT`, `SMILE.IMG` and `THEME.JMT`. Use `VIEW WELCOME.TXT`, `IMAGE SMILE.IMG` and `PLAY THEME.JMT` after downloading/installing the disk.
+
+| Palette preview | Short-tune composer |
+| --- | --- |
+| ![Disk Workshop displaying palette image data and preview](images/workshop-image.png) | ![Disk Workshop with the tune composer expanded](images/workshop-tune.png) |
+
+See [Screenshots](Screenshots) for the corresponding guest document, image and playback views.
 
 ## Troubleshooting
 

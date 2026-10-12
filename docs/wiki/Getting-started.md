@@ -11,6 +11,12 @@ On macOS/Linux use `./gradlew build`. There is no Gradle `run` task. IntelliJ ca
 
 The normal launch initializes display, audio, input, and storage. A missing disk becomes a blank 16 MiB image. `DiskInstaller` installs the system if its header is absent or outdated, preserving the distant user-file bank. A bytecode bootstrap at RAM page 255 copies system pages from disk offset 512, then jumps to BIOS page 0. BIOS hands off to JV-DOS. The guest seeds `HELLO.COM` on an uninitialized directory.
 
+| BIOS POST | Ready for commands |
+| --- | --- |
+| ![BIOS POST before DOS boots](images/bios-post.png) | ![JV-DOS startup and prompt](images/dos-shell.png) |
+
+The POST screen appears briefly. The `A>` prompt is ready for keyboard input. See the [complete screenshot gallery](Screenshots).
+
 For bare-metal examples, rebuild the binary listings:
 
 ```powershell

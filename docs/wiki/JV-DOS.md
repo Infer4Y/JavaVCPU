@@ -2,6 +2,10 @@
 
 JV-DOS runs as guest bytecode. It provides a shell, persistent named files, an editor, JVS interpretation, COM loading and small media viewers. Commands and filenames should be uppercase. Click the VM window before typing.
 
+| Command help (`HELP`) | Directory (`DIR`) |
+| --- | --- |
+| ![JV-DOS shell help](images/dos-help.png) | ![Directory of sample files](images/dos-directory.png) |
+
 | Command | Purpose / example |
 | --- | --- |
 | `HELP`, `CODEHELP` | Shell or programming help |
@@ -33,6 +37,16 @@ Files occupy 16 slots, have names of up to 12 characters, and contain at most 24
 `EDIT DEMO.JVS` opens the guest source editor. Arrow keys move; Home/End navigate the line; Backspace and Delete remove characters; Enter inserts a newline; Tab indents. Esc **saves and leaves**. It is not a cancel operation. The editor highlights source text.
 
 The document pager uses Up/Down, Page Up/Page Down, Space/Enter and Home; Esc closes it. Image viewing closes with Esc, Enter or Q. Esc stops music and silences its voices. A running JVS program checks for Esc between statements.
+
+| Source editor | Document pager |
+| --- | --- |
+| ![Highlighted source in EDIT MATH.JVS](images/dos-editor.png) | ![VIEW WELCOME.TXT in the document pager](images/dos-document.png) |
+
+| Palette image | Music playback status |
+| --- | --- |
+| ![IMAGE SMILE.IMG palette viewer](images/dos-image.png) | ![PLAY THEME.JMT status](images/dos-music.png) |
+
+The [screenshot gallery](Screenshots) also shows startup, programming help and program execution.
 
 `RUN` dispatches image/music from their file type, interprets type-1 text, and otherwise validates and loads raw bytecode. It also heuristically treats binary content starting with printable bytes 32-90 as source. The supplied COM starts with opcode 2 to avoid that ambiguity. Filename extensions alone do not define the execution format.
 

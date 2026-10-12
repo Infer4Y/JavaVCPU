@@ -2,6 +2,10 @@
 
 Open `index.html` locally. Select your project's `storage.img`, import or edit files, and download `storage-updated.img`. Stop the VM, replace its `storage.img` with the downloaded image, and restart. The tool never contacts a server or changes your original file automatically.
 
+![Disk Workshop with a sample directory and JVS source editor](../../docs/wiki/images/workshop-text.png)
+
+The [screenshot gallery](../../docs/wiki/Screenshots.md#disk-workshop) also shows the palette image preview and expanded tune composer.
+
 DOS commands:
 
 - `VIEW NAME.TXT` / `MORE NAME.TXT`: read-only document pager. Up/Down, Page Up/Page Down, Space/Enter and Home navigate; Esc closes.

@@ -63,3 +63,13 @@ END
 `EDIT HELLO.JVS` opens it in the guest editor; Esc saves. The [JVS programming](JVS-programming) page includes the complete math and counting listings. The [COM programming](COM-programming) page explains HI's character calls and return ABI. Import `HI.COM`, not `HI.hex`.
 
 Workshop's **Add sample files** also provides a document, image and tune. See [Tooling and Disk Workshop](Tooling-and-Disk-Workshop) for the disk exchange workflow.
+
+## Built-in graphics demos
+
+The `Programs` loader also includes these display examples. Select the corresponding `Programs.Program` with `Programs.load(...)` in place of the normal boot call when experimenting.
+
+| `DISPLAY_HELLO_CPU` | `SNOWFALL` |
+| --- | --- |
+| ![Built-in HELLO CPU display greeting](images/display-hello-cpu.png) | ![Still frame of the falling and settling pixel animation](images/snowfall.png) |
+
+The [complete screenshot gallery](Screenshots) includes DOS execution, its editor and all media viewers.
