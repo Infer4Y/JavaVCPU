@@ -28,6 +28,8 @@ Open [Disk Workshop](tools/disk-workshop/index.html) locally to import small tex
 
 Use `VIEW FILE.TXT` to page through documents, `IMAGE FILE.IMG` to display a palette image, and `PLAY FILE.JMT` to play imported MIDI-note streams. Arrow keys navigate documents; Esc closes a viewer or stops music. `RUN` also recognizes imported image/music types. Shift supplies punctuation, including symbols, braces and quotes; keypad keys work. `SOUND OFF` disables keyboard clicks.
 
+Use `BROWSE example.com/` or `BROWSE http://localhost:8000/index.html` for the guest HTTP text browser. URLs use lowercase letters by default; hold Shift for uppercase. Up/Down page through the result, Home returns to the top, and Esc exits or cancels a request. The browser requests HTTP/1.0, removes response headers and HTML tags, and keeps up to 60,000 bytes of text in RAM without writing to disk. It supports plain HTTP and custom ports. HTTPS, redirects, JavaScript, CSS layout, character entities, images, and clickable links are not supported; script/style contents may appear as text. Servers must close the response connection; chunked responses are not decoded. The system image updates automatically on restart and preserves user files.
+
 On first launch, `DiskInstaller` writes the BIOS and MicroDOS bytecode image to `storage.img`. Later launches execute a small bootstrap program that reads the image through the storage instruction, writes it into virtual memory, and begins at its BIOS entry page.
 
 ## Get started

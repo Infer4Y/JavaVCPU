@@ -31,7 +31,7 @@ public final class JvDosImage {
             L=Registers.L.address();
     private static final int SOURCE_REGISTER_COUNT = 16;
     private static final int SOURCE_REGISTER_BASE = 224;
-    private static final String[] COMMANDS={"MKDIR","MD","CD","CHDIR","RMDIR","RD","HELP","CODEHELP","DRIVE","BANK","DIR","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","ERASE","WRITE","EDIT","APPEND","COPY","REN","ECHO","PRINT","CLS","CLEAR","VER","MEM","RUN","SAVE","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","SOUND","REM","END","STOP","REBOOT","EXIT"};
+    private static final String[] COMMANDS={"BROWSE","MKDIR","MD","CD","CHDIR","RMDIR","RD","HELP","CODEHELP","DRIVE","BANK","DIR","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","ERASE","WRITE","EDIT","APPEND","COPY","REN","ECHO","PRINT","CLS","CLEAR","VER","MEM","RUN","SAVE","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","SOUND","REM","END","STOP","REBOOT","EXIT"};
     private static final int NAME=250, LINE=251, STATE=252, TPA=248;
     private static final int CH=64,X=65,Y=66,COUNT=67,ARG=68,SLOT=69,INDEX=70,
             LENGTH=71,FOUND=72,FREE=73,TEMP=74,MODE=75,SECOND=76,SOURCE=77,
@@ -68,7 +68,7 @@ public final class JvDosImage {
     public static void main(String[] args) throws java.io.IOException {
         if(args.length!=1) throw new IllegalArgumentException("Supply an output image path");
         byte[][] pages=Programs.bootImage(); byte[] image=new byte[65536];
-        byte[] header={'J','V','C','P','M',13,(byte)pages.length,1};
+        byte[] header={'J','V','C','P','M',14,(byte)pages.length,1};
         System.arraycopy(header,0,image,0,header.length);
         for(int page=0;page<pages.length;page++) System.arraycopy(pages[page],0,image,512+page*256,pages[page].length);
         java.nio.file.Files.write(java.nio.file.Path.of(args[0]),image);
@@ -300,6 +300,7 @@ public final class JvDosImage {
         s.jump("shell");
 
         s.label("cmd.HELP");
+        s.text("BROWSE HOST[:PORT]/PATH - HTTP\n");
         s.text("MKDIR NAME  CD NAME  CD ..\nCD /  RMDIR NAME\n");
         s.text("DIR  TYPE FILE  DEL FILE\nWRITE FILE TEXT\nAPPEND FILE TEXT\nEDIT FILE - ESC SAVES\nCOPY FILE NEW  REN FILE NEW\nRUN FILE.COM  ECHO TEXT\nSAVE FILE HEX BYTE PAIRS\nCLS VER MEM REBOOT EXIT\nBACKSPACE EDITS INPUT\n");
         s.text("DRIVE N - SELECT DISK 0-255\nDRIVE SHOWS CURRENT DISK\n");
@@ -954,7 +955,7 @@ public final class JvDosImage {
         s.label(noScroll);
         s.ret(PRINT_RETURN);
 
-        emitEditor(s); emitSourceLanguage(s); emitMedia(s); emitKeyboard(s); emitFontRenderer(s);
+        emitBrowser(s); emitEditor(s); emitSourceLanguage(s); emitMedia(s); emitKeyboard(s); emitFontRenderer(s);
         emitFileSystem(s); emitShellNavigation(s);
         return s.finish();
     }
@@ -962,7 +963,7 @@ public final class JvDosImage {
     private static void emitKeyboard(Asm s) {
         s.label("keyboard.translate");
         for(int c='A';c<='Z';c++) { s.store(c,A);
-            s.eq(D,A,"key"); }
+            s.eq(D,A,"keyboard.letter"); }
         int[][] mapping={{32,32,32},{44,44,60},{45,45,95},{46,46,62},{47,47,63},
             {48,48,41},{49,49,33},{50,50,64},{51,51,35},{52,52,36},{53,53,37},
             {54,54,94},{55,55,38},{56,56,42},{57,57,40},{59,59,58},{61,61,43},
@@ -973,6 +974,14 @@ public final class JvDosImage {
         for(int[] key:mapping) { s.store(key[0],A);
             s.eq(D,A,"keyboard."+key[0]); }
         s.jump("poll");
+        s.label("keyboard.letter");
+        // Keep DOS commands uppercase, but let browser URLs use normal letter case.
+        s.put(D,KEY_RAW); s.get(A,MODE); s.store(0,B); s.ne(A,B,"keyboard.letter.original");
+        s.get(A,CURSOR); s.store(7,B); s.emit(COMPARE_UNSIGNED,A,B,C); s.store(1,B); s.eq(C,B,"keyboard.letter.original");
+        for(int i=0;i<7;i++) { s.read(LINE,64+i,A); s.store("BROWSE ".charAt(i),B); s.ne(A,B,"keyboard.letter.original"); }
+        s.get(A,SHIFT); s.store(0,B); s.ne(A,B,"keyboard.letter.original");
+        s.get(D,KEY_RAW); s.store(32,A); s.emit(ADD,D,A,D); s.jump("key");
+        s.label("keyboard.letter.original"); s.get(D,KEY_RAW); s.jump("key");
         for(int[] key:mapping) {
             s.label("keyboard."+key[0]);
             s.get(A,SHIFT);
@@ -984,6 +993,118 @@ public final class JvDosImage {
             s.store(key[2],D);
             s.jump("key");
         }
+    }
+
+    /** HTTP/1.0 text browser, assembled entirely into guest instructions. */
+    private static void emitBrowser(Asm s) {
+        final int HOST_START=264, HOST_END=265, PATH=266, PORT=267, PORT_H=268,
+                HEADERS=269, TAG=270, IDLE=271, IDLE_H=272;
+        s.label("web.sendtext");
+        s.get(B,MESSAGE_PAGE); s.get(C,MESSAGE_ADDRESS); s.readDynamic(B,C,D);
+        s.store(0,A); s.eq(D,A,"web.sendtext.done"); s.store(5,A); s.emit(WRITE_NETWORK,A,D);
+        s.get(A,MESSAGE_ADDRESS); s.emit(INCREMENT_REGISTER,A); s.put(A,MESSAGE_ADDRESS);
+        s.jump("web.sendtext");
+        s.label("web.sendtext.done"); s.ret(MESSAGE_RETURN);
+        s.label("cmd.BROWSE");
+        s.netWrite(0,4);
+        s.get(A,ARG); s.put(A,HOST_START); s.put(A,INDEX);
+        // Accept either a bare authority or an explicit http:// prefix.
+        s.get(A,INDEX); s.store(64,B); s.emit(ADD,A,B,C); s.readAt(LINE,C,D);
+        s.store('h',A); String prefix=s.unique("web.prefix"); s.eq(D,A,prefix);
+        s.store('H',A); s.ne(D,A,"web.host.start"); s.label(prefix);
+        String scheme="ttp://";
+        for(int i=0;i<scheme.length();i++) {
+            s.get(A,INDEX); s.store(65+i,B); s.emit(ADD,A,B,C); s.readAt(LINE,C,D);
+            s.store(scheme.charAt(i),A); s.ne(D,A,"web.host.start");
+        }
+        s.get(A,INDEX); s.store(7,B); s.emit(ADD,A,B,A); s.put(A,INDEX); s.put(A,HOST_START);
+        s.label("web.host.start");
+        s.set16(PORT,PORT_H,80);
+        s.label("web.host");
+        s.get(A,INDEX); s.get(B,COUNT); s.eq(A,B,"web.host.end");
+        s.store(64,B); s.emit(ADD,A,B,C); s.readAt(LINE,C,D);
+        s.store('/',A); s.eq(D,A,"web.host.end");
+        s.store(':',A); s.eq(D,A,"web.port.start");
+        s.store(2,A); s.emit(WRITE_NETWORK,A,D);
+        s.get(A,INDEX); s.emit(INCREMENT_REGISTER,A); s.put(A,INDEX); s.jump("web.host");
+        s.label("web.port.start");
+        s.get(A,INDEX); s.put(A,HOST_END);
+        s.emit(INCREMENT_REGISTER,A); s.put(A,INDEX); s.set16(PORT,PORT_H,0);
+        s.label("web.port");
+        s.get(A,INDEX); s.get(B,COUNT); s.eq(A,B,"web.path.port");
+        s.store(64,B); s.emit(ADD,A,B,C); s.readAt(LINE,C,D);
+        s.store('/',A); s.eq(D,A,"web.path.port");
+        s.store('0',A); s.emit(COMPARE_UNSIGNED,D,A,C); s.store(1,B); s.eq(C,B,"web.usage");
+        s.store('9',A); s.emit(COMPARE_UNSIGNED,D,A,C); s.store(2,B); s.eq(C,B,"web.usage");
+        s.store('0',A); s.emit(SUB,D,A,D); s.put(D,DIGIT);
+        s.copy16(PORT,PORT_H,WORK,WORK_H); s.set16(PORT,PORT_H,0); s.set(TEMP,10);
+        s.label("web.port.multiply");
+        s.get(A,PORT); s.get(B,WORK); s.emit(ADD,A,B,C); s.put(C,PORT);
+        s.emit(COMPARE_UNSIGNED,C,A,D); s.put(D,CMP_TEMP);
+        s.get(A,PORT_H); s.get(B,WORK_H); s.emit(ADD,A,B,C);
+        s.emit(COMPARE_UNSIGNED,C,A,D); s.store(1,B); s.eq(D,B,"web.usage"); s.put(C,PORT_H);
+        s.get(A,CMP_TEMP); s.eq(A,B,"web.port.carry"); s.jump("web.port.next");
+        s.label("web.port.carry"); s.get(A,PORT_H); s.emit(INCREMENT_REGISTER,A); s.put(A,PORT_H);
+        s.store(0,B); s.eq(A,B,"web.usage");
+        s.label("web.port.next"); s.get(A,TEMP); s.store(1,B); s.emit(SUB,A,B,A); s.put(A,TEMP);
+        s.store(0,B); s.ne(A,B,"web.port.multiply");
+        s.label("web.port.digit"); s.get(A,DIGIT); s.store(0,B); s.eq(A,B,"web.port.advance");
+        s.inc16(PORT,PORT_H); s.eq16Value(PORT,PORT_H,0,"web.usage");
+        s.get(A,DIGIT); s.store(1,B); s.emit(SUB,A,B,A); s.put(A,DIGIT); s.jump("web.port.digit");
+        s.label("web.port.advance"); s.get(A,INDEX); s.emit(INCREMENT_REGISTER,A); s.put(A,INDEX); s.jump("web.port");
+        s.label("web.host.end"); s.get(A,INDEX); s.put(A,HOST_END);
+        s.label("web.path.port");
+        s.get(A,HOST_START); s.get(B,HOST_END); s.eq(A,B,"web.usage");
+        s.eq16Value(PORT,PORT_H,0,"web.usage");
+        s.get(A,INDEX); s.put(A,PATH);
+        s.store(3,A); s.get(D,PORT_H); s.emit(WRITE_NETWORK,A,D);
+        s.store(4,A); s.get(D,PORT); s.emit(WRITE_NETWORK,A,D);
+        s.text("CONNECTING - ESC CANCELS\n"); s.netWrite(0,1); s.set16(IDLE,IDLE_H,0);
+        s.label("web.connect");
+        s.call("web.poll",READ_RETURN);
+        s.store(0,A); s.emit(READ_NETWORK,A,D); s.store(1,B); s.eq(D,B,"web.connect");
+        s.netText("GET ");
+        s.get(A,PATH); s.get(B,COUNT); String path=s.unique("web.path"); s.ne(A,B,path);
+        s.netText("/"); s.label(path); s.get(A,PATH); s.put(A,INDEX);
+        s.label("web.request.path"); s.get(A,INDEX); s.get(B,COUNT); s.eq(A,B,"web.request.headers");
+        s.store(64,B); s.emit(ADD,A,B,C); s.readAt(LINE,C,D); s.store(5,A); s.emit(WRITE_NETWORK,A,D);
+        s.get(A,INDEX); s.emit(INCREMENT_REGISTER,A); s.put(A,INDEX); s.jump("web.request.path");
+        s.label("web.request.headers"); s.netText(" HTTP/1.0\r\nHost: ");
+        // Host includes a supplied port, as required for virtual hosts on non-default ports.
+        s.get(A,HOST_START); s.put(A,INDEX);
+        s.label("web.request.host"); s.get(A,INDEX); s.get(B,PATH); s.eq(A,B,"web.request.send");
+        s.store(64,B); s.emit(ADD,A,B,C); s.readAt(LINE,C,D); s.store(5,A); s.emit(WRITE_NETWORK,A,D);
+        s.get(A,INDEX); s.emit(INCREMENT_REGISTER,A); s.put(A,INDEX); s.jump("web.request.host");
+        s.label("web.request.send"); s.netText("\r\nConnection: close\r\nAccept: text/html, text/plain\r\n\r\n"); s.netWrite(0,2);
+        s.set16(LENGTH,LENGTH_H,0); s.set(HEADERS,0); s.set(TAG,0); s.set16(IDLE,IDLE_H,0);
+        s.label("web.receive"); s.call("web.poll",READ_RETURN);
+        s.store(7,A); s.emit(READ_NETWORK,A,D); s.store(0,B); s.ne(D,B,"web.byte");
+        s.store(8,A); s.emit(READ_NETWORK,A,D); s.ne(D,B,"web.byte");
+        s.store(0,A); s.emit(READ_NETWORK,A,D); s.store(16,B); s.emit(COMPARE_UNSIGNED,D,B,C);
+        s.store(1,B); s.ne(C,B,"web.done"); s.jump("web.receive");
+        s.label("web.byte"); s.set16(IDLE,IDLE_H,0); s.store(6,A); s.emit(READ_NETWORK,A,D); s.put(D,CH);
+        s.get(A,HEADERS); s.store(2,B); s.eq(A,B,"web.body");
+        s.store(13,A); s.eq(D,A,"web.receive"); s.store(10,A); s.eq(D,A,"web.header.lf");
+        s.set(HEADERS,0); s.jump("web.receive");
+        s.label("web.header.lf"); s.get(A,HEADERS); s.emit(INCREMENT_REGISTER,A); s.put(A,HEADERS); s.jump("web.receive");
+        s.label("web.body"); s.get(D,CH); s.store('<',A); s.eq(D,A,"web.tag");
+        s.store('>',A); s.eq(D,A,"web.tag.end"); s.get(A,TAG); s.store(0,B); s.ne(A,B,"web.receive");
+        s.get(D,CH); s.store(13,A); s.eq(D,A,"web.receive");
+        s.store(10,A); s.eq(D,A,"web.append"); s.store(9,A); s.eq(D,A,"web.space");
+        s.store(32,A); s.emit(COMPARE_UNSIGNED,D,A,C); s.store(1,B); s.eq(C,B,"web.receive");
+        s.store(126,A); s.emit(COMPARE_UNSIGNED,D,A,C); s.store(2,B); s.eq(C,B,"web.space"); s.jump("web.append");
+        s.label("web.tag"); s.set(TAG,1); s.jump("web.receive");
+        s.label("web.tag.end"); s.set(TAG,0); s.store(10,D); s.jump("web.append");
+        s.label("web.space"); s.store(32,D);
+        s.label("web.append"); s.bufferWrite(LENGTH,LENGTH_H,D); s.inc16(LENGTH,LENGTH_H);
+        s.eq16Value(LENGTH,LENGTH_H,60000,"web.done"); s.jump("web.receive");
+        s.label("web.done"); s.netWrite(0,3); s.jump("do.VIEW");
+        s.label("web.poll"); s.emit(DISPLAY); s.emit(READ_INPUT,0,D); s.store(27,A); s.eq(D,A,"web.cancel");
+        s.store(1,A); s.emit(READ_NETWORK,A,D); s.store(0,B); s.ne(D,B,"web.error");
+        s.inc16(IDLE,IDLE_H); s.eq16Value(IDLE,IDLE_H,65535,"web.error"); s.ret(READ_RETURN);
+        s.label("web.error"); s.netWrite(0,3); s.text("HTTP NETWORK ERROR OR TIMEOUT\n"); s.jump("shell");
+        s.label("web.cancel"); s.netWrite(0,3); s.jump("shell");
+        s.label("web.usage"); s.netWrite(0,3); s.text("BROWSE HOST[:PORT]/PATH\nPLAIN HTTP ONLY - NO HTTPS\n"); s.jump("shell");
     }
 
     /** Palette images, eight-voice MIDI-note streams, and a read-only document pager. */
@@ -1328,9 +1449,9 @@ public final class JvDosImage {
         s.set(INK,28);
         s.ret(HILITE_RETURN);
         s.label("glyph");
-        for(int c=32;c<=126;c++) if(printable(c)) { s.store(c,A);
-            s.eq(D,A,"glyph.lookup"); }
-        s.store(63,D);
+        s.store(32,A); s.emit(COMPARE_UNSIGNED,D,A,C); s.store(1,B); s.eq(C,B,"glyph.fallback");
+        s.store(126,A); s.emit(COMPARE_UNSIGNED,D,A,C); s.store(2,B); s.ne(C,B,"glyph.lookup");
+        s.label("glyph.fallback"); s.store(63,D);
         s.label("glyph.lookup");
         s.store(32,A);
         s.emit(SUB,D,A,C);
@@ -1349,6 +1470,13 @@ public final class JvDosImage {
         s.get(A,FONT_PAGE);
         s.get(C,FONT_OFFSET);
         s.readDynamic(A,C,D);
+        // Each row stores three ink bits in its high bits; the fourth column is spacing.
+        s.get(B,FONT_COL); s.store(0,C); s.store(2,A);
+        s.label("glyph.shift"); s.eq(B,C,"glyph.bit"); s.emit(MULTIPLY,D,A,D);
+        s.store(1,C); s.emit(SUB,B,C,B); s.store(0,C); s.jump("glyph.shift");
+        s.label("glyph.bit"); s.store(128,A); s.emit(COMPARE_UNSIGNED,D,A,C);
+        s.store(0,D); s.store(1,B); s.eq(C,B,"glyph.bit.done"); s.store(1,D);
+        s.label("glyph.bit.done");
         s.put(D,FONT_PIXEL);
         s.get(K,X);
         s.get(B,FONT_COL);
@@ -1360,14 +1488,10 @@ public final class JvDosImage {
         s.get(D,FONT_PIXEL);
         s.emit(MULTIPLY,A,D,D);
         s.emit(PUSH_GRA_MEM,K,L,D);
-        s.get(A,FONT_OFFSET);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,FONT_OFFSET);
         s.get(A,FONT_COL);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,FONT_COL);
-        s.store(4,B);
+        s.emit(INCREMENT_REGISTER,A); s.put(A,FONT_COL); s.store(4,B);
         s.ne(A,B,"glyph.pixel");
+        s.get(A,FONT_OFFSET); s.emit(INCREMENT_REGISTER,A); s.put(A,FONT_OFFSET);
         s.set(FONT_COL,0);
         s.get(A,FONT_ROW);
         s.emit(INCREMENT_REGISTER,A);
@@ -2968,6 +3092,8 @@ public final class JvDosImage {
         void ne(int a,int b,String target) { String same=unique("same"); eq(a,b,same); jump(target); label(same); }
         void put(int register,int slot) { emit(STORE_MEM_ABSOLUTE,register,0,slot>=192?253:STATE,slot>=192?slot-192:slot+64); }
         void set(int slot,int value) { store(value,D); put(D,slot); }
+        void netWrite(int address,int value) { store(address,A); store(value,D); emit(WRITE_NETWORK,A,D); }
+        void netText(String text) { stringPointer(text,MESSAGE_PAGE,MESSAGE_ADDRESS); call("web.sendtext",MESSAGE_RETURN); }
         void click() {
             get(A,KEY_SOUND); store(0,B); String done=unique("click.off"); eq(A,B,done);
             tone(); label(done);
@@ -3067,9 +3193,13 @@ public final class JvDosImage {
                 for(char c:message.getKey().toCharArray()) raw(c); raw(0);
             }
             for(int c=32;c<=126;c++) {
-                if(pos+24>256) { page++; pos=24; pages.add(new byte[256]); installReaders(current()); }
+                if(pos+6>256) { page++; pos=24; pages.add(new byte[256]); installReaders(current()); }
                 label("font.data."+c); String bits=font((char)c);
-                for(int row=0;row<6;row++) for(int col=0;col<4;col++) raw(row<5&&col<3&&bits.charAt(row*3+col)=='1'?1:0);
+                for(int row=0;row<6;row++) {
+                    int packed=0;
+                    if(row<5) for(int col=0;col<3;col++) if(bits.charAt(row*3+col)=='1') packed|=128>>>col;
+                    raw(packed);
+                }
             }
             if(page>=246) throw new IllegalStateException("Kernel overlaps font pointers: "+page);
             for(Fix fix:fixes) {

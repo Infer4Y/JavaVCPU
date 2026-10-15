@@ -10,6 +10,7 @@ public final class DosStorageRegression {
     private final byte[][] ram = new byte[512][256];
     private final int[] r = new int[Registers.values().length];
     private int note60Updates;
+    private boolean browserNetwork;
     private final int[][] pixels = new int[256][256];
     private final ArrayDeque<Integer> keys = new ArrayDeque<>();
 
@@ -44,6 +45,45 @@ public final class DosStorageRegression {
         check(chainText(23,1).equals("CHILDAGAIN"),"folders survive reboot");
         vm.command("CD /"); vm.command("CD ..");
         System.out.println("PASS: nested folders, parent persistence, name isolation, bank reset and safe removal");
+    }
+
+    private static void browserChecks(DosStorageRegression vm) throws Exception {
+        vm.command("CLS"); vm.type("A");
+        String glyph="010101111101101000";
+        for(int y=0;y<6;y++) for(int x=0;x<4;x++)
+            check(vm.pixels[4+y][24+x]==(x<3 && glyph.charAt(y*3+x)=='1'?28:0),"packed font pixel "+x+","+y);
+        vm.press(27);
+        vm.type("BROWSE "); vm.press(72,16,65,144);
+        check(vm.line().equals("BROWSE hA"),"browser URL keyboard letter case"); vm.press(27);
+        try(var server=new java.net.ServerSocket(0,1,java.net.InetAddress.getLoopbackAddress())) {
+            server.setSoTimeout(5000);
+            var request=java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                try(var socket=server.accept()) {
+                    socket.setSoTimeout(5000);
+                    var reader=new java.io.BufferedReader(new java.io.InputStreamReader(socket.getInputStream(),java.nio.charset.StandardCharsets.US_ASCII));
+                    StringBuilder headers=new StringBuilder(); String line;
+                    while((line=reader.readLine())!=null && !line.isEmpty()) headers.append(line).append("\n");
+                    socket.getOutputStream().write("HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<h1>HELLO</h1><p>WORLD</p>".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                    return headers.toString();
+                } catch(Exception e) { throw new RuntimeException(e); }
+            });
+            // Inject the completed line, independently of host keyboard scan-code mappings.
+            String command="BROWSE http://127.0.0.1:"+server.getLocalPort()+"/Case?x=1";
+            byte[] line=command.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+            System.arraycopy(line,0,vm.ram[251],64,line.length);
+            vm.ram[252][131]=(byte)line.length; // COUNT
+            vm.browserNetwork=true;
+            try { vm.press(10); } finally { vm.browserNetwork=false; Network.close(); }
+            String headers=request.get(5,java.util.concurrent.TimeUnit.SECONDS);
+            check(headers.startsWith("GET /Case?x=1 HTTP/1.0\n"),"browser preserves request path case/query");
+            check(headers.contains("Host: 127.0.0.1:"+server.getLocalPort()+"\n"),"browser Host header/custom port");
+            int length=(vm.ram[252][135]&255)+((vm.ram[253][0]&255)<<8);
+            StringBuilder body=new StringBuilder();
+            for(int i=0;i<length;i++) body.append((char)(vm.ram[256+i/256][i%256]&255));
+            check(body.toString().equals("\nHELLO\n\nWORLD\n"),"guest strips HTTP headers and HTML tags");
+            vm.press(40,38,27);
+        }
+        System.out.println("PASS: guest HTTP request, custom port, case-sensitive path, headers, HTML text and pager exit");
     }
 
     private static void networkGuestChecks(DosStorageRegression vm) throws Exception {
@@ -92,7 +132,7 @@ public final class DosStorageRegression {
         file(2,254,"LAST.TXT","END");
         Storage.writeRange(0x2ff00, new byte[]{0x4a});
         DiskInstaller.installIfMissing();
-        check(Storage.readRange(0,8)[5] == 13, "system revision");
+        check(Storage.readRange(0,8)[5] == 14, "system revision");
         check(Storage.readRange(0x20010,3)[0] == 'O', "installation preserves files");
         DosStorageRegression vm = new DosStorageRegression();
         byte[][] pages = Programs.bootImage();
@@ -235,6 +275,7 @@ public final class DosStorageRegression {
         Storage.writeRange((14<<16)+(3<<8)+14,new byte[]{1,1});
         byte[] shared=Storage.readRange(14<<16,65536);vm.ram[252][220]=14;vm.command("DEL FIRST.TXT");
         check(java.util.Arrays.equals(shared,Storage.readRange(14<<16,65536)),"shared continuation is rejected");
+        browserChecks(vm);
         networkGuestChecks(vm);
         folderChecks(vm);
         shellNavigationChecks();
@@ -371,7 +412,7 @@ public final class DosStorageRegression {
                 case 11 -> { if(r[b]==r[c]) {r[9]=r[a];r[8]=d;} }
                 case 15 -> r[c]=0;
                 case 16 -> {
-                    if(a==0&&keys.isEmpty()&&ram[252][176]==0) {r[8]=pc;return;}
+                    if(a==0&&keys.isEmpty()&&ram[252][176]==0&&(!browserNetwork || Network.read(0)==0)) {r[8]=pc;return;}
                     r[b]=a==0&&!keys.isEmpty()?keys.removeFirst():a==0x40?(Storage.isMounted(r[10])?1:0):0;
                 }
                 case 18 -> r[d]=Storage.readData(r[10],(byte)r[a],(byte)r[b],(byte)r[c])&255;
