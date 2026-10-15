@@ -54,6 +54,12 @@ public final class MemoryRegression {
             Main.compareUnsigned((byte)0,(byte)1,(byte)2);check(Main.REGISTERS[2]==2,"unsigned greater");
             Main.compareUnsigned((byte)1,(byte)0,(byte)2);check(Main.REGISTERS[2]==1,"unsigned less");
             Main.compareUnsigned((byte)0,(byte)0,(byte)0);check(Main.REGISTERS[0]==0,"comparison destination aliases input");
+            for (Registers register : new Registers[]{Registers.I, Registers.J, Registers.K,
+                    Registers.L, Registers.M, Registers.N, Registers.O, Registers.P}) {
+                Main.store((byte)41,register.address());
+                Main.incrementRegister(register.address());
+                check(Main.REGISTERS[register.address()]==42,"extended CPU register " + register);
+            }
             Programs.load(Programs.Program.HELLO_CPU);
             check(Main.REGISTERS[11]==0, "program loading resets bank");
             System.out.println("PASS: 128 KiB RAM boundaries, bank isolation, CPU far reads/writes/jumps, legacy access and operand aliasing");

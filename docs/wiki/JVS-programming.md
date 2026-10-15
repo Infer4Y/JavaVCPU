@@ -1,6 +1,6 @@
 # JVS programming
 
-JVS is a text interpreter built into the DOS shell. Store one statement per physical line. Use uppercase keywords and registers A-H. Values are decimal bytes; use 0-255. Arithmetic and the numeric parser wrap at 256. `RUN` clears the eight JVS registers at program start. These guest variables are separate from the CPU registers used by the interpreter.
+JVS is a text interpreter built into the DOS shell. Store one statement per physical line. Use uppercase keywords and registers A-P. Values are decimal bytes; use 0-255. Arithmetic and the numeric parser wrap at 256. `RUN` clears the sixteen JVS registers at program start. These guest variables are separate from the CPU registers used by the interpreter.
 
 | Editing source | Running the captured arithmetic demo |
 | --- | --- |

@@ -14,7 +14,7 @@ public final class DiskInstaller {
     private static final byte BOOTSTRAP_PAGE = (byte) 255;
     // Bump this when the resident opcode image changes so an earlier boot image is replaced.
     // User files live well beyond IMAGE_OFFSET and are therefore preserved during that update.
-    private static final byte[] MAGIC = new byte[] {'J', 'V', 'C', 'P', 'M', 10};
+    private static final byte[] MAGIC = new byte[] {'J', 'V', 'C', 'P', 'M', 13};
 
     private DiskInstaller() {
     }
@@ -52,6 +52,7 @@ public final class DiskInstaller {
         Main.REGISTERS[Registers.PAGE.address()] = BOOTSTRAP_PAGE;
         Main.REGISTERS[Registers.COUNTER.address()] = 0;
         Main.REGISTERS[Registers.MEMORY_BANK.address()] = 0;
+        Main.REGISTERS[Registers.STORAGE_PAGE.address()] = 0;
         IO.println("Booting JVCPM from storage");
     }
 

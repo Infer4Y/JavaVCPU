@@ -7,8 +7,9 @@ Memory has two banks of 256 pages of 256 bytes, totaling 131,072 bytes (128K × 
 | A-H | 0-7 | General-purpose registers |
 | COUNTER | 8 | Instruction byte offset on active page |
 | PAGE | 9 | Active page for instruction fetch and ordinary memory access |
-| STORAGE_PAGE | 10 | Reserved; does not extend disk addresses |
+| STORAGE_PAGE | 10 | Storage device selector, 0-255 (legacy register name) |
 | MEMORY_BANK | 11 | Active RAM bank, 0 or 1 |
+| I-P | 12-19 | Additional general-purpose registers |
 
 Boot and built-in program loading select RAM bank 0. Existing page instructions operate within the active RAM bank. `CHANGE_BANK_PAGE_JUMP` changes bank, page and counter together. `LOAD_MEM_ON_BANK`/`STORE_MEM_ON_BANK` and literal-address `LOAD_MEM_ABSOLUTE`/`STORE_MEM_ABSOLUTE` access either bank without changing the execution bank. Bank 1 buffers files and hosts larger COM programs; the DOS kernel and services remain in bank 0. Invalid bank numbers are rejected. Avoid writing MEMORY_BANK directly: the next instruction fetch would immediately switch banks.
 
@@ -38,8 +39,14 @@ Keyboard codes are Java `KeyEvent` codes. Press events contain the code; release
 
 `OUTPUT_AUDIO` takes registers containing voice (0-7), MIDI note and control. Gate bit 7 enables sound; waveform bits 0-2 select 0 square, 1 triangle, 2 saw, or 3 noise. Set control to 0 to silence a voice. The mixer produces 44.1 kHz mono audio. Audio initialization requires an available host output device.
 
-Storage has 16 MiB, addressed as `(x << 16) | (y << 8) | z`, where x/y/z come from registers. Byte writes update a memory-mapped host disk image; shutdown flushes pending writes. Its path is `storage.img` relative to the working directory. Stop the VM before exchanging disk files. See [Disk and media formats](Disk-and-media-formats).
+Each mounted storage device has 16 MiB, addressed as `(x << 16) | (y << 8) | z`, where x/y/z come from registers. Register 10 selects the device independently of its 24-bit address. Byte writes update that device?s mapped disk image; shutdown flushes all mounted images. Device 0 uses `storage.img` relative to the working directory. Additional images are mounted with program arguments such as `--disk=1=secondary.img`. Stop the VM before exchanging disk files. See [Disk and media formats](Disk-and-media-formats).
 
 JV-DOS 1.3 uses bank-zero pages 253/254 for extended filesystem state and allocation validation. File lengths and cursor/source positions use 16-bit counters. `COMPARE_UNSIGNED` supports the guest arithmetic for these counters without signed-byte ambiguity.
 
 The shell reserves RAM bank-one pages 240-247 for sixteen 128-byte history records, page 248 for the draft line, and pages 249-250 for completion scratch. These pages sit above the maximum 61,200-byte file buffer. Programs must preserve this region to retain shell history. History is cleared at guest reboot.
+
+## Separate device buses
+
+RAM, storage and networking have separate address spaces and instruction controls. Each access transfers one byte through CPU registers, modeling a shared 8-bit data path without mapping devices into RAM. Storage retains its three-byte address plus device select; networking has its own 8-bit register address. Network operations run asynchronously so the CPU can poll status while other instructions execute.
+
+The network controller uses the host's existing internet connection (Wi-Fi or Ethernet). It does not emulate radio association, SSIDs or Wi-Fi authentication. It currently supports one outbound raw TCP connection; HTTP can be implemented by guest software over TCP. There is no built-in browser, TLS, UDP or listening socket. See [Peripheral buses](Peripheral-buses) for the complete guest protocol and example.

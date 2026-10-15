@@ -18,8 +18,8 @@ import java.text.NumberFormat;
  */
 public class Main {
     /**
-     * The CPU register file: A through H are general-purpose registers, followed by the instruction
-     * counter, active memory page, reserved storage slot, and active RAM bank.
+     * The CPU register file has sixteen general-purpose registers (A-P) and four control registers.
+     * I-P follow the control registers so existing bytecode keeps its original register indices.
      */
     static byte[] REGISTERS = new byte[] {
             0, // A
@@ -32,8 +32,16 @@ public class Main {
             0, // H
             0, // COUNTER
             0, // MEMORY PAGE
-            0, // STORAGE PAGE (reserved)
-            0  // MEMORY BANK
+            0, // STORAGE DEVICE (legacy STORAGE_PAGE name)
+            0, // MEMORY BANK
+            0, // I
+            0, // J
+            0, // K
+            0, // L
+            0, // M
+            0, // N
+            0, // O
+            0  // P
         };
 
     /** The currently selected 256-byte memory page. */
@@ -58,7 +66,16 @@ public class Main {
         Audio.initialize();
         Input.initialize();
         Storage.load();
+        for (String arg : args) {
+            if (!arg.startsWith("--disk=")) throw new IllegalArgumentException("Expected --disk=ID=PATH");
+            String[] disk = arg.substring(7).split("=", 2);
+            if (disk.length != 2) throw new IllegalArgumentException("Expected --disk=ID=PATH");
+            int id = Integer.parseInt(disk[0]);
+            if (id == 0) throw new IllegalArgumentException("Device 0 uses storage.img");
+            Storage.mount(id, java.nio.file.Path.of(disk[1]));
+        }
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            Network.close();
             try { Storage.save(); } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
         }, "storage-flush"));
         DiskInstaller.installIfMissing();
@@ -73,7 +90,7 @@ public class Main {
                     REGISTERS[Registers.PAGE.address()]);
             byte opcode = MEMORY[counter];
 
-            assert (opcode <= 28);
+            assert (Byte.toUnsignedInt(opcode) < OPCode.values().length);
             assert (opcode >= 0);
 
             switch (opcode) {
@@ -150,6 +167,9 @@ public class Main {
 
                 case 27 -> loadMemoryAbsolute(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3], MEMORY[counter + 4]);
                 case 28 -> storeMemoryAbsolute(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3], MEMORY[counter + 4]);
+
+                case 29 -> readNetwork(MEMORY[counter + 1], MEMORY[counter + 2]);
+                case 30 -> writeNetwork(MEMORY[counter + 1], MEMORY[counter + 2]);
 
                 default -> throw new IllegalStateException(
                         "Unknown opcode: " + opcode +
@@ -405,7 +425,8 @@ public class Main {
     static void readInput(byte device, byte target) {
         int targetRegister = Byte.toUnsignedInt(target);
 
-        REGISTERS[targetRegister] = Input.read(device);
+        REGISTERS[targetRegister] = Byte.toUnsignedInt(device) == 0x40
+                ? (byte)(Storage.isMounted(Byte.toUnsignedInt(REGISTERS[Registers.STORAGE_PAGE.address()])) ? 1 : 0) : Input.read(device);
 
         incrementCounter(OPCode.READ_INPUT.length());
     }
@@ -424,13 +445,25 @@ public class Main {
         incrementCounter(OPCode.OUTPUT_AUDIO.length());
     }
 
+    static void readNetwork(byte address, byte target) {
+        int port=Byte.toUnsignedInt(REGISTERS[Byte.toUnsignedInt(address)]);
+        REGISTERS[Byte.toUnsignedInt(target)]=Network.read(port);
+        incrementCounter(OPCode.READ_NETWORK.length());
+    }
+
+    static void writeNetwork(byte address, byte source) {
+        Network.write(Byte.toUnsignedInt(REGISTERS[Byte.toUnsignedInt(address)]),
+                REGISTERS[Byte.toUnsignedInt(source)]);
+        incrementCounter(OPCode.WRITE_NETWORK.length());
+    }
+
     static void readStorage(byte a, byte b, byte c, byte target) {
         int A = Byte.toUnsignedInt(a);
         int B = Byte.toUnsignedInt(b);
         int C = Byte.toUnsignedInt(c);
         int Target = Byte.toUnsignedInt(target);
 
-        REGISTERS[Target] = Storage.readData(REGISTERS[A], REGISTERS[B], REGISTERS[C]);
+        REGISTERS[Target] = Storage.readData(Byte.toUnsignedInt(REGISTERS[Registers.STORAGE_PAGE.address()]), REGISTERS[A], REGISTERS[B], REGISTERS[C]);
 
         incrementCounter(OPCode.READ_BYTE_FROM_STORAGE.length());
     }
@@ -441,7 +474,7 @@ public class Main {
         int C = Byte.toUnsignedInt(c);
         int Target = Byte.toUnsignedInt(target);
 
-        Storage.writeData(REGISTERS[A], REGISTERS[B], REGISTERS[C], REGISTERS[Target]);
+        Storage.writeData(Byte.toUnsignedInt(REGISTERS[Registers.STORAGE_PAGE.address()]), REGISTERS[A], REGISTERS[B], REGISTERS[C], REGISTERS[Target]);
 
         incrementCounter(OPCode.WRITE_BYTE_TO_STORAGE.length());
     }

@@ -33,6 +33,8 @@ Each instruction is one opcode byte followed by operands. `a`, `b`, `r`, `out`, 
 | 26 / 1A | `COMPARE_UNSIGNED a b out` | 4 | R[out] = 0 when equal, 1 when R[a] < R[b], 2 when greater |
 | 27 / 1B | `LOAD_MEM_ABSOLUTE bank_value page_value byte_address out` | 5 | Read RAM at the three literal address components into R[out] |
 | 28 / 1C | `STORE_MEM_ABSOLUTE r bank_value page_value byte_address` | 5 | Store R[r] at the three literal address components |
+| 29 / 1D | `READ_NETWORK address out` | 3 | Read network register R[address] into R[out] |
+| 30 / 1E | `WRITE_NETWORK address r` | 3 | Write R[r] to network register R[address] |
 
 Arithmetic stores the low byte. Branch addresses count **every opcode and operand byte**, not instruction lines. Keep each instruction within a page. There is no CPU call/return opcode or stack; programs can implement calls using explicit page/offset registers or memory. The DOS print service provides a small guest convention.
 
@@ -43,3 +45,5 @@ These mnemonic listings explain encodings; the project does not provide a genera
 Bank operands are register indices whose values must be 0 or 1. Page and offset values remain unsigned bytes. Far loads/stores advance the counter by five bytes and retain the execution bank; far jumps atomically replace all three address components.
 
 Absolute memory instructions use literal bank/page/offset bytes, with bank 0 or 1, and retain the execution bank. For example, `1B 01 FF FF 04` reads address 0x1FFFF into E. Unsigned comparison uses byte values 0-255 and leaves its inputs unchanged unless the destination aliases one.
+
+Storage opcodes 18/19 use control register 10 as the device selector. Network opcodes use a separate 8-bit address bus; both operands are register indices. See [Peripheral buses](Peripheral-buses) for mounting disks, drive selection and the TCP register protocol.

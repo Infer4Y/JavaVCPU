@@ -8,10 +8,67 @@ import java.util.ArrayDeque;
 /** Headless regression checks; runs the real BIOS/DOS bytecode with stubbed peripherals. */
 public final class DosStorageRegression {
     private final byte[][] ram = new byte[512][256];
-    private final int[] r = new int[12];
+    private final int[] r = new int[Registers.values().length];
     private int note60Updates;
     private final int[][] pixels = new int[256][256];
     private final ArrayDeque<Integer> keys = new ArrayDeque<>();
+
+    private static void folderChecks(DosStorageRegression vm) throws Exception {
+        vm.ram[252][220]=23;
+        vm.command("MKDIR DOCS");
+        check(name(23,0).equals("DOCS") && Storage.readRange((23<<16)+13,1)[0]==4,"directory type");
+        vm.command("CD DOCS"); vm.command("WRITE SAME.TXT CHILD");
+        check(Storage.readRange((23<<16)+0xff02,1)[0]==1,"persistent parent ID");
+        vm.command("MD NESTED");
+        vm.type("CD NE"); vm.press(9); check(vm.line().equals("CD NESTED "),"folder completion"); vm.press(27);
+        vm.command("CHDIR NESTED"); vm.command("WRITE DEEP.TXT DATA");
+        check(Storage.readRange((23<<16)+0xff04,1)[0]==3,"nested parent ID");
+        vm.command("CD .."); vm.command("COPY SAME.TXT COPY.TXT");
+        check(chainText(23,find(23,"COPY.TXT")).equals("CHILD"),"copy in folder");
+        vm.command("CD /");
+        vm.type("TYPE DE"); vm.press(9); check(vm.line().equals("TYPE DE"),"completion hides nested files"); vm.press(27);
+        vm.command("WRITE SAME.TXT ROOT");
+        check(chainText(23,1).equals("CHILD"),"same filename isolated from root");
+        byte[] before=Storage.readRange(23<<16,65536);
+        for(String command:new String[]{"RD DOCS","DEL DOCS","WRITE DOCS BAD","COPY DOCS BAD","TYPE DOCS","RUN DOCS","MKDIR DOCS","MKDIR ..","MKDIR BAD/NAME","CD SAME.TXT"}) vm.command(command);
+        check(java.util.Arrays.equals(before,Storage.readRange(23<<16,65536)),"invalid folder operations preserve disk");
+        vm.command("CD DOCS"); vm.command("CD ."); vm.command("REN COPY.TXT RENAMED.TXT");
+        vm.command("DIR"); vm.command("CD NESTED"); vm.command("DEL DEEP.TXT"); vm.command("CD ..");
+        vm.command("RMDIR NESTED"); check(name(23,2).isEmpty(),"remove empty nested folder");
+        vm.command("WRITE REUSED.TXT NEW");
+        check(name(23,2).equals("REUSED.TXT") && Storage.readRange((23<<16)+0xff03,1)[0]==1,"reuse deleted directory slot");
+        vm.command("BANK +"); vm.command("WRITE BANK.TXT ROOT");
+        check(Storage.readRange((24<<16)+0xff01,1)[0]==0,"bank switch resets folder");
+        vm.command("BANK -"); vm.command("CD DOCS"); vm.command("REBOOT");
+        vm.ram[252][220]=23; vm.command("CD DOCS"); vm.command("APPEND SAME.TXT AGAIN");
+        check(chainText(23,1).equals("CHILDAGAIN"),"folders survive reboot");
+        vm.command("CD /"); vm.command("CD ..");
+        System.out.println("PASS: nested folders, parent persistence, name isolation, bank reset and safe removal");
+    }
+
+    private static void networkGuestChecks(DosStorageRegression vm) throws Exception {
+        try(var server=new java.net.ServerSocket(0,1,java.net.InetAddress.getLoopbackAddress())) {
+            server.setSoTimeout(5000);
+            var peer=java.util.concurrent.CompletableFuture.runAsync(() -> {
+                try(var socket=server.accept()) {
+                    socket.setSoTimeout(5000);
+                    check(socket.getInputStream().read()==72,"NETECHO guest sends H");
+                    socket.getOutputStream().write(new byte[]{0,42,(byte)255});
+                } catch(Exception e) { throw new RuntimeException(e); }
+            });
+            byte[] program=Files.readAllBytes(Path.of("examples/dos/NETECHO.COM"));
+            for(int i=0;i<program.length-8;i++) {
+                if(program[i]==2 && program[i+2]==0 && program[i+3]==2 && program[i+5]==1 && program[i+6]==30) {
+                    if(program[i+1]==3) program[i+4]=(byte)(server.getLocalPort()>>>8);
+                    if(program[i+1]==4) program[i+4]=(byte)server.getLocalPort();
+                }
+            }
+            chain(25,0,"NETECHO.COM",program,0); vm.ram[252][220]=25;
+            vm.command("RUN NETECHO.COM");
+            peer.get(5,java.util.concurrent.TimeUnit.SECONDS);
+            check(Network.read(0)==0,"guest network example closes connection and returns");
+        } finally { Network.close(); }
+    }
 
     public static void main(String[] args) throws Exception {
         MemoryRegression.run();
@@ -29,17 +86,25 @@ public final class DosStorageRegression {
         Storage.load(image);
         check(Storage.readRange(Storage.STORAGE_SIZE - 1, 1)[0] == 123, "disk persistence");
 
+        PeripheralRegression.run(image);
+
         for (int slot=0;slot<16;slot++) file(2,slot,"F"+slot+".TXT","OLD");
         file(2,254,"LAST.TXT","END");
         Storage.writeRange(0x2ff00, new byte[]{0x4a});
         DiskInstaller.installIfMissing();
-        check(Storage.readRange(0,8)[5] == 10, "system revision");
+        check(Storage.readRange(0,8)[5] == 13, "system revision");
         check(Storage.readRange(0x20010,3)[0] == 'O', "installation preserves files");
         DosStorageRegression vm = new DosStorageRegression();
         byte[][] pages = Programs.bootImage();
         check(pages.length <= 255, "boot image fits RAM");
         for(int p=0;p<pages.length;p++) System.arraycopy(pages[p],0,vm.ram[p],0,pages[p].length);
         vm.run();
+        vm.command("DRIVE 1"); vm.command("MKDIR REMOTE"); vm.command("CD REMOTE");
+        vm.command("WRITE DRIVE.TXT SECOND");
+        check(Storage.readData(1,(byte)2,(byte)1,(byte)16)=='S',"DOS writes selected drive folder");
+        vm.command("DRIVE 255"); check(vm.r[10]==1,"missing drive preserves selection");
+        vm.command("DRIVE 256"); check(vm.r[10]==1,"invalid drive preserves selection");
+        vm.command("DRIVE 0"); check(vm.r[10]==0 && vm.ram[253][70]==0,"drive resets folder");
         vm.command("WRITE NEW.TXT HELLO");
         check(name(2,16).equals("NEW.TXT"), "allocation beyond original 16 slots");
         check(text(2,16).equals("HELLO"), "new file data");
@@ -52,6 +117,29 @@ public final class DosStorageRegression {
         file(3,1,"MATH.JVS","STORE 6 A\nSTORE 7 B\nMULTIPLY A B C\nEND\n");
         vm.command("RUN MATH.JVS");
         check((vm.ram[252][226]&255)==42,"JVS arithmetic in selected bank");
+        StringBuilder extendedRegisters = new StringBuilder();
+        for (char register='I'; register<='P'; register++) {
+            extendedRegisters.append("STORE ").append(register-'I'+1).append(' ').append(register).append('\n');
+        }
+        extendedRegisters.append("ADD I J P\nMULTIPLY P K O\nSUB O L N\nSTORE 255 M\nINC M\nIF N 5 17\nSTORE 99 N\nEND\n");
+        file(3,20,"REGS.JVS",extendedRegisters.toString());
+        vm.command("RUN REGS.JVS");
+        check((vm.ram[252][232]&255)==1 && (vm.ram[252][233]&255)==2,
+                "JVS I/J values survive interpreter scratch registers");
+        check((vm.ram[252][236]&255)==0 && (vm.ram[252][237]&255)==5
+                && (vm.ram[252][238]&255)==9 && (vm.ram[252][239]&255)==3,
+                "JVS M-P arithmetic, wrap and conditional branch");
+        file(3,21,"RESET.JVS","END\n");
+        vm.command("RUN RESET.JVS");
+        for (int register=0; register<16; register++) {
+            check(vm.ram[252][224+register]==0,"RUN resets JVS register " + register);
+        }
+        // Store through P with the real COM validator and return through the stable service ABI.
+        byte[] extendedCom={2,42,19,28,19,1,(byte)255,(byte)255,
+                2,(byte)249,6,2,9,7,10,6,7};
+        chain(3,22,"REGS.COM",extendedCom,0);
+        vm.command("RUN REGS.COM");
+        check((vm.ram[511][255]&255)==42,"COM accepts and executes register P");
         vm.command("COPY OTHER.TXT COPY.TXT");
         check(text(3,2).equals("WORLD"),"copy within bank");
         byte[] bankProgram={2,1,0,2,(byte)255,1,2,(byte)255,2,2,42,3,25,3,0,1,2,24,0,1,2,4,2,(byte)249,6,2,9,7,10,6,7};
@@ -147,6 +235,8 @@ public final class DosStorageRegression {
         Storage.writeRange((14<<16)+(3<<8)+14,new byte[]{1,1});
         byte[] shared=Storage.readRange(14<<16,65536);vm.ram[252][220]=14;vm.command("DEL FIRST.TXT");
         check(java.util.Arrays.equals(shared,Storage.readRange(14<<16,65536)),"shared continuation is rejected");
+        networkGuestChecks(vm);
+        folderChecks(vm);
         shellNavigationChecks();
         // Image rendering crosses disk blocks and RAM pages using the entire display area.
         for(int[] size:new int[][]{{2,2},{15,15},{16,17},{240,240},{1,240},{240,1}}) {
@@ -282,10 +372,10 @@ public final class DosStorageRegression {
                 case 15 -> r[c]=0;
                 case 16 -> {
                     if(a==0&&keys.isEmpty()&&ram[252][176]==0) {r[8]=pc;return;}
-                    r[b]=a==0&&!keys.isEmpty()?keys.removeFirst():0;
+                    r[b]=a==0&&!keys.isEmpty()?keys.removeFirst():a==0x40?(Storage.isMounted(r[10])?1:0):0;
                 }
-                case 18 -> r[d]=Storage.readData((byte)r[a],(byte)r[b],(byte)r[c])&255;
-                case 19 -> Storage.writeData((byte)r[a],(byte)r[b],(byte)r[c],(byte)r[d]);
+                case 18 -> r[d]=Storage.readData(r[10],(byte)r[a],(byte)r[b],(byte)r[c])&255;
+                case 19 -> Storage.writeData(r[10],(byte)r[a],(byte)r[b],(byte)r[c],(byte)r[d]);
                 case 20 -> r[c]=(r[a]*r[b])&255;
                 case 21 -> r[a]=(r[a]+1)&255;
                 case 22 -> ram[(r[11]<<8)|r[b]][r[c]]=(byte)r[a];
@@ -295,6 +385,8 @@ public final class DosStorageRegression {
                 case 26 -> r[c]=r[a]==r[b]?0:r[a]<r[b]?1:2;
                 case 27 -> r[d]=ram[(a<<8)|b][c]&255;
                 case 28 -> ram[(b<<8)|c][d]=(byte)r[a];
+                case 29 -> r[b]=Network.read(r[a])&255;
+                case 30 -> Network.write(r[a],(byte)r[b]);
                 default -> throw new AssertionError("Opcode "+op);
             }
         }

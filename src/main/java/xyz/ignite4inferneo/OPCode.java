@@ -38,7 +38,10 @@ public enum OPCode {
     COMPARE_UNSIGNED(26, 3),      // LEFT, RIGHT, RESULT: 0 equal, 1 less, 2 greater
 
     LOAD_MEM_ABSOLUTE(27, 4),     // Literal BANK:PAGE:OFFSET, DESTINATION register
-    STORE_MEM_ABSOLUTE(28, 4);    // VALUE register, literal BANK:PAGE:OFFSET
+    STORE_MEM_ABSOLUTE(28, 4),    // VALUE register, literal BANK:PAGE:OFFSET
+
+    READ_NETWORK(29, 2),          // Network address register, destination register
+    WRITE_NETWORK(30, 2);         // Network address register, source register
 
     /** Encoded instruction byte. */
     private final byte code;

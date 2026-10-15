@@ -165,3 +165,5 @@ RAM now provides 131,072 eight-bit locations (128 KiB) through two 64 KiB banks.
 JV-DOS 1.3 supports larger text/JVS/COM files, 16-bit editor cursors and longer music streams (255 events). `./gradlew storageRegression` runs the headless RAM/filesystem checks without external test libraries.
 
 The DOS prompt supports Up/Down history (16 commands, cleared on reboot) and Tab completion of command names and bank-local filenames. Repeated Tab cycles matches; EDIT retains arrow navigation and four-space Tab indentation.
+
+Multiple 16 MiB disk images can be mounted with program arguments such as `--disk=1=secondary.img`; select one in DOS with `DRIVE 1`. Network opcodes 29/30 expose an asynchronous TCP controller over its own byte-addressed register bus, using the host?s internet connection. See [Peripheral buses](docs/wiki/Peripheral-buses.md) for the device protocol and a runnable guest network example.

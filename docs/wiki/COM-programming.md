@@ -2,6 +2,8 @@
 
 COM files contain flat JavaVCPU instructions. They are not x86 executables. DOS verifies opcode numbers, instruction lengths and register operands, runs files up to 240 bytes in bank 0 page 248, and runs larger linked executables in bank 1 starting at page 0:0. All instructions must stay within a 256-byte code page. Verification does not sandbox a program or prove that its branches and memory accesses are safe.
 
+Register operands use CPU indices: A-H are 0-7 and I-P are 12-19. Indices 8-11 remain control registers. DOS accepts all 20 register slots.
+
 ## Stable guest services
 
 The seeded `HELLO.COM` uses guest services to print a greeting and return to the shell:
@@ -47,3 +49,7 @@ DOS's validator walks the whole file as instructions, so embedded arbitrary data
 Bank 1 provides a separate 64 KiB for program data and code. Use opcodes 24/25 to read/write it from bank 0, and opcode 23 for cross-bank jumps. All DOS services live in bank 0; return from bank 1 with `CHANGE_BANK_PAGE_JUMP` specifying bank 0, page 249, offset 9. Ordinary page jumps retain the bank. The COM file limit is 61,200 bytes, subject to free blocks. Larger COM files begin in bank 1; they must explicitly select bank 0 to call DOS services or return to its prompt. Small COM files keep the original ABI. The counter still wraps within a page: use explicit page jumps to continue code across pages.
 
 RAM bank-one pages 240-250 are reserved for the shell history, draft line, and completion buffers. Preserve them when using bank-one RAM outside the loaded COM/file region.
+
+## Storage and networking
+
+Control register 10 selects the storage medium for opcodes 18/19; preserve the caller's value when returning to DOS. Opcodes 29/30 provide byte access to a separate TCP controller register bus. See [Peripheral buses](Peripheral-buses) for the protocol and `NETECHO.COM` example.

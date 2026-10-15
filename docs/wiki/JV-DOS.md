@@ -9,7 +9,12 @@ JV-DOS runs as guest bytecode. It provides a shell, persistent named files, an e
 | Command | Purpose / example |
 | --- | --- |
 | `HELP`, `CODEHELP` | Shell or programming help |
-| `DIR` | List filenames and byte lengths |
+| `DRIVE`, `DRIVE N` | Show/select a mounted storage device (0-255); resets to bank 2 root |
+| `DIR` | List the current folder; folders show `<DIR>` |
+| `MKDIR NAME`, `MD NAME` | Create a folder |
+| `CD NAME`, `CHDIR NAME` | Enter a child folder |
+| `CD ..`, `CD /`, `CD \` | Go to the parent or bank root |
+| `RMDIR NAME`, `RD NAME` | Remove an empty child folder |
 | `TYPE NAME`, `CAT NAME` | Print file contents directly |
 | `VIEW NAME`, `MORE NAME` | Read a document with navigation |
 | `WRITE NAME TEXT` | Create or replace text |
@@ -30,7 +35,7 @@ JV-DOS runs as guest bytecode. It provides a shell, persistent named files, an e
 | `REBOOT` | Restart the resident guest boot routine |
 | `EXIT` | Halt the CPU |
 
-Each disk bank provides 255 shared blocks. Names have up to 12 characters. Files use one or more linked blocks and can hold up to 61,200 bytes, subject to available bank space. There are no folders. The CLI and source reader have a 100-character line limit; use Workshop to import longer documents or binary files. `COPY`/`REN` report `DESTINATION EXISTS` if the target name is taken.
+Each disk bank provides 255 shared blocks. Names have up to 12 characters. Files use one or more linked blocks and can hold up to 61,200 bytes, subject to available bank space. Folders can nest and share the bank?s block pool; each folder consumes one block. Names are unique within a folder, so different folders can contain files with the same name. File commands accept a single name in the current folder; navigate with `CD` instead of supplying a multi-component path. `DEL` and other file commands reject folders; use `RMDIR` after removing their contents. The CLI and source reader have a 100-character line limit; use Workshop to import longer documents or binary files. `COPY`/`REN` report `DESTINATION EXISTS` if the target name is taken.
 
 ## Editor and viewers
 
@@ -54,7 +59,7 @@ See [JVS programming](JVS-programming), [COM programming](COM-programming), and 
 
 ## Disk banks (JV-DOS 1.3)
 
-The disk has 254 file banks, numbered 2-255, with 255 blocks shared by all files in each bank. `BANK` shows the selected bank. `BANK +` and `BANK -` move one bank at a time and stop at the boundaries. Reboot returns to bank 2. Existing files remain in bank 2; no disk conversion is required. All file commands use the selected bank, and COPY/REN stay within that bank. Larger files consume multiple blocks; small files retain their existing layout.
+The disk has 254 file banks, numbered 2-255, with 255 blocks shared by all files in each bank. `BANK` shows the selected bank. `BANK +` and `BANK -` move one bank at a time and stop at the boundaries. Reboot returns to bank 2. Existing files remain in bank 2; no disk conversion is required. All file commands use the selected bank and current folder, and COPY/REN stay within that folder. Changing banks resets the current folder to root. Reboot also resets the folder to root while preserving folders and files. Larger files consume multiple blocks; small files retain their existing layout.
 
 The backing hard drive remains 16 MiB because the CPU uses a three-byte disk address. DOS now uses most of that space through linked file blocks. The Java DOS image assembler lives in `xyz.ignite4inferneo.jvdos`; CPU and device code remain in `xyz.ignite4inferneo`.
 
@@ -64,4 +69,32 @@ The editor buffers files in RAM bank 1, supports 16-bit cursor positions, and co
 
 At the DOS prompt, Up recalls older commands and Down moves toward newer commands. The last 16 submitted, nonempty interactive lines are kept until reboot. Moving Down past the newest entry restores the line you were drafting, including its cursor position. Recalled commands can be edited and submitted again. JVS statements and editor text are not added to history.
 
-Tab completes the word at the cursor. Repeated Tab cycles matching command names, or filenames in the selected disk bank for file-command arguments (including both COPY/REN filenames). The rest of the input line is preserved. A completed final word receives a trailing space. Unmatched prefixes and replacements that exceed the 100-character line limit leave the line unchanged. Typing or moving the cursor starts a new completion search. In EDIT, Up/Down still navigate the document and Tab inserts four spaces.
+Tab completes the word at the cursor. Repeated Tab cycles matching command names, or names in the current folder of the selected disk bank for file-command arguments (including both COPY/REN filenames). The rest of the input line is preserved. A completed final word receives a trailing space. Unmatched prefixes and replacements that exceed the 100-character line limit leave the line unchanged. Typing or moving the cursor starts a new completion search. In EDIT, Up/Down still navigate the document and Tab inserts four spaces.
+
+## Reading the kernel source
+
+`src/main/java/xyz/ignite4inferneo/jvdos/JvDosImage.java` describes guest instructions with named `OPCode` values, one emitted instruction per line. `Asm.emit` checks operand counts before encoding bytes. Labels and the `get`/`put`, `call`/`ret` and file-buffer helpers hide address fixups and state layout.
+
+A-D hold working values, E/F support existing addressing sequences, and G/H implement far branches and the COM entry stubs. I/J handle indirect RAM reads without overwriting A-H. K/L hold glyph pixel coordinates, avoiding temporary RAM writes during rendering. M-P are available for future routines. Helpers can overwrite their documented scratch registers; guest JVS variables A-P live separately at bank 0, page 252, offsets 224-239.
+
+The register parser converts letters A-P directly into variable indices. `RUN` clears all sixteen JVS variables. Existing COM entry points and disk file layouts are unchanged. System-image revision 13 triggers installation of the updated kernel on next startup while preserving user files.
+
+## Folder storage
+
+The existing file headers and linked data blocks retain their layout. Directory headers use type 4, zero length and no continuation. The reserved page 255 in each file bank stores parent IDs at offsets 1-255, indexed by head slot plus one. ID 0 means root; other IDs identify a directory slot plus one. Offset 0 retains the existing initialization marker. Existing flat images have zero parent metadata and open as root files without conversion. Directory entries and file data share the 255 allocatable blocks; continuation ownership validation still covers the entire bank.
+
+For example:
+
+```text
+MKDIR DOCS
+CD DOCS
+WRITE NOTES.TXT HELLO
+MKDIR DRAFTS
+CD DRAFTS
+WRITE NOTES.TXT DRAFT
+CD ..
+DIR
+CD /
+```
+
+Additional disks are mounted with program arguments such as `--disk=1=secondary.img`. Each has independent banks and folders. The guest TCP network controller and sample program are described in [Peripheral buses](Peripheral-buses).
