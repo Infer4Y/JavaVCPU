@@ -8,7 +8,7 @@ foreach ($folder in @('bare-metal', 'dos')) {
             if ($_ -notmatch '^[0-9A-Fa-f]{2}$') { throw "Invalid byte: $_" }
             [Convert]::ToByte($_, 16)
         })
-        $limit = if ($folder -eq 'dos') { 240 } else { 256 }
+        $limit = if ($folder -eq 'dos') { 61200 } else { 256 }
         if ($bytes.Length -eq 0 -or $bytes.Length -gt $limit) { throw "Invalid length: $($_.Name)" }
         $extension = if ($folder -eq 'dos') { '.COM' } else { '.bin' }
         $target = [IO.Path]::ChangeExtension($_.FullName, $extension)

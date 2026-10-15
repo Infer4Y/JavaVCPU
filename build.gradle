@@ -18,3 +18,18 @@ dependencies {
 test {
     useJUnitPlatform()
 }
+// These headless storage checks have no external test-library dependencies.
+var regressionClasses = layout.buildDirectory.dir('classes/storageRegression')
+tasks.register('compileStorageRegression', JavaCompile) {
+    source = files(sourceSets.main.java, fileTree('src/test/java') { include '**/*Regression.java' })
+    classpath = files()
+    options.incremental = false
+    destinationDirectory = regressionClasses
+}
+tasks.register('storageRegression', JavaExec) {
+    dependsOn compileStorageRegression
+    classpath = files(regressionClasses)
+    mainClass = 'xyz.ignite4inferneo.DosStorageRegression'
+    args layout.buildDirectory.file('storage-regression.img').get().asFile.absolutePath
+}
+check.dependsOn storageRegression

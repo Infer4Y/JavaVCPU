@@ -21,6 +21,7 @@ Set IntelliJ's Main working directory to the project root. Change the path to se
 | `ANSWER.bin` | Prints 42 to the host console. |
 | `COUNT.bin` | Prints 0, 1, 2, 3, 4 on separate console lines. |
 | `PIXEL.bin` | Displays a white pixel at (128, 128). |
+| `BANKED-RAM.bin` | Writes/reads RAM address 0x1FFFF in bank 1 and prints 42. |
 | `MEMORY.bin` | Writes data and executable code to page 1, jumps there, and prints 42. |
 
 These programs start at page 0, byte 0 and bypass execution of BIOS and DOS. The normal device and disk initialization still runs. They use `STOP` to halt execution; close the display window afterward. Keep the uploaded program within one 256-byte page. These examples do not access storage.
@@ -32,11 +33,12 @@ Start the normal VM at least once to create and initialize `storage.img`, then s
 | File | Command | Expected result |
 | --- | --- | --- |
 | `HELLO.JVS` | `RUN HELLO.JVS` | Greeting and beep, then DOS prompt. |
+| `LONG.JVS` | `RUN LONG.JVS` | Multi-block source summing 1 through 10 and printing 55. |
 | `MATH.JVS` | `RUN MATH.JVS` | 42 and 0, demonstrating arithmetic and byte wrap. |
 | `COUNT.JVS` | `RUN COUNT.JVS` | 0 through 4, then DONE. |
 | `HI.COM` | `RUN HI.COM` | HI and a newline, then DOS prompt. |
 
-Import `.JVS` and `.COM`, not their `.hex` source listings. Download the updated disk, replace the project's `storage.img` while the VM is stopped, and restart with the normal DOS boot code. Each example fits the 240-byte file limit. `EDIT COUNT.JVS` opens the guest editor; Esc saves. Changing physical line positions changes `GOTO`/`IF` targets.
+Import `.JVS` and `.COM`, not their `.hex` source listings. Download the updated disk, replace the project's `storage.img` while the VM is stopped, and restart with the normal DOS boot code. These small examples retain the bank-zero COM convention; larger linked COM programs run in RAM bank 1. `EDIT COUNT.JVS` opens the guest editor; Esc saves. Changing physical line positions changes `GOTO`/`IF` targets.
 
 The COM example runs at page 248:0 and calls DOS services at 249:0 (print D, return to A:B) and 249:9 (prompt). Registers can be clobbered by services. JVS `END` returns to DOS; bytecode `STOP` halts the CPU.
 

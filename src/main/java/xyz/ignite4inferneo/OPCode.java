@@ -29,7 +29,16 @@ public enum OPCode {
     WRITE_BYTE_TO_STORAGE(19, 4),  // READ BYTE FROM STORAGE ->  X, Y, Z VALUE
     MULTIPLY(20, 3),               // MULTIPLY -> A B TARGET
     INCREMENT_REGISTER(21, 1),     // INCREMENT -> A
-    STORE_MEM_ON_PAGE(22, 3);      // STORE MEMORY ON PAGE -> VALUE, PAGE, ADDRESS
+    STORE_MEM_ON_PAGE(22, 3),      // STORE MEMORY ON PAGE -> VALUE, PAGE, ADDRESS
+
+    CHANGE_BANK_PAGE_JUMP(23, 3), // BANK, PAGE, TARGET registers
+    LOAD_MEM_ON_BANK(24, 4),      // BANK, PAGE, ADDRESS, DESTINATION registers
+    STORE_MEM_ON_BANK(25, 4),     // VALUE, BANK, PAGE, ADDRESS registers
+
+    COMPARE_UNSIGNED(26, 3),      // LEFT, RIGHT, RESULT: 0 equal, 1 less, 2 greater
+
+    LOAD_MEM_ABSOLUTE(27, 4),     // Literal BANK:PAGE:OFFSET, DESTINATION register
+    STORE_MEM_ABSOLUTE(28, 4);    // VALUE register, literal BANK:PAGE:OFFSET
 
     /** Encoded instruction byte. */
     private final byte code;

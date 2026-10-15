@@ -5,6 +5,8 @@
 
 package xyz.ignite4inferneo;
 
+import xyz.ignite4inferneo.jvdos.JvDosImage;
+
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -46,6 +48,7 @@ public class Programs {
         }
         Main.REGISTERS[Registers.PAGE.address()] = 0;
         Main.REGISTERS[Registers.COUNTER.address()] = 0;
+        Main.REGISTERS[Registers.MEMORY_BANK.address()] = 0;
         IO.println(program + " UPLOAD to MEMORY");
     }
 
@@ -686,7 +689,7 @@ public class Programs {
     static final byte[][] PROGRAM_BIOS_POST = createBiosPostProgram();
 
     /** Returns the bytecode image that firmware installs to and boots from storage. */
-    static byte[][] bootImage() {
+    public static byte[][] bootImage() {
         return PROGRAM_BIOS_POST;
     }
 

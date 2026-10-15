@@ -1,0 +1,9 @@
+# Store 42 at RAM address 0x1FFFF, then read it back and print it.
+02 01 00       # STORE 1 A (RAM bank)
+02 FF 01       # STORE 255 B (page)
+02 FF 02       # STORE 255 C (byte offset)
+02 2A 03       # STORE 42 D
+19 03 00 01 02 # STORE_MEM_ON_BANK D A B C
+18 00 01 02 04 # LOAD_MEM_ON_BANK A B C E
+05 04          # OUTPUT E
+04             # STOP

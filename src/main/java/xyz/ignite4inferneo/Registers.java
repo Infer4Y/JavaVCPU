@@ -5,7 +5,7 @@
 
 package xyz.ignite4inferneo;
 
-/** Identifies the eight general-purpose and two control positions in the virtual CPU register file. */
+/** Identifies the eight general-purpose and four control positions in the virtual CPU register file. */
 public enum Registers {
     A(0),
     B(1),
@@ -16,7 +16,9 @@ public enum Registers {
     G(6),
     H(7),
     COUNTER(8),
-    PAGE(9);
+    PAGE(9),
+    STORAGE_PAGE(10), // Reserved; disk addressing still uses three operand registers.
+    MEMORY_BANK(11);
     
     /** Zero-based index into {@link Main#REGISTERS}. */
     private final byte address;

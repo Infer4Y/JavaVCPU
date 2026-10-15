@@ -18,11 +18,11 @@
 
 The [complete screenshot gallery](docs/wiki/Screenshots.md) shows boot, help, directory, documents, images, music, program execution, graphics demos and Disk Workshop.
 
-The default BIOS boots **JV-DOS 1.1**, implemented using the existing VCPU opcodes. It provides an editable command line, persistent named files, a source editor with highlighting, runnable JVS programs, COM bytecode loading, palette images, a document pager, and a four-voice music player. Type `HELP` or `CODEHELP` in the display window.
+The default BIOS boots **JV-DOS 1.3**, implemented using the existing VCPU opcodes. It provides an editable command line, persistent named files, a source editor with highlighting, runnable JVS programs, COM bytecode loading, palette images, a document pager, and a four-voice music player. Type `HELP` or `CODEHELP` in the display window.
 
 Click the JavaVCPU display window before typing.
 
-Open [Disk Workshop](tools/disk-workshop/index.html) locally to import small text/source/binary files, convert images or MIDI clips, and download an updated `storage.img`. Stop the VM before replacing its disk, then restart. The tool preserves the BIOS and OS bytes. [Format documentation and limits](tools/disk-workshop/README.md) explain the 16-file, 240-byte-per-file directory and media conversions.
+Open [Disk Workshop](tools/disk-workshop/index.html) locally to import small text/source/binary files, convert images or MIDI clips, and download an updated `storage.img`. Stop the VM before replacing its disk, then restart. The tool preserves the BIOS and OS bytes. [Format documentation and limits](tools/disk-workshop/README.md) explain the linked files up to 61,200 bytes and media conversions.
 
 ![Disk Workshop directory and JVS source editor](docs/wiki/images/workshop-text.png)
 
@@ -45,7 +45,7 @@ Then run `xyz.ignite4inferneo.Main` from IntelliJ IDEA with JDK 26 selected. The
 | Part | What it does |
 | --- | --- |
 | **CPU** | Executes bytecode through eight general-purpose registers plus a program counter and active-page register. |
-| **Memory** | Provides 256 pages of 256 bytes: **64 KiB** in total. |
+| **Memory** | Provides two banks of 256 pages of 256 bytes: **128 KiB** in total. |
 | **Display** | Renders a 256 × 256 palette framebuffer in an 800 × 800 Swing window. |
 | **Programs** | Includes a POST boot flow, text rendering, a snowfall animation, and memory-page examples. |
 
@@ -68,7 +68,7 @@ Add the bytecode to `Programs`, add a matching `Program` enum value and loader c
 | Program | Demonstrates |
 | --- | --- |
 | `BIOS_POST` | The default BIOS POST and handoff to the resident monitor. |
-| `DEMO_OS` | Legacy enum name for the resident JV-DOS 1.1 bytecode operating system. |
+| `DEMO_OS` | Legacy enum name for the resident JV-DOS 1.2 bytecode operating system. |
 | `PERIPHERAL_DIAGNOSTICS` | Storage read/write, keyboard polling, audio control, multiplication, and increment. |
 | `DISPLAY_HELLO_CPU` | Drawing **HELLO CPU** with graphics bytecode. |
 | `SNOWFALL` | Pixel reads and writes for falling, accumulating snow. |
@@ -154,6 +154,14 @@ The high bit is ignored on writes. `0b11_111_00` is yellow and `0b11_111_11` is 
 | `Monitor.java` | Framebuffer access and Swing rendering |
 | `OPCode.java` | Opcode values and instruction lengths |
 | `Programs.java` | Built-in bytecode and its loader |
-| `JvDosImage.java` | Assembles the guest DOS kernel, editor, source interpreter, and media tools |
+| `jvdos/JvDosImage.java` | Assembles the guest DOS kernel, editor, source interpreter, and media tools |
 | `tools/disk-workshop/index.html` | Browser-local disk importer/editor and image/MIDI converters |
 | `Registers.java` | Register indices |
+
+JV-DOS 1.2 expands storage to 254 banks of 255 shared blocks. Use `BANK`, `BANK +`, and `BANK -` to inspect and change banks. The device remains 16 MiB; files can now use linked blocks up to 61,200 bytes when bank space permits; existing files stay in bank 2. The DOS assembler is now in `xyz.ignite4inferneo.jvdos`.
+
+RAM now provides 131,072 eight-bit locations (128 KiB) through two 64 KiB banks. Legacy programs boot in bank 0. Opcodes 23–25 provide cross-bank jumps, reads and writes; see [the instruction set](docs/wiki/Instruction-set.md). Storage remains separately addressed at 16 MiB.
+
+JV-DOS 1.3 supports larger text/JVS/COM files, 16-bit editor cursors and longer music streams (255 events). `./gradlew storageRegression` runs the headless RAM/filesystem checks without external test libraries.
+
+The DOS prompt supports Up/Down history (16 commands, cleared on reboot) and Tab completion of command names and bank-local filenames. Repeated Tab cycles matches; EDIT retains arrow navigation and four-space Tab indentation.

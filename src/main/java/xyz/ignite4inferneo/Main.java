@@ -7,18 +7,19 @@ package xyz.ignite4inferneo;
 
 import java.io.IOException;
 import java.math.BigInteger;
+import java.text.NumberFormat;
 
 /**
  * Executes JavaVCPU bytecode and owns the virtual CPU state.
  *
  * <p>Instructions use operand bytes as indices into {@link #REGISTERS}, unless their opcode
  * documents an operand as a literal value or address. Memory accesses operate on the page selected
- * by {@link Registers#PAGE}, except instructions that explicitly take a page register.</p>
+ * by {@link Registers#MEMORY_BANK} and {@link Registers#PAGE}, except instructions that explicitly take a page register.</p>
  */
 public class Main {
     /**
      * The CPU register file: A through H are general-purpose registers, followed by the instruction
-     * counter and active memory page.
+     * counter, active memory page, reserved storage slot, and active RAM bank.
      */
     static byte[] REGISTERS = new byte[] {
             0, // A
@@ -31,7 +32,8 @@ public class Main {
             0, // H
             0, // COUNTER
             0, // MEMORY PAGE
-            0  // STORAGE PAGE
+            0, // STORAGE PAGE (reserved)
+            0  // MEMORY BANK
         };
 
     /** The currently selected 256-byte memory page. */
@@ -51,11 +53,14 @@ public class Main {
      *
      * @throws InterruptedException if interrupted while executing the virtual CPU
      */
-    public static void main(String[] args) throws InterruptedException, IOException {
+    static void main(String[] args) throws InterruptedException, IOException {
         Monitor.initialize();
         Audio.initialize();
         Input.initialize();
         Storage.load();
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try { Storage.save(); } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
+        }, "storage-flush"));
         DiskInstaller.installIfMissing();
 
         cpuStartTime = System.currentTimeMillis();
@@ -64,8 +69,12 @@ public class Main {
 
         while (running) {
             int counter = getProgramCounter();
-            MEMORY = Memory.getMemoryPage(REGISTERS[Registers.PAGE.address()]);
+            MEMORY = Memory.getMemoryPage(REGISTERS[Registers.MEMORY_BANK.address()],
+                    REGISTERS[Registers.PAGE.address()]);
             byte opcode = MEMORY[counter];
+
+            assert (opcode <= 28);
+            assert (opcode >= 0);
 
             switch (opcode) {
                 // ADD registerA, registerB, destinationRegister
@@ -133,6 +142,15 @@ public class Main {
                 // STORE_MEM_ON_PAGE sourceRegister, pageRegister, addressRegister
                 case 22 -> storeMemoryOnPage(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3]);
 
+                case 23 -> changeBankPageJump(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3]);
+                case 24 -> loadMemoryOnBank(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3], MEMORY[counter + 4]);
+                case 25 -> storeMemoryOnBank(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3], MEMORY[counter + 4]);
+
+                case 26 -> compareUnsigned(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3]);
+
+                case 27 -> loadMemoryAbsolute(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3], MEMORY[counter + 4]);
+                case 28 -> storeMemoryAbsolute(MEMORY[counter + 1], MEMORY[counter + 2], MEMORY[counter + 3], MEMORY[counter + 4]);
+
                 default -> throw new IllegalStateException(
                         "Unknown opcode: " + opcode +
                                 " at address " + counter
@@ -159,7 +177,7 @@ public class Main {
     }
 
     /** Adds two registers, stores the wrapped byte result, and advances the counter. */
-    public static void add(
+    static void add(
             byte a,
             byte b,
             byte register
@@ -174,7 +192,7 @@ public class Main {
     }
 
     /** Subtracts one register from another, stores the wrapped byte result, and advances the counter. */
-    public static void sub(
+    static void sub(
             byte a,
             byte b,
             byte register
@@ -189,7 +207,7 @@ public class Main {
     }
 
     /** Stores a literal byte in a register and advances the counter. */
-    public static void store(
+    static void store(
             byte value,
             byte register
     ) {
@@ -201,12 +219,12 @@ public class Main {
     }
 
     /** Sets the program counter to a literal address. */
-    public static void jump(byte address) {
+    static void jump(byte address) {
         REGISTERS[Registers.COUNTER.address()] = address;
     }
 
     /** Jumps to a literal address when two registers contain equal values. */
-    public static void cond_jump(byte a, byte b, byte address) {
+    static void cond_jump(byte a, byte b, byte address) {
         int A = Byte.toUnsignedInt(a);
         int B = Byte.toUnsignedInt(b);
         if (REGISTERS[A] == REGISTERS[B]) {
@@ -220,11 +238,11 @@ public class Main {
     static void stop(){
         running = false;
         Audio.shutdown();
-        IO.println("EOF CPU Ran for " + (System.currentTimeMillis() - cpuStartTime) + "ms | " + intructs + " instructions ran");
+        IO.println("EOF CPU Ran for " + (System.currentTimeMillis() - cpuStartTime) + "ms | " + NumberFormat.getInstance().format(intructs) + " instructions ran");
     }
 
     /** Prints a register's signed byte value and advances the counter. */
-    public static void output(byte register) {
+    static void output(byte register) {
         int Register = Byte.toUnsignedInt(register);
 
         IO.println(REGISTERS[Register]);
@@ -233,7 +251,7 @@ public class Main {
     }
 
     /** Loads a byte from a literal address in the active page into a register. */
-    public static void loadMemory(byte a, byte b) {
+    static void loadMemory(byte a, byte b) {
         int A = Byte.toUnsignedInt(a);
         int B = Byte.toUnsignedInt(b);
 
@@ -243,7 +261,7 @@ public class Main {
     }
 
     /** Stores a register value at a literal address in the active page. */
-    public static void storeMemory(byte a, byte b) {
+    static void storeMemory(byte a, byte b) {
         int A = Byte.toUnsignedInt(a);
         int B = Byte.toUnsignedInt(b);
 
@@ -253,19 +271,63 @@ public class Main {
     }
 
     /** Stores a register value at a register-selected address on a register-selected page. */
-    public static void storeMemoryOnPage(byte value, byte page, byte address) {
+    static void storeMemoryOnPage(byte value, byte page, byte address) {
         int valueRegister = Byte.toUnsignedInt(value);
         int pageRegister = Byte.toUnsignedInt(page);
         int addressRegister = Byte.toUnsignedInt(address);
 
-        Memory.getMemoryPage(REGISTERS[pageRegister])[Byte.toUnsignedInt(REGISTERS[addressRegister])]
+        Memory.getMemoryPage(REGISTERS[Registers.MEMORY_BANK.address()], REGISTERS[pageRegister])[Byte.toUnsignedInt(REGISTERS[addressRegister])]
                 = REGISTERS[valueRegister];
 
         incrementCounter(OPCode.STORE_MEM_ON_PAGE.length());
     }
 
+    static void loadMemoryAbsolute(byte bank, byte page, byte offset, byte destination) {
+        REGISTERS[Byte.toUnsignedInt(destination)] = Memory.getMemoryPage(bank, page)[Byte.toUnsignedInt(offset)];
+        incrementCounter(OPCode.LOAD_MEM_ABSOLUTE.length());
+    }
+
+    static void storeMemoryAbsolute(byte value, byte bank, byte page, byte offset) {
+        Memory.getMemoryPage(bank, page)[Byte.toUnsignedInt(offset)] = REGISTERS[Byte.toUnsignedInt(value)];
+        incrementCounter(OPCode.STORE_MEM_ABSOLUTE.length());
+    }
+
+    static void compareUnsigned(byte left, byte right, byte destination) {
+        int comparison = Integer.compare(Byte.toUnsignedInt(REGISTERS[Byte.toUnsignedInt(left)]),
+                Byte.toUnsignedInt(REGISTERS[Byte.toUnsignedInt(right)]));
+        REGISTERS[Byte.toUnsignedInt(destination)] = (byte) (comparison == 0 ? 0 : comparison < 0 ? 1 : 2);
+        incrementCounter(OPCode.COMPARE_UNSIGNED.length());
+    }
+
+    /** Atomically selects bank, page and instruction offset from operand registers. */
+    static void changeBankPageJump(byte bank, byte page, byte address) {
+        // Capture all operands before modifying control registers (operands can alias them).
+        byte bankValue = REGISTERS[Byte.toUnsignedInt(bank)];
+        byte pageValue = REGISTERS[Byte.toUnsignedInt(page)];
+        byte addressValue = REGISTERS[Byte.toUnsignedInt(address)];
+        Memory.getMemoryPage(bankValue, pageValue); // Validate before changing CPU state.
+        REGISTERS[Registers.MEMORY_BANK.address()] = bankValue;
+        REGISTERS[Registers.PAGE.address()] = pageValue;
+        REGISTERS[Registers.COUNTER.address()] = addressValue;
+    }
+
+    /** Reads either RAM bank while execution stays in the current bank. */
+    static void loadMemoryOnBank(byte bank, byte page, byte address, byte destination) {
+        byte[] target = Memory.getMemoryPage(REGISTERS[Byte.toUnsignedInt(bank)], REGISTERS[Byte.toUnsignedInt(page)]);
+        byte value = target[Byte.toUnsignedInt(REGISTERS[Byte.toUnsignedInt(address)])];
+        REGISTERS[Byte.toUnsignedInt(destination)] = value;
+        incrementCounter(OPCode.LOAD_MEM_ON_BANK.length());
+    }
+
+    /** Writes either RAM bank while execution stays in the current bank. */
+    static void storeMemoryOnBank(byte value, byte bank, byte page, byte address) {
+        byte[] target = Memory.getMemoryPage(REGISTERS[Byte.toUnsignedInt(bank)], REGISTERS[Byte.toUnsignedInt(page)]);
+        target[Byte.toUnsignedInt(REGISTERS[Byte.toUnsignedInt(address)])] = REGISTERS[Byte.toUnsignedInt(value)];
+        incrementCounter(OPCode.STORE_MEM_ON_BANK.length());
+    }
+
     /** Selects the page stored in a register and advances the counter. */
-    public static void changePage(byte a){
+    static void changePage(byte a){
 
         int A = Byte.toUnsignedInt(a);
 
@@ -275,7 +337,7 @@ public class Main {
     }
 
     /** Selects a page and sets the counter from a second register. */
-    public static void changePageJump(byte a, byte b){
+    static void changePageJump(byte a, byte b){
         int A = Byte.toUnsignedInt(a);
         int B = Byte.toUnsignedInt(b);
 
@@ -284,7 +346,7 @@ public class Main {
     }
 
     /** Selects a page and jumps when two registers contain equal values. */
-    public static void changePageCondJump(byte a, byte b, byte c, byte address) {
+    static void changePageCondJump(byte a, byte b, byte c, byte address) {
         int A = Byte.toUnsignedInt(a);
         int B = Byte.toUnsignedInt(b);
         int C = Byte.toUnsignedInt(c);
@@ -298,7 +360,7 @@ public class Main {
     }
 
     /** Clears the virtual display and advances the counter. */
-    public static void clearGraphics() {
+    static void clearGraphics() {
         Monitor.clear();
 
         incrementCounter(OPCode.CLEAR_GRA.length());
@@ -307,7 +369,7 @@ public class Main {
     /**
      * Presents the virtual display framebuffer and advances the counter.
      */
-    public static void display() throws InterruptedException {
+    static void display() throws InterruptedException {
         Monitor.display();
 
         Thread.sleep(33);
@@ -316,7 +378,7 @@ public class Main {
     }
 
     /** Writes a pixel using x, y, and color values from three registers, then advances the counter. */
-    public static void pushGraphicsMemory(byte a, byte b, byte color) {
+    static void pushGraphicsMemory(byte a, byte b, byte color) {
         int A = Byte.toUnsignedInt(a);
         int B = Byte.toUnsignedInt(b);
         int Color = Byte.toUnsignedInt(color);
@@ -330,7 +392,7 @@ public class Main {
      * Reads the palette value at coordinates held in two registers into a destination register,
      * then advances the counter.
      */
-    public static void pullGraphicsMemory(byte a, byte b, byte target) {
+    static void pullGraphicsMemory(byte a, byte b, byte target) {
         int A = Byte.toUnsignedInt(a);
         int B = Byte.toUnsignedInt(b);
         int Target = Byte.toUnsignedInt(target);
@@ -340,7 +402,7 @@ public class Main {
         incrementCounter(OPCode.READ_GRA_MEM.length());
     }
 
-    public static void readInput(byte device, byte target) {
+    static void readInput(byte device, byte target) {
         int targetRegister = Byte.toUnsignedInt(target);
 
         REGISTERS[targetRegister] = Input.read(device);
@@ -348,7 +410,7 @@ public class Main {
         incrementCounter(OPCode.READ_INPUT.length());
     }
 
-    public static void outputAudio(byte voice, byte midiNote, byte control) {
+    static void outputAudio(byte voice, byte midiNote, byte control) {
         int voiceRegister = Byte.toUnsignedInt(voice);
         int noteRegister = Byte.toUnsignedInt(midiNote);
         int controlRegister = Byte.toUnsignedInt(control);
@@ -362,7 +424,7 @@ public class Main {
         incrementCounter(OPCode.OUTPUT_AUDIO.length());
     }
 
-    public static void readStorage(byte a, byte b, byte c, byte target) {
+    static void readStorage(byte a, byte b, byte c, byte target) {
         int A = Byte.toUnsignedInt(a);
         int B = Byte.toUnsignedInt(b);
         int C = Byte.toUnsignedInt(c);
@@ -373,7 +435,7 @@ public class Main {
         incrementCounter(OPCode.READ_BYTE_FROM_STORAGE.length());
     }
 
-    public static void writeStorage(byte a, byte b, byte c, byte target) {
+    static void writeStorage(byte a, byte b, byte c, byte target) {
         int A = Byte.toUnsignedInt(a);
         int B = Byte.toUnsignedInt(b);
         int C = Byte.toUnsignedInt(c);
@@ -384,7 +446,7 @@ public class Main {
         incrementCounter(OPCode.WRITE_BYTE_TO_STORAGE.length());
     }
 
-    public static void multiply(byte a, byte b, byte target){
+    static void multiply(byte a, byte b, byte target){
         int A = Byte.toUnsignedInt(a);
         int B = Byte.toUnsignedInt(b);
         int Target = Byte.toUnsignedInt(target);
@@ -394,7 +456,7 @@ public class Main {
         incrementCounter(OPCode.MULTIPLY.length());
     }
 
-    public static void incrementRegister(byte a) {
+    static void incrementRegister(byte a) {
         int A = Byte.toUnsignedInt(a);
 
         REGISTERS[A]++;

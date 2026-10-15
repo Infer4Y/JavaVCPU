@@ -14,7 +14,7 @@ Disk Workshop is the browser-local tool at `tools/disk-workshop/index.html`. Ope
 6. While the VM is stopped, replace the project's `storage.img` with the downloaded image using that exact name.
 7. Restart JavaVCPU. Use `DIR`, then `RUN`, `VIEW`, `IMAGE` or `PLAY` for the imported file.
 
-The directory allows 16 files of at most 240 bytes each. The tool preserves bytes outside its directory and initialization marker, including the BIOS/kernel. An import batch uses a working clone so a failed import does not partially apply the batch.
+Each selected bank has 255 shared blocks. Files can use linked blocks up to 61,200 bytes, subject to free space. The tool preserves bytes outside its directory and initialization marker, including the BIOS/kernel. An import batch uses a working clone so a failed import does not partially apply the batch.
 
 ## Editor and conversions
 
@@ -31,7 +31,7 @@ Imported names are normalized to an eight-character base plus a three-character 
 | IMG beginning `JI` | Existing guest image format |
 | JMT | Existing guest music format |
 
-MIDI supports running status, tempo changes, note-on/off and four-note polyphony. Program changes and controller effects are not preserved; percussion becomes noise. More than four simultaneous notes or more than 59 output events requires shortening the input. The tune composer takes `MIDI_NOTE FRAME_DURATION` per line, up to 29 notes; e.g. `60 6`, `64 6`, `67 12` produces `THEME.JMT`.
+MIDI supports running status, tempo changes, note-on/off and four-note polyphony. Program changes and controller effects are not preserved; percussion becomes noise. More than four simultaneous notes or more than 255 output events requires shortening the input. The tune composer takes `MIDI_NOTE FRAME_DURATION` per line, up to 127 notes; e.g. `60 6`, `64 6`, `67 12` produces `THEME.JMT`.
 
 **Add sample files** adds `WELCOME.TXT`, `SMILE.IMG` and `THEME.JMT`. Use `VIEW WELCOME.TXT`, `IMAGE SMILE.IMG` and `PLAY THEME.JMT` after downloading/installing the disk.
 
@@ -46,7 +46,7 @@ See [Screenshots](Screenshots) for the corresponding guest document, image and p
 | Symptom | Check |
 | --- | --- |
 | No supported BIOS header | Start the current VM normally first; a blank or older-format image is rejected |
-| File too large | 240 bytes includes media headers and every source newline |
+| File too large | 61,200 bytes includes media headers and every source newline |
 | Imported file absent in DOS | Apply edits, download disk, stop VM, replace correct working-directory disk, restart |
 | Wrong execution behavior | Inspect file type; text is interpreted, binary is bytecode |
 | Can't type | Focus the display window; hold quotes/backtick long enough for polling |
