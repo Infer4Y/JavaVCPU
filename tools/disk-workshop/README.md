@@ -1,4 +1,4 @@
-# JV-DOS 1.3 Disk Workshop
+# JV-DOS 1.4 Disk Workshop
 
 Open `index.html` locally. Select your project's `storage.img`, import or edit files, and download `storage-updated.img`. Stop the VM, replace its `storage.img` with the downloaded image, and restart. The tool never contacts a server or changes your original file automatically.
 
@@ -29,4 +29,14 @@ The keyboard decoder uses existing make/break events and keyboard-state ports. Q
 
 ### JV-DOS 1.2 banks
 
-Use the Disk bank selector (2-255) to edit another bank. Each bank contains 255 slots; slot 255 is reserved. In DOS, `BANK +` and `BANK -` select the corresponding bank, and `BANK` reports the current bank. Existing images with system revisions 4, 5, 6, 7, 8, 9 and 10 can be opened; the VM updates their system image to revision 10 while preserving user files. Files use 240-byte content chunks; a continuation has byte 1 set to 255 and byte 15 as its next slot. Large-file writes require JV-DOS 1.3. Capacity is checked before any file changes are committed. Cloning/importing preserves the selected bank and all other disk bytes.
+Use the Disk bank selector (2-255) to edit another bank. Each bank contains 255 slots; slot 255 is reserved. In DOS, `BANK +` and `BANK -` select the corresponding bank, and `BANK` reports the current bank. Existing images with system revisions 4 through 16 can be opened; the VM updates their system image to revision 16 while preserving user files. Files use 240-byte content chunks; a continuation has byte 1 set to 255 and byte 15 as its next slot. Large-file writes require JV-DOS 1.3. Capacity is checked before any file changes are committed. Cloning/importing preserves the selected bank and all other disk bytes.
+
+JV-DOS 1.4 folders appear as DIR entries. Click a folder to enter it and use Parent folder to go back. Imports, samples, edits and filename checks apply to the current folder. The parent table in reserved slot 255 is preserved; nonempty folders cannot be deleted or overwritten.
+
+## Experimental desktop
+
+Open your disk, choose the bank/folder where the desktop should live, and click **Add JCTRL desktop**. Download the updated disk and replace `storage.img` while the VM is stopped. In that DOS folder, run `RUN JCTRL.COM`. You can also import `examples/dos/JCTRL.COM` normally. Adding the desktop requires about 143 free blocks and never replaces an existing `JCTRL.COM`.
+
+The separate guest application offers overlapping, draggable windows for read-only `DIR`, `VIEW`/`TYPE`, `VER`, `MEM`, and `HELP` functionality. Click text files or folders in Files; use Up, Next, Home, and the mouse wheel to navigate. F1 opens Help, F2 opens Files, F3 opens system information, and Esc or the DOS toolbar button returns to the shell. Close windows with X. The desktop keeps the selected DOS disk/bank/folder and does not edit files. COM, image, and music files open directly. For JVS source, click Run / Open or press F5. The guest-only runner provides 8 KiB of program/data RAM and a 128?128 framebuffer; larger programs or unsupported memory accesses show an error. Images and music stream through existing device instructions. BANK- / BANK+ browses other banks for large media. Esc or X stops playback/programs. The Java VM, ISA, RAM capacity, and device behavior are unchanged.
+
+Rebuild both bundled desktop assets with `gradlew.bat desktopImage`. Source and the memory layout are documented in [DesktopImage.java](../../src/main/java/xyz/ignite4inferneo/jvdos/DesktopImage.java) and [the desktop guide](../../docs/wiki/Experimental-desktop.md).

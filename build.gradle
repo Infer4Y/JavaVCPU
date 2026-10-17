@@ -1,5 +1,6 @@
 plugins {
     id 'java'
+    id 'application'
 }
 
 group = 'xyz.ignite4inferneo'
@@ -33,3 +34,15 @@ tasks.register('storageRegression', JavaExec) {
     args layout.buildDirectory.file('storage-regression.img').get().asFile.absolutePath
 }
 check.dependsOn storageRegression
+
+// Rebuild the guest desktop executable and the offline Workshop installation asset.
+tasks.register('desktopImage', JavaExec) {
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'xyz.ignite4inferneo.jvdos.DesktopImage'
+    args file('examples/dos/JCTRL.COM').absolutePath, file('tools/disk-workshop/desktop.js').absolutePath
+}
+
+application {
+    mainClass = 'xyz.ignite4inferneo.Main'
+}

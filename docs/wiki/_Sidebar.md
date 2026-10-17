@@ -9,3 +9,5 @@
 * [Tooling and Disk Workshop](Tooling-and-Disk-Workshop)
 * [Disk and media formats](Disk-and-media-formats)
 * [Example programs](Example-programs)
+
+* [Experimental desktop](Experimental-desktop.md)

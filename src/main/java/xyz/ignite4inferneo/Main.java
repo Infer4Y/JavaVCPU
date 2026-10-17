@@ -177,6 +177,8 @@ public class Main {
                 );
             }
 
+            //if (opcode != OPCode.DISPLAY.code()) Thread.sleep(0,1000);
+
             intructs = intructs.add(new BigInteger("1"));
         }
     }
@@ -389,10 +391,11 @@ public class Main {
     /**
      * Presents the virtual display framebuffer and advances the counter.
      */
-    static void display() throws InterruptedException {
-        Monitor.display();
+    private static final FramePacer DISPLAY_PACER = new FramePacer(33_000_000L);
 
-        Thread.sleep(33);
+    static void display() throws InterruptedException {
+        DISPLAY_PACER.await();
+        Monitor.display();
 
         incrementCounter(OPCode.DISPLAY.length());
     }

@@ -21,8 +21,10 @@ JV-DOS runs as guest bytecode. It provides a shell, persistent named files, an e
 | `APPEND NAME TEXT` | Append text to an existing file |
 | `EDIT NAME` | Create/open a file in the editor |
 | `COPY OLD NEW` | Copy to a new name |
-| `REN OLD NEW` | Rename to an unused name |
-| `DEL NAME`, `ERASE NAME` | Delete a file |
+| `REN OLD NEW`, `RENAME OLD NEW` | Rename a file to an unused name |
+| `MOVE NAME DEST` | Move a file/folder into a sibling folder, or rename it to an unused name |
+| `MOVE NAME ..`, `MOVE NAME /` | Move a file/folder to its parent or bank root |
+| `DEL NAME`, `ERASE NAME`, `DELETE NAME` | Delete a file |
 | `SAVE NAME HEX` | Create binary content from uppercase hex byte pairs |
 | `RUN NAME` | Interpret text, load bytecode, or open image/music by type |
 | `IMAGE NAME`, `SHOW NAME` | Display a palette image |
@@ -35,7 +37,7 @@ JV-DOS runs as guest bytecode. It provides a shell, persistent named files, an e
 | `REBOOT` | Restart the resident guest boot routine |
 | `EXIT` | Halt the CPU |
 
-Each disk bank provides 255 shared blocks. Names have up to 12 characters. Files use one or more linked blocks and can hold up to 61,200 bytes, subject to available bank space. Folders can nest and share the bank?s block pool; each folder consumes one block. Names are unique within a folder, so different folders can contain files with the same name. File commands accept a single name in the current folder; navigate with `CD` instead of supplying a multi-component path. `DEL` and other file commands reject folders; use `RMDIR` after removing their contents. The CLI and source reader have a 100-character line limit; use Workshop to import longer documents or binary files. `COPY`/`REN` report `DESTINATION EXISTS` if the target name is taken.
+Each disk bank provides 255 shared blocks. Names have up to 12 characters. Files use one or more linked blocks and can hold up to 61,200 bytes, subject to available bank space. Folders can nest and share the bank?s block pool; each folder consumes one block. Names are unique within a folder, so different folders can contain files with the same name. File commands accept a single name in the current folder; navigate with `CD` instead of supplying a multi-component path. `MOVE` accepts folders as well as files. `DEL` and the ordinary content commands reject folders; use `RMDIR` after removing their contents. The CLI and source reader have a 100-character line limit; use Workshop to import longer documents or binary files. `COPY`/`REN` report `DESTINATION EXISTS` if the target name is taken. `MOVE` also rejects collisions and directory cycles; it changes only names or parent metadata, leaving linked file data untouched. Its source and destination must be on the same bank/device; multi-component paths are not accepted. Moving metadata does not need the file buffer, so large files can also be moved from the desktop DOS window. These commands use the same resident parser in both shells.
 
 ## Editor and viewers
 
@@ -77,7 +79,7 @@ Tab completes the word at the cursor. Repeated Tab cycles matching command names
 
 A-D hold working values, E/F support existing addressing sequences, and G/H implement far branches and the COM entry stubs. I/J handle indirect RAM reads without overwriting A-H. K/L hold glyph pixel coordinates, avoiding temporary RAM writes during rendering. M-P are available for future routines. Helpers can overwrite their documented scratch registers; guest JVS variables A-P live separately at bank 0, page 252, offsets 224-239.
 
-The register parser converts letters A-P directly into variable indices. `RUN` clears all sixteen JVS variables. Existing COM entry points and disk file layouts are unchanged. System-image revision 13 triggers installation of the updated kernel on next startup while preserving user files.
+The register parser converts letters A-P directly into variable indices. `RUN` clears all sixteen JVS variables. Existing COM entry points and disk file layouts are unchanged. System-image revision 16 triggers installation of the updated kernel on next startup while preserving user files.
 
 ## Folder storage
 
@@ -98,3 +100,7 @@ CD /
 ```
 
 Additional disks are mounted with program arguments such as `--disk=1=secondary.img`. Each has independent banks and folders. The guest TCP network controller and sample program are described in [Peripheral buses](Peripheral-buses).
+
+## Experimental desktop
+
+Run `RUN JCTRL.COM` after adding it through Disk Workshop. The [desktop guide](Experimental-desktop.md) covers mouse windows, the guest program runner, image/music playback, and installation.

@@ -10,7 +10,7 @@ import java.util.Random;
 
 public final class Audio {
     private static final int SAMPLE_RATE = 44_100;
-    private static final int VOICE_COUNT = 8;
+    private static final int VOICE_COUNT = 16;
     private static final Voice[] VOICES = new Voice[VOICE_COUNT];
     private static final Random RANDOM = new Random();
 

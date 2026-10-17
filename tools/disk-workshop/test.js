@@ -35,7 +35,7 @@ globalThis.runDiskTests = function () {
   check(dense.every(e=>e.voice>=0&&e.voice<8)&&dense.slice(-8).every(e=>e.control===0),'All remaining voices stop');
   const voice7=D.tune([{frames:1,voice:7,note:60,control:129}]);
   check(D.decodeTune(voice7)[0].voice===7,'Eighth voice round trip');
-  rejects(()=>D.tune([{frames:1,voice:8,note:60,control:129}]));
+  rejects(()=>D.tune([{frames:1,voice:16,note:60,control:129}]));
   const extended=D.tune(Array.from({length:15299},()=>({frames:0,voice:0,note:60,control:129})));
   check(extended.length===61200&&extended[2]===2&&D.decodeTune(extended).length===15299,'Maximum extended tune');
   rejects(()=>D.tune(Array.from({length:15300},()=>({frames:0,voice:0,note:60,control:129}))));
@@ -59,5 +59,26 @@ globalThis.runDiskTests = function () {
   rejects(()=>new D.Disk(malformed,3));malformed[(3<<16)+256+15]=255;rejects(()=>new D.Disk(malformed,3));
   const longTune=D.tune(Array.from({length:255},()=>({frames:0,voice:0,note:60,control:0})));
   check(longTune.length===1024&&D.decodeTune(longTune).length===255,'Expanded tune limit');
+  for(let revision=4;revision<=16;revision++) {
+    const current=new Uint8Array(D.SIZE);current.set([74,86,67,80,77,revision,253,1]);
+    new D.Disk(current);
+  }
+  const folders=new Uint8Array(D.SIZE);folders.set([74,86,67,80,77,14,253,1]);
+  const fd=new D.Disk(folders);fd.put('DOCS',new Uint8Array());fd.bytes[D.BASE+13]=4;
+  fd.put('SAME.TXT',D.textBytes('ROOT'),1);fd.cwd=1;
+  fd.put('SAME.TXT',D.textBytes('CHILD'),1);
+  check(fd.list().length===1&&D.textOf(fd.list()[0].data)==='CHILD','Folder name isolation');
+  const fc=fd.clone();check(fc.cwd===1&&fc.list()[0].parent===1,'Clone keeps folder');
+  fc.put('SAME.TXT',D.textBytes('UPDATED'),1);fc.cwd=0;
+  check(D.textOf(fc.list().find(f=>f.name==='SAME.TXT').data)==='ROOT','Child edit preserves root');
+  rejects(()=>fc.remove(0));rejects(()=>fc.put('DOCS',D.textBytes('BAD'),1));
+  fc.cwd=1;fc.remove(fc.list()[0].slot);fc.cwd=0;fc.remove(0);
+  check(fc.list().length===1,'Remove empty folder');
+  if(typeof DosDesktop!=='undefined') {
+    const payload=Uint8Array.from(atob(DosDesktop),c=>c.charCodeAt(0));
+    check(payload.length>240&&payload.length<=D.MAX,'Desktop COM length');
+    const appDisk=new D.Disk(folders);appDisk.put('JCTRL.COM',payload,0);
+    check(appDisk.list().find(f=>f.name==='JCTRL.COM').data.every((b,i)=>b===payload[i]),'Bundled desktop linked import');
+  }
   return 'PASS: linked disk round trip, preservation, size limits, text encoding, palette images, MIDI tempo/running status/polyphony, malformed inputs and long durations.';
 };

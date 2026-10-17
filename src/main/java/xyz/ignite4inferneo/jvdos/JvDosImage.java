@@ -31,7 +31,7 @@ public final class JvDosImage {
             L=Registers.L.address();
     private static final int SOURCE_REGISTER_COUNT = 16;
     private static final int SOURCE_REGISTER_BASE = 224;
-    private static final String[] COMMANDS={"BROWSE","MKDIR","MD","CD","CHDIR","RMDIR","RD","HELP","CODEHELP","DRIVE","BANK","DIR","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","ERASE","WRITE","EDIT","APPEND","COPY","REN","ECHO","PRINT","CLS","CLEAR","VER","MEM","RUN","SAVE","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","SOUND","REM","END","STOP","REBOOT","EXIT"};
+    private static final String[] COMMANDS={"BROWSE","MKDIR","MD","CD","CHDIR","RMDIR","RD","HELP","CODEHELP","DRIVE","BANK","DIR","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","ERASE","WRITE","EDIT","APPEND","COPY","REN","RENAME","MOVE","DELETE","ECHO","PRINT","CLS","CLEAR","VER","MEM","RUN","SAVE","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","SOUND","REM","END","STOP","REBOOT","EXIT"};
     private static final int NAME=250, LINE=251, STATE=252, TPA=248;
     private static final int CH=64,X=65,Y=66,COUNT=67,ARG=68,SLOT=69,INDEX=70,
             LENGTH=71,FOUND=72,FREE=73,TEMP=74,MODE=75,SECOND=76,SOURCE=77,
@@ -68,15 +68,34 @@ public final class JvDosImage {
     public static void main(String[] args) throws java.io.IOException {
         if(args.length!=1) throw new IllegalArgumentException("Supply an output image path");
         byte[][] pages=Programs.bootImage(); byte[] image=new byte[65536];
-        byte[] header={'J','V','C','P','M',14,(byte)pages.length,1};
+        byte[] header={'J','V','C','P','M',16,(byte)pages.length,1};
         System.arraycopy(header,0,image,0,header.length);
         for(int page=0;page<pages.length;page++) System.arraycopy(pages[page],0,image,512+page*256,pages[page].length);
         java.nio.file.Files.write(java.nio.file.Path.of(args[0]),image);
     }
 
     public static byte[][] assemble(int firstPage) {
-        Asm s=new Asm(firstPage);
+        java.util.Set<Integer> local=new java.util.HashSet<>(), pinned=new java.util.HashSet<>();
+        for(int pass=0;pass<4096;pass++) {
+            Asm s=new Asm(firstPage,local);byte[][] result=assembleInto(s);
+            var next=new java.util.HashSet<>(local);
+            for(var branch:s.branches) {
+                boolean same=s.labels.get(branch.target())/256==branch.page();
+                if(branch.local()&&!same){pinned.add(branch.id());next.remove(branch.id());}
+                else if(same&&!pinned.contains(branch.id()))next.add(branch.id());
+            }
+            if(next.equals(local)){if(s.codeEndPage>=246)throw new IllegalStateException("Kernel overlaps font pointers: "+s.codeEndPage);return result;}
+            local=next;
+        }
+        throw new IllegalStateException("DOS branch layout did not converge");
+    }
+
+    private static byte[][] assembleInto(Asm s) {
         s.label("boot");
+        // Display geometry used by the same shell in fullscreen and JCTRL.
+        s.store(252,A);s.emit(STORE_MEM_ABSOLUTE,A,0,255,0);
+        s.store(244,A);s.emit(STORE_MEM_ABSOLUTE,A,0,255,1);
+        s.store(236,A);s.emit(STORE_MEM_ABSOLUTE,A,0,255,2);
         s.store(0,Registers.STORAGE_PAGE.address());
         s.emit(CLEAR_GRA);
         s.set(X,4);
@@ -301,7 +320,7 @@ public final class JvDosImage {
 
         s.label("cmd.HELP");
         s.text("BROWSE HOST[:PORT]/PATH - HTTP\n");
-        s.text("MKDIR NAME  CD NAME  CD ..\nCD /  RMDIR NAME\n");
+        s.text("MKDIR NAME  CD NAME  CD ..\nCD /  RMDIR NAME\nMOVE FILE FOLDER OR NEWNAME\nMOVE FILE .. OR /\nDELETE = DEL; RENAME = REN\n");
         s.text("DIR  TYPE FILE  DEL FILE\nWRITE FILE TEXT\nAPPEND FILE TEXT\nEDIT FILE - ESC SAVES\nCOPY FILE NEW  REN FILE NEW\nRUN FILE.COM  ECHO TEXT\nSAVE FILE HEX BYTE PAIRS\nCLS VER MEM REBOOT EXIT\nBACKSPACE EDITS INPUT\n");
         s.text("DRIVE N - SELECT DISK 0-255\nDRIVE SHOWS CURRENT DISK\n");
         s.text("UP DOWN HISTORY  TAB COMPLETE\nBANK + / BANK -\nBANK SHOWS CURRENT BANK\nCODEHELP FOR SOURCE PROGRAMS\nSOUND ON OR SOUND OFF\nVIEW FILE  IMAGE FILE  PLAY FILE\n");
@@ -902,7 +921,7 @@ public final class JvDosImage {
         s.store(4,B);
         s.emit(ADD,A,B,A);
         s.put(A,X);
-        s.store(252,B);
+        s.emit(LOAD_MEM_ABSOLUTE,0,252,24,B);
         s.eq(A,B,"newline");
         s.ret(PRINT_RETURN);
         s.label("newline");
@@ -911,19 +930,19 @@ public final class JvDosImage {
         s.store(8,B);
         s.emit(ADD,A,B,A);
         s.put(A,Y);
-        s.store(244,B); String noScroll=s.unique("noscroll");
+        s.emit(LOAD_MEM_ABSOLUTE,0,252,25,B); String noScroll=s.unique("noscroll");
         s.ne(A,B,noScroll);
         // Move the framebuffer up eight rows entirely through READ_GRA_MEM/PUSH_GRA_MEM.
         s.store(0,A);
         s.store(8,B);
         s.store(0,C);
-        s.store(248,F);
+        s.emit(LOAD_MEM_ABSOLUTE,0,252,25,F);s.store(4,D);s.emit(ADD,F,D,F);
         s.label("scroll.pixel");
         s.emit(READ_GRA_MEM,A,B,D);
         s.emit(PUSH_GRA_MEM,A,C,D);
         s.emit(INCREMENT_REGISTER,A);
-        s.store(0,E);
-        s.ne(A,E,"scroll.pixel");
+        s.emit(LOAD_MEM_ABSOLUTE,0,252,24,E);s.store(4,D);s.emit(ADD,E,D,E);
+        s.ne(A,E,"scroll.pixel");s.store(0,A);
         s.emit(INCREMENT_REGISTER,B);
         s.emit(INCREMENT_REGISTER,C);
         s.ne(C,F,"scroll.pixel");
@@ -931,10 +950,11 @@ public final class JvDosImage {
         s.label("scroll.clear");
         s.emit(PUSH_GRA_MEM,A,C,D);
         s.emit(INCREMENT_REGISTER,A);
-        s.ne(A,E,"scroll.clear");
+        s.ne(A,E,"scroll.clear");s.store(0,A);
         s.emit(INCREMENT_REGISTER,C);
-        s.ne(C,E,"scroll.clear");
-        s.set(Y,236);
+        s.emit(LOAD_MEM_ABSOLUTE,0,252,25,F);s.store(12,B);s.emit(ADD,F,B,F);
+        s.ne(C,F,"scroll.clear");
+        s.emit(LOAD_MEM_ABSOLUTE,0,252,26,A);s.put(A,Y);
         s.get(A,MODE);
         s.store(0,B); String editorScroll=s.unique("editor.scroll");
         s.ne(A,B,editorScroll);
@@ -956,7 +976,7 @@ public final class JvDosImage {
         s.ret(PRINT_RETURN);
 
         emitBrowser(s); emitEditor(s); emitSourceLanguage(s); emitMedia(s); emitKeyboard(s); emitFontRenderer(s);
-        emitFileSystem(s); emitShellNavigation(s);
+        emitFileSystem(s); emitShellNavigation(s);emitMove(s);
         return s.finish();
     }
 
@@ -2384,7 +2404,7 @@ public final class JvDosImage {
         s.get(A,C_START);
         s.store(0,B);
         s.eq(A,B,"complete.scan");
-        for(String command:new String[]{"CD","CHDIR","RMDIR","RD","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","ERASE","WRITE","EDIT","APPEND","COPY","REN","RUN","SAVE"}) {
+        for(String command:new String[]{"CD","CHDIR","RMDIR","RD","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","DELETE","ERASE","WRITE","EDIT","APPEND","COPY","REN","RENAME","MOVE","RUN","SAVE"}) {
             String next=s.unique("complete.context");
             for(int i=0;i<command.length();i++){s.emit(LOAD_MEM_ABSOLUTE,1,249,16+i,D);
                 s.store(command.charAt(i),A);
@@ -2760,6 +2780,33 @@ public final class JvDosImage {
         }
     }
 
+    /** Same-bank metadata moves; never copy or buffer file contents. */
+    private static void emitMove(Asm s) {
+        s.label("cmd.DELETE");s.jump("cmd.DEL");s.label("cmd.RENAME");s.jump("cmd.REN");
+        s.label("cmd.MOVE");s.call("parse.name",SEARCH_RETURN);s.call("search",SEARCH_RETURN);
+        s.get(A,FOUND);s.store(255,B);s.eq(A,B,"missing");s.put(A,SOURCE);
+        s.get(A,ARG);s.get(B,COUNT);s.eq(A,B,"usage");s.emit(SUB,B,A,B);s.put(B,SECOND);s.store(64,C);s.emit(ADD,A,C,C);s.readAt(LINE,C,D);
+        s.store(1,A);s.get(B,SECOND);String named=s.unique("move.named");s.ne(A,B,"move.dotdot");
+        s.store('/',A);s.eq(D,A,"move.root");s.store(92,A);s.eq(D,A,"move.root");s.store('.',A);s.ne(D,A,named);s.get(A,CWD);s.put(A,DIR_TARGET);s.jump("move.check");
+        s.label("move.dotdot");s.store(2,A);s.ne(A,B,named);s.store('.',A);s.ne(D,A,named);s.emit(INCREMENT_REGISTER,C);s.readAt(LINE,C,D);s.ne(D,A,named);
+        s.get(C,CWD);s.store(0,A);s.eq(C,A,"move.root");s.get(A,DISK_BANK);s.store(255,B);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.put(D,DIR_TARGET);s.jump("move.check");
+        s.label("move.root");s.set(DIR_TARGET,0);s.jump("move.check");
+        s.label(named);s.call("parse.name",SEARCH_RETURN);s.get(A,ARG);s.get(B,COUNT);s.ne(A,B,"usage");s.call("search",SEARCH_RETURN);
+        s.get(A,FOUND);s.store(255,B);s.eq(A,B,"move.rename");s.put(A,SLOT);s.diskRead(13,D);s.store(4,A);s.ne(D,A,"exists");s.get(A,SLOT);s.emit(INCREMENT_REGISTER,A);s.put(A,DIR_TARGET);
+        s.label("move.check");s.get(A,DIR_TARGET);s.put(A,TARGET);s.set(TEMP,0);
+        s.label("move.ancestor");s.get(C,TARGET);s.store(0,A);s.eq(C,A,"move.name");s.get(A,SOURCE);s.emit(INCREMENT_REGISTER,A);s.eq(A,C,"move.invalid");
+        s.store(1,B);s.emit(SUB,C,B,B);s.get(A,DISK_BANK);s.store(13,C);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.store(4,A);s.ne(D,A,"move.invalid");
+        s.get(C,TARGET);s.get(A,DISK_BANK);s.store(255,B);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.put(D,TARGET);s.get(A,TEMP);s.emit(INCREMENT_REGISTER,A);s.put(A,TEMP);s.store(255,B);s.eq(A,B,"move.invalid");s.jump("move.ancestor");
+        s.label("move.name");s.set(INDEX,0);
+        s.label("move.name.copy");s.get(A,INDEX);s.store(1,B);s.emit(ADD,A,B,C);s.get(A,DISK_BANK);s.get(B,SOURCE);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.put(D,CH);s.get(A,INDEX);s.store(64,B);s.emit(ADD,A,B,C);s.get(D,CH);s.store(NAME,E);s.emit(STORE_MEM_ON_PAGE,D,E,C);
+        s.get(A,INDEX);s.emit(INCREMENT_REGISTER,A);s.put(A,INDEX);s.store(12,B);s.ne(A,B,"move.name.copy");s.store(0,D);s.store(NAME,E);s.store(76,C);s.emit(STORE_MEM_ON_PAGE,D,E,C);
+        s.get(A,CWD);s.put(A,SECOND);s.get(A,DIR_TARGET);s.put(A,CWD);s.call("search",SEARCH_RETURN);s.get(A,SECOND);s.put(A,CWD);s.get(A,FOUND);s.store(255,B);s.eq(A,B,"move.commit");s.get(B,SOURCE);s.eq(A,B,"move.done");s.jump("exists");
+        s.label("move.commit");s.get(C,SOURCE);s.emit(INCREMENT_REGISTER,C);s.get(A,DISK_BANK);s.store(255,B);s.get(D,DIR_TARGET);s.emit(WRITE_BYTE_TO_STORAGE,A,B,C,D);s.jump("move.done");
+        s.label("move.rename");s.get(A,SOURCE);s.put(A,SLOT);s.call("name.write",SEARCH_RETURN);
+        s.label("move.done");s.text("MOVED\n");s.jump("shell");
+        s.label("move.invalid");s.text("INVALID MOVE DESTINATION\n");s.jump("shell");
+    }
+
     /** Linked 240-byte disk blocks, buffered in RAM bank one. No host filesystem hooks. */
     private static void emitFileSystem(Asm s) {
         s.label("file.empty");
@@ -2783,6 +2830,8 @@ public final class JvDosImage {
         s.less16Value(LENGTH,LENGTH_H,61201,valid);
         s.jump("file.corrupt");
         s.label(valid);
+        s.emit(LOAD_MEM_ABSOLUTE,0,252,24,A);s.store(124,B);String fullBuffer=s.unique("file.full.buffer");s.ne(A,B,fullBuffer);
+        s.less16Value(LENGTH,LENGTH_H,8193,fullBuffer);s.jump("file.corrupt");s.label(fullBuffer);
         // Track visited slots in reserved RAM page 254 before following untrusted links.
         s.store(0,A);
         s.store(0,D);
@@ -3066,9 +3115,12 @@ public final class JvDosImage {
     private static final class Asm {
             final int first; final List<byte[]> pages=new ArrayList<>(); final Map<String,Integer> labels=new HashMap<>();
         final List<Fix> fixes=new ArrayList<>(); final Map<String,String> messages=new java.util.LinkedHashMap<>();
-        int page,pos,serial;
+        int page,pos,serial,branchSerial,codeEndPage;
         record Fix(int page,int offset,String label,boolean high) {}
-        Asm(int first) { this.first=first; page=first; pages.add(new byte[256]); }
+        record Branch(int id,int page,String target,boolean local) { }
+        final java.util.Set<Integer> localBranches;
+        final List<Branch> branches=new ArrayList<>();
+        Asm(int first,java.util.Set<Integer> local) { this.first=first;localBranches=local; page=first; pages.add(new byte[256]); }
         byte[] current() { return pages.get(page-first); }
         void reserve(int n) {
             if(pos+n<=247) return;
@@ -3087,8 +3139,8 @@ public final class JvDosImage {
         String unique(String prefix) { return prefix+"."+serial++; }
         void store(int value,int register) { emit(STORE,value,register); }
         void ref(String target,boolean high,int register) { reserve(3); raw(STORE.code(),0,register); fixes.add(new Fix(page,pos-2,target,high)); }
-        void jump(String target) { reserve(9); ref(target,true,G); ref(target,false,H); emit(CHANGE_PAGE_JUMP,G,H); }
-        void eq(int a,int b,String target) { reserve(8); ref(target,true,G); raw(CHANGE_PAGE_COND_JUMP.code(),G,a,b,0); fixes.add(new Fix(page,pos-1,target,false)); }
+        void jump(String target) { int id=branchSerial++;boolean local=localBranches.contains(id);reserve(local?2:9);branches.add(new Branch(id,page,target,local));if(local){raw(JMP.code(),0);fixes.add(new Fix(page,pos-1,target,false));}else{ref(target,true,G);ref(target,false,H);emit(CHANGE_PAGE_JUMP,G,H);} }
+        void eq(int a,int b,String target) { int id=branchSerial++;boolean local=localBranches.contains(id);reserve(local?4:8);branches.add(new Branch(id,page,target,local));if(local)raw(COND_JUMP.code(),a,b,0);else{ref(target,true,G);raw(CHANGE_PAGE_COND_JUMP.code(),G,a,b,0);}fixes.add(new Fix(page,pos-1,target,false)); }
         void ne(int a,int b,String target) { String same=unique("same"); eq(a,b,same); jump(target); label(same); }
         void put(int register,int slot) { emit(STORE_MEM_ABSOLUTE,register,0,slot>=192?253:STATE,slot>=192?slot-192:slot+64); }
         void set(int slot,int value) { store(value,D); put(D,slot); }
@@ -3201,7 +3253,7 @@ public final class JvDosImage {
                     raw(packed);
                 }
             }
-            if(page>=246) throw new IllegalStateException("Kernel overlaps font pointers: "+page);
+            codeEndPage=page;
             for(Fix fix:fixes) {
                 Integer address=labels.get(fix.label); if(address==null) throw new IllegalStateException("Undefined "+fix.label);
                 pages.get(fix.page-first)[fix.offset]=(byte)(fix.high?address/256:address%256);

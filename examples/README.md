@@ -36,6 +36,7 @@ Start the normal VM at least once to create and initialize `storage.img`, then s
 | `LONG.JVS` | `RUN LONG.JVS` | Multi-block source summing 1 through 10 and printing 55. |
 | `MATH.JVS` | `RUN MATH.JVS` | 42 and 0, demonstrating arithmetic and byte wrap. |
 | `COUNT.JVS` | `RUN COUNT.JVS` | 0 through 4, then DONE. |
+| `JCTRL.COM` | `RUN JCTRL.COM` | Guest mouse desktop with bounded COM/JVS execution, palette images, music, and file/text/system windows. |
 | `HI.COM` | `RUN HI.COM` | HI and a newline, then DOS prompt. |
 
 Import `.JVS` and `.COM`, not their `.hex` source listings. Download the updated disk, replace the project's `storage.img` while the VM is stopped, and restart with the normal DOS boot code. These small examples retain the bank-zero COM convention; larger linked COM programs run in RAM bank 1. `EDIT COUNT.JVS` opens the guest editor; Esc saves. Changing physical line positions changes `GOTO`/`IF` targets.
@@ -43,3 +44,5 @@ Import `.JVS` and `.COM`, not their `.hex` source listings. Download the updated
 The COM example runs at page 248:0 and calls DOS services at 249:0 (print D, return to A:B) and 249:9 (prompt). Registers can be clobbered by services. JVS `END` returns to DOS; bytecode `STOP` halts the CPU.
 
 See [the wiki sources](../docs/wiki/Home.md) for architecture, the full instruction set, language syntax, device ports, and disk format.
+
+`JCTRL.COM` is generated from Java assembly source rather than a hex listing. Run `gradlew.bat desktopImage` to rebuild it and the offline Workshop installation asset. The Workshop's **Add JCTRL desktop** button installs the same executable. See [the desktop guide](../docs/wiki/Experimental-desktop.md) for controls and memory use.

@@ -1,7 +1,7 @@
 /* JV-DOS 1.3 disk format and converters. No network or host VM hooks. */
 globalThis.DosDisk = (() => {
   const SIZE=1<<24, BASE=2<<16, SLOTS=255, BLOCK=240, MAX=61200;
-  const types=['Binary / COM','Text / JVS','Palette image','MIDI notes'];
+  const types=['Binary / COM','Text / JVS','Palette image','MIDI notes','Directory'];
   const fail=message=>{throw new Error(message);};
   const integer=(value,min,max,label)=>{if(!Number.isInteger(value)||value<min||value>max)fail(`${label} must be ${min}–${max}.`);return value;};
   function textBytes(text) {
@@ -17,11 +17,12 @@ globalThis.DosDisk = (() => {
   class Disk {
     constructor(bytes,bank=2) {
       if(bytes.length!==SIZE)fail('Select a 16 MiB JavaVCPU storage.img.');
-      if(textOf(bytes.slice(0,5))!=='JVCPM'||![4,5,6,7,8,9,10].includes(bytes[5])||!bytes[6])fail('This image has no supported JVCPM BIOS header.');
-      this.bank=integer(bank,2,255,'Bank'); this.bytes=new Uint8Array(bytes); this.list();
+      if(textOf(bytes.slice(0,5))!=='JVCPM'||![4,5,6,7,8,9,10,11,12,13,14,15,16].includes(bytes[5])||!bytes[6])fail('This image has no supported JVCPM BIOS header.');
+      this.cwd=0; this.bank=integer(bank,2,255,'Bank'); this.bytes=new Uint8Array(bytes); this.list();
     }
-    clone(){return new Disk(this.bytes,this.bank);}
-    list(){
+    clone(){const copy=new Disk(this.bytes,this.bank);copy.cwd=this.cwd;return copy;}
+    all(){return this.list(true);}
+    list(all=false){
       const files=[],used=new Set(),base=integer(this.bank,2,255,'Bank')<<16;
       for(let slot=0;slot<SLOTS;slot++){
         const p=base+slot*256;if(!this.bytes[p+1]||this.bytes[p+1]===255)continue;
@@ -38,16 +39,17 @@ globalThis.DosDisk = (() => {
           if(position===length){if(next)fail('File '+name+' has an unexpected tail block.');break;}
           if(!next||next>=SLOTS)fail('File '+name+' has a truncated block chain.');block=next;
         }
-        files.push({slot,name,type:this.bytes[p+13],data,blocks});
+        files.push({slot,name,type:this.bytes[p+13],parent:this.bytes[base+255*256+slot+1],data,blocks});
       }
       for(let slot=0;slot<SLOTS;slot++)if(this.bytes[base+slot*256+1]===255&&!used.has(slot))fail('Orphaned continuation block '+slot+'.');
-      return files;
+      return all?files:files.filter(f=>f.parent===this.cwd);
     }
     put(name,data,type=0){
       name=name.toUpperCase();if(!/^[A-Z0-9_.-]{1,12}$/.test(name))fail('Names use 1–12 letters, digits, dots, underscores or hyphens.');
       if(data.length>MAX)fail(name+': '+data.length+' bytes exceeds the '+MAX+'-byte limit.');
       integer(type,0,3,'File type');if(type===2)decodeImage(data);if(type===3)decodeTune(data);
       const files=this.list(),old=files.find(f=>f.name===name),base=this.bank<<16;
+      if(old?.type===4)fail('Cannot overwrite a directory.');
       let slot=old?.slot;if(slot===undefined)slot=Array.from({length:SLOTS},(_,i)=>i).find(i=>!this.bytes[base+i*256+1]);
       if(slot===undefined)fail('All directory blocks are occupied.');
       const needed=Math.max(1,Math.ceil(data.length/BLOCK)),blocks=old?old.blocks.slice(0,needed):[slot];
@@ -62,11 +64,13 @@ globalThis.DosDisk = (() => {
         else{this.bytes[p]=Math.min(BLOCK,data.length-index*BLOCK);this.bytes[p+1]=255;}
         this.bytes[p+15]=blocks[index+1]||0;this.bytes.set(data.slice(index*BLOCK,(index+1)*BLOCK),p+16);
       });
+      this.bytes[base+255*256+slot+1]=this.cwd;
       this.bytes[BASE+255*256]=0x4a;return slot;
     }
     remove(slot){
       integer(slot,0,254,'Slot');const file=this.list().find(f=>f.slot===slot);if(!file)fail('Select a file entry.');
-      const base=this.bank<<16;for(const block of file.blocks)this.bytes.fill(0,base+block*256,base+(block+1)*256);
+      if(file.type===4&&this.all().some(f=>f.parent===slot+1))fail('Directory is not empty.');
+      const base=this.bank<<16;this.bytes[base+255*256+slot+1]=0;for(const block of file.blocks)this.bytes.fill(0,base+block*256,base+(block+1)*256);
     }
   }
   function image(width,height,rgba){integer(width,1,240,'Width');integer(height,1,240,'Height');
@@ -81,7 +85,7 @@ globalThis.DosDisk = (() => {
     if(data.length!==4+width*height||data.slice(4).some(c=>c>127))fail('Invalid palette image pixels.');return {width,height,pixels:data.slice(4)};}
   function tune(events){if(!events.length||events.length>15299)fail('A tune supports 1-15,299 events (61,200 bytes). Use a shorter MIDI clip.');
     const out=new Uint8Array(4+events.length*4);out.set(events.length<=255?[74,77,1,events.length]:[74,77,2,0]);
-    events.forEach((e,i)=>{integer(e.frames,0,255,'Duration');integer(e.voice,0,7,'Voice');integer(e.note,0,127,'MIDI note');
+    events.forEach((e,i)=>{integer(e.frames,0,255,'Duration');integer(e.voice,0,15,'Voice');integer(e.note,0,127,'MIDI note');
       if(![0,128,129,130,131].includes(e.control))fail('Invalid voice control.');out.set([e.frames,e.voice,e.note,e.control],4+i*4);});return out;}
   function decodeTune(data){if(data[0]!==74||data[1]!==77||!((data[2]===1&&data[3]>0&&data.length===4+data[3]*4)||(data[2]===2&&data[3]===0&&data.length>4&&data.length<=MAX&&(data.length-4)%4===0)))fail('Invalid JM note-stream header.');
     const events=[];for(let i=4;i<data.length;i+=4)events.push({frames:data[i],voice:data[i+1],note:data[i+2],control:data[i+3]});tune(events);return events;}

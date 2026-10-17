@@ -25,10 +25,14 @@ public class Monitor {
     private static JFrame display;
 
     /** The 256-by-256 framebuffer updated by the virtual CPU. */
-    private static final BufferedImage buffer = new BufferedImage(
+    private static BufferedImage buffer = new BufferedImage(
             FRAMEBUFFER_SIZE, FRAMEBUFFER_SIZE, BufferedImage.TYPE_INT_RGB);
 
-    /** Guards framebuffer updates while Swing paints the image. */
+    /** Completed frame owned by the presenter; guest writes only touch buffer. */
+    private static BufferedImage frontBuffer = new BufferedImage(
+            FRAMEBUFFER_SIZE, FRAMEBUFFER_SIZE, BufferedImage.TYPE_INT_RGB);
+
+    /** Guards buffer swaps, guest accesses and Swing painting. */
     private static final Object bufferLock = new Object();
 
     /** Component that renders the framebuffer with nearest-neighbor scaling. */
@@ -39,7 +43,7 @@ public class Monitor {
             ((Graphics2D) graphics).setRenderingHint(RenderingHints.KEY_INTERPOLATION,
                     RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
             synchronized (bufferLock) {
-                graphics.drawImage(buffer, 0, 0, getWidth(), getHeight(), this);
+                graphics.drawImage(frontBuffer, 0, 0, getWidth(), getHeight(), this);
             }
         }
     };
@@ -66,7 +70,7 @@ public class Monitor {
     }
 
     /**
-     * Schedules the current framebuffer to be drawn in the display window.
+     * Swaps the completed drawing buffer into the display and schedules a repaint.
      *
      * <p>Framebuffer changes are not visible until this method is called.</p>
      */
@@ -74,7 +78,22 @@ public class Monitor {
         if (display == null) {
             throw new IllegalStateException("Display has not been initialized");
         }
+        swapBuffers();
         displayPanel.repaint();
+    }
+
+    /** Publish atomically, then preserve the frame in the next drawing buffer for incremental drawing.
+     * The paint lock prevents Swing from retaining the old front while it becomes writable.
+     */
+    static void swapBuffers() {
+        synchronized (bufferLock) {
+            BufferedImage previousFront = frontBuffer;
+            frontBuffer = buffer;
+            buffer = previousFront;
+            int[] presented = ((DataBufferInt) frontBuffer.getRaster().getDataBuffer()).getData();
+            int[] drawing = ((DataBufferInt) buffer.getRaster().getDataBuffer()).getData();
+            System.arraycopy(presented, 0, drawing, 0, presented.length);
+        }
     }
 
     /**

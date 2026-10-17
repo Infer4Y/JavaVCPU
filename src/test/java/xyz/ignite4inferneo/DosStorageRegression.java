@@ -10,7 +10,10 @@ public final class DosStorageRegression {
     private final byte[][] ram = new byte[512][256];
     private final int[] r = new int[Registers.values().length];
     private int note60Updates;
+    private long instructions, pixelWrites, displayFrames, noteOnFrame, noteOffFrame, zeroDurationFrame;
+    private final int[] voiceControls=new int[8];
     private boolean browserNetwork;
+    private int mouseX,mouseY,mouseButtons,mouseWheel;
     private final int[][] pixels = new int[256][256];
     private final ArrayDeque<Integer> keys = new ArrayDeque<>();
 
@@ -45,6 +48,245 @@ public final class DosStorageRegression {
         check(chainText(23,1).equals("CHILDAGAIN"),"folders survive reboot");
         vm.command("CD /"); vm.command("CD ..");
         System.out.println("PASS: nested folders, parent persistence, name isolation, bank reset and safe removal");
+    }
+
+    private static void moveChecks() throws Exception {
+        DosStorageRegression vm=terminal();vm.ram[252][220]=30;
+        byte[] contents=new byte[12000];for(int i=0;i<contents.length;i++)contents[i]=(byte)(i*17);
+        chain(30,0,"LARGE.BIN",contents,0);vm.command("MKDIR DEST");int folder=find(30,"DEST");
+        byte[] before=Storage.readRange(30<<16,65536);vm.command("MOVE LARGE.BIN DEST");
+        check((Storage.readRange((30<<16)+0xff01,1)[0]&255)==folder+1,"MOVE places large file in folder without buffering");
+        before[0xff01]=(byte)(folder+1);check(java.util.Arrays.equals(before,Storage.readRange(30<<16,65536)),"MOVE preserves all file and chain bytes");
+        vm.command("CD DEST");vm.command("MOVE LARGE.BIN ..");check(Storage.readRange((30<<16)+0xff01,1)[0]==0,"MOVE to parent");
+        vm.command("CD /");vm.command("MOVE LARGE.BIN NEW.BIN");check(name(30,0).equals("NEW.BIN"),"MOVE renames files");
+        vm.command("MKDIR OUTER");vm.command("CD OUTER");vm.command("MKDIR INNER");vm.command("CD INNER");
+        vm.command("WRITE DUP.TXT CHILD");vm.command("MOVE DUP.TXT /");int duplicate=find(30,"DUP.TXT");check(Storage.readRange((30<<16)+0xff00+duplicate+1,1)[0]==0,"MOVE to root");
+        vm.command("CD /");vm.command("WRITE DUP2.TXT ROOT");vm.command("CD DEST");vm.command("WRITE DUP2.TXT CHILD");vm.command("CD /");
+        before=Storage.readRange(30<<16,65536);for(String command:new String[]{"MOVE DUP2.TXT DEST","MOVE OUTER OUTER","MOVE MISSING DEST","MOVE DUP.TXT DEST EXTRA"}){vm.command(command);check(java.util.Arrays.equals(before,Storage.readRange(30<<16,65536)),"invalid MOVE preserves disk: "+command);}
+        vm.command("RENAME DUP.TXT RENAMED.TXT");check(find(30,"RENAMED.TXT")!=-1,"RENAME alias");vm.command("DELETE RENAMED.TXT");check(find(30,"RENAMED.TXT")==-1,"DELETE alias");
+        System.out.println("PASS: DOS MOVE folder/parent/root/rename, large-file metadata preservation, collisions and file-operation aliases");
+    }
+
+    private int desktopState(int slot) {return ram[256+224][slot]&255;}
+    private void mouse(int x,int y,int buttons) {mouseX=x;mouseY=y;mouseButtons=buttons;press(0);}
+    private void click(int x,int y) {mouse(x,y,0);mouse(x,y,1);mouse(x,y,0);}
+    private void snapshot(String name) throws Exception {
+        var image=new java.awt.image.BufferedImage(768,768,java.awt.image.BufferedImage.TYPE_INT_RGB);
+        for(int y=0;y<256;y++)for(int x=0;x<256;x++) {
+            int c=pixels[y][x],rgb=(((c>>5)&3)*85<<16)|(((c>>2)&7)*255/7<<8)|(c&3)*85;
+            for(int dy=0;dy<3;dy++)for(int dx=0;dx<3;dx++)image.setRGB(x*3+dx,y*3+dy,rgb);
+        }
+        Path output=Path.of("build",name+".png");Files.createDirectories(output.getParent());
+        javax.imageio.ImageIO.write(image,"png",output.toFile());
+    }
+    private static void desktopChecks() throws Exception {
+        DosStorageRegression vm=terminal();
+        byte[] program=xyz.ignite4inferneo.jvdos.DesktopImage.program();
+        check(java.util.Arrays.equals(program,Files.readAllBytes(Path.of("examples/dos/JCTRL.COM"))),"desktop executable is up to date");
+        check(Files.readString(Path.of("tools/disk-workshop/desktop.js")).contains(java.util.Base64.getEncoder().encodeToString(program)),"Workshop desktop asset is up to date");
+        chain(25,0,"JCTRL.COM",program,0);
+        // Use a linked file for viewer paging.
+        chain(25,150,"HELLO.TXT",("HELLO FROM A WINDOW\n"+"SECOND LINE\n".repeat(40)).getBytes(java.nio.charset.StandardCharsets.US_ASCII),1);
+        file(25,160,"DOCS","");Storage.writeRange((25<<16)+(160<<8)+13,new byte[]{4});
+        file(25,161,"CHILD.TXT","CHILD CONTENT");Storage.writeRange((25<<16)+0xff00+162,new byte[]{(byte)161});
+        for(int slot=190;slot<215;slot++)file(25,slot,"ITEM"+slot+".TXT","ITEM");
+        chain(25,164,"BAD.TXT",new byte[500],1);
+        vm.ram[252][220]=25;
+        byte[] before=Storage.readRange(25<<16,65536);
+        vm.command("RUN JCTRL.COM");
+        check(vm.r[11]==1,"desktop launches through normal COM loader");
+        check(vm.desktopState(160)==8&&vm.desktopState(161)==24,"initial window position");
+        check(vm.pixels[25][9]==22&&vm.pixels[100][220]==5,"desktop window chrome");
+        check(vm.desktopState(9)==0,"file window focused");
+        vm.mouse(20,28,0);vm.mouse(20,28,1);vm.mouse(40,48,1);vm.mouse(40,48,0);
+        check(vm.desktopState(160)==28&&vm.desktopState(161)==44,"title drag preserves pointer offset");
+        vm.mouse(40,48,0);vm.mouse(40,48,1);vm.mouse(255,255,1);vm.mouse(255,255,0);
+        check(vm.desktopState(160)==40&&vm.desktopState(161)==72,"drag clamps to display edges");
+        vm.mouse(52,76,0);vm.mouse(52,76,1);vm.mouse(40,48,1);vm.mouse(40,48,0);
+        check(vm.desktopState(160)==28&&vm.desktopState(161)==44,"drag returns window");
+        vm.press(114);check(vm.desktopState(178)==1&&vm.desktopState(9)==2,"windowed VER MEM");
+        vm.snapshot("desktop-system");
+        vm.press(112);check(vm.desktopState(17)==1,"windowed help");
+        vm.snapshot("desktop-help");
+        vm.click(32+216-7,48+5);check(vm.desktopState(178)==0&&vm.desktopState(9)==0,"close restores keyboard focus");
+        vm.press(113);check(vm.desktopState(9)==0&&vm.desktopState(12)==0,"window focus and stacking");
+        // Browser rows: JCTRL.COM, HELLO.TXT, DOCS. Open the second row.
+        vm.press(40);check(vm.appState(100)==1,"explorer keyboard selects next row");vm.press(38);check(vm.appState(100)==0,"explorer keyboard selects previous row");vm.press(40,10);
+        check(vm.desktopState(170)==1&&vm.desktopState(9)==1,"text viewer opens from file window");
+        check(vm.desktopState(43)==150,"viewer selected file");
+        vm.snapshot("desktop-text");
+        vm.click(250,220);check(vm.desktopState(9)==1,"background click preserves focus");
+        vm.mouse(250,220,4);vm.mouse(250,220,0);check(vm.desktopState(9)==1,"right click does not activate another window");
+        vm.press(34);check(vm.desktopState(50)>0||vm.desktopState(51)>0,"linked text next page");
+        vm.press(34);int end=vm.desktopState(50)+(vm.desktopState(51)<<8);vm.press(34);
+        check(vm.desktopState(50)+(vm.desktopState(51)<<8)==end,"viewer last page stays visible");
+        vm.press(36);check(vm.desktopState(50)==0&&vm.desktopState(51)==0,"viewer Home");
+        vm.mouseWheel=1;vm.press(0);check(vm.desktopState(50)>0||vm.desktopState(51)>0,"mouse wheel paging");
+        vm.press(113);vm.click(40,44+28+12+2);
+        check(vm.desktopState(16)==161,"desktop enters folder");
+        vm.click(40,44+18);check(vm.desktopState(16)==0,"desktop parent folder");
+        vm.press(34);check(vm.desktopState(36)>0,"directory next page");int secondPage=vm.desktopState(36);vm.press(33);check(vm.desktopState(36)==0,"directory previous page restores filtered page start");vm.press(34);check(vm.desktopState(36)==secondPage,"directory next page can be revisited");vm.press(36);check(vm.desktopState(36)==0,"directory Home");
+        vm.snapshot("desktop-files");
+        check(java.util.Arrays.equals(before,Storage.readRange(25<<16,65536)),"desktop browsing preserves disk");
+        Storage.writeRange((25<<16)+(165<<8)+15,new byte[]{(byte)165});
+        // Model external corruption after loading the desktop; the DOS loader rejects it beforehand.
+        before=Storage.readRange(25<<16,65536);
+        vm.click(40,44+28+18+2);check(vm.desktopState(43)==164&&vm.desktopState(58)==2,"corrupt chain terminates safely");
+        vm.press(27);check(vm.r[11]==0,"desktop exits to resident DOS");
+        check(vm.ram[252][220]==25&&vm.ram[253][70]==0,"desktop preserves DOS bank and folder");
+        check(java.util.Arrays.equals(before,Storage.readRange(25<<16,65536)),"window applications are read only");
+        vm.command("ECHO BACK IN DOS");
+        System.out.println("PASS: separate desktop COM, mouse dragging, stacking, windowed DIR/VIEW/VER/MEM/HELP, linked text, folders and return to DOS");
+    }
+
+    private int appState(int slot) {return ram[256+225][slot]&255;}
+    private void applicationFrames() {for(int frame=0;frame<200&&appState(0)!=0;frame++)press(0);check(appState(0)==0,"application yields and finishes");}
+    private static void desktopApplicationChecks() throws Exception {
+        DosStorageRegression vm=terminal();byte[] desktop=xyz.ignite4inferneo.jvdos.DesktopImage.program();
+        chain(26,0,"JCTRL.COM",desktop,0);
+        chain(26,150,"HI.COM",Files.readAllBytes(Path.of("examples/dos/HI.COM")),0);
+        chain(26,151,"PIC.IMG",new byte[]{74,73,2,2,1,28,96,127},2);
+        chain(26,152,"TUNE.JMT",new byte[]{74,77,1,2,0,6,64,(byte)129,2,7,60,(byte)129},3);
+        chain(26,153,"PIXEL.COM",new byte[]{2,(byte)128,0,2,(byte)128,1,2,96,2,12,0,1,2,16,64,19,4},0);
+        chain(26,154,"BAD.COM",new byte[]{2,99,(byte)255},0);
+        chain(26,155,"COUNT.JVS",Files.readAllBytes(Path.of("examples/dos/COUNT.JVS")),1);
+        chain(26,156,"MATH.JVS",Files.readAllBytes(Path.of("examples/dos/MATH.JVS")),1);
+        chain(26,157,"REGS.JVS",Files.readAllBytes(Path.of("examples/dos/REGISTERS.JVS")),1);
+        chain(26,158,"LONG.JVS",Files.readAllBytes(Path.of("examples/dos/LONG.JVS")),1);
+        byte[] large=new byte[512];java.util.Arrays.fill(large,(byte)4);
+        byte[] jump={2,1,0,2,0,1,10,0,1};System.arraycopy(jump,0,large,0,jump.length);
+        byte[] second={2,42,19,4};System.arraycopy(second,0,large,256,second.length);chain(26,163,"LARGE.COM",large,0);
+        chain(26,166,"DEVICE.COM",new byte[]{2,(byte)255,10,2,0,0,18,0,0,0,1,4},0);
+        chain(26,167,"ESCAPE.COM",new byte[]{2,99,3,28,3,1,(byte)224,(byte)160,4},0);
+        chain(26,168,"LOOP.COM",new byte[]{3,0},0);
+        chain(26,169,"EMPTY.JMT",new byte[]{74,77,2,0},3);
+        chain(26,170,"LONG.JMT",new byte[]{74,77,2,0,100,7,60,(byte)129},3);
+        byte[] picture=new byte[4+120*96];picture[0]=74;picture[1]=73;picture[2]=120;picture[3]=96;
+        for(int y=0;y<96;y++)for(int x=0;x<120;x++)picture[4+y*120+x]=(byte)(1+(x/10+y/8*12)%126);
+        chain(26,171,"GRID.IMG",picture,2);
+        chain(26,220,"BIG.COM",new byte[8193],0);
+        vm.ram[252][220]=26;vm.command("RUN JCTRL.COM");
+        byte[] before=Storage.readRange(26<<16,65536);
+        vm.click(20,24+28+6+1);vm.applicationFrames();
+        check(vm.appState(1)==1,"COM interpreter stays inside guest JCTRL");
+        check((vm.ram[416][0]&255)==127,"legacy DOS print service renders H in guest framebuffer");
+        check(vm.desktopState(160)==8&&vm.r[11]==1,"desktop remains resident during COM execution");
+        vm.mouse(30,40,0);vm.mouse(30,40,1);vm.mouse(40,60,1);vm.mouse(40,60,0);
+        check(vm.desktopState(168)==30&&vm.desktopState(169)==56&&(vm.ram[416][0]&255)==127,"program pixels survive window dragging using guest RAM");
+        vm.mouse(40,60,1);vm.mouse(30,40,1);vm.mouse(30,40,0);
+        vm.snapshot("jctrl-program");
+        vm.press(113);vm.click(20,24+28+12+1);
+        check(vm.appState(1)==3,"palette image opens inside JCTRL");
+        check((vm.ram[416][0]&255)==1&&(vm.ram[416][1]&255)==28&&(vm.ram[416][128]&255)==96,"palette pixels are backed by guest RAM");
+        check(vm.pixels[64][65]==28 && vm.pixels[65][64]==96,"frame blit presents both columns and rows");
+        vm.snapshot("jctrl-image");
+        vm.press(113);vm.click(20,24+28+18+1);vm.applicationFrames();check(vm.appState(1)==4&&vm.note60Updates>0,"guest music uses existing audio opcodes");
+        check(vm.zeroDurationFrame==vm.noteOnFrame,"zero-duration events share the next event display interval");
+        check(vm.noteOffFrame-vm.noteOnFrame==2,"music duration retains exactly two display intervals");
+        long idlePixels=vm.pixelWrites;vm.press(0);check(vm.pixelWrites==idlePixels,"finished app does not force repaint");
+        vm.press(113);vm.click(20,24+28+24+1);vm.applicationFrames();
+        check((vm.ram[416+32][64]&255)==96,"guest program graphics map into bounded framebuffer");
+        check((vm.ram[484][19]&255)==1,"relocated self-modifying READ_INPUT operand uses the mounted-drive port");
+        vm.press(113);vm.click(20,24+28+30+1);vm.applicationFrames();check(vm.appState(1)==6,"bad register operand is rejected without corrupting JCTRL");
+        for(int row=6;row<=9;row++) {
+            vm.press(113);vm.click(20,24+28+row*6+1);vm.press(116);vm.applicationFrames();
+            check(vm.appState(1)==2,"existing source example executes in guest: row "+row);
+            if(row==6)check((vm.ram[484][0]&255)==5,"JVS IF/GOTO loop");
+            if(row==7)check((vm.ram[484][2]&255)==42&&(vm.ram[484][0]&255)==0,"JVS arithmetic and wraparound");
+            if(row==8)check((vm.ram[484][19]&255)==42,"JVS extended registers");
+            if(row==9)check((vm.ram[484][1]&255)==55,"linked JVS source and physical line targets");
+        }
+        vm.snapshot("jctrl-source");
+        vm.press(113);vm.click(20,24+28+10*6+1);vm.applicationFrames();
+        check(vm.appState(1)==1&&(vm.ram[484][19]&255)==42,"bank-one COM page jumps use guest workspace");
+        vm.press(113);vm.click(20,24+28+16*6+1);check(vm.appState(1)==3,"linked palette image streams into its window");vm.snapshot("jctrl-image");
+        for(int row:new int[]{11,12,14,17}) {
+            vm.press(113);vm.click(20,24+28+row*6+1);vm.applicationFrames();
+            check(vm.appState(1)==6&&vm.desktopState(160)==8,"unsupported device/address/empty tune/oversize app is bounded: "+row);
+            check(vm.r[10]==0,"interpreted storage selector is restored");
+        }
+        vm.press(113);vm.click(20,24+28+13*6+1);vm.press(0);
+        check(vm.appState(0)==1,"looping app yields to the JCTRL event loop");vm.press(27);check(vm.appState(0)==0&&vm.r[11]==1,"Escape stops a guest program without exiting JCTRL");
+        vm.press(113);vm.click(20,24+28+15*6+1);vm.press(0);check(vm.voiceControls[7]!=0,"long version-two tune starts");
+        long musicInstructions=vm.instructions,musicPixels=vm.pixelWrites;
+        for(int tick=0;tick<10;tick++)vm.press(0);
+        check(vm.pixelWrites==musicPixels,"sustained music does not repaint unchanged windows");
+        check(vm.instructions-musicInstructions<10_000,"sustained music scheduler stays below 1000 instructions per tick");
+        System.out.println("JCTRL sustained music: "+((vm.instructions-musicInstructions)/10)+" instructions/tick, zero pixel writes");
+        vm.click(230,40);check(vm.appState(0)==0&&java.util.Arrays.stream(vm.voiceControls).allMatch(v->v==0),"closing music window silences all voices");
+        check(java.util.Arrays.equals(before,Storage.readRange(26<<16,65536)),"guest media and read-only programs preserve disk");
+        byte[] maximum=new byte[4+240*240];maximum[0]=74;maximum[1]=73;maximum[2]=(byte)240;maximum[3]=(byte)240;java.util.Arrays.fill(maximum,4,maximum.length,(byte)127);
+        chain(27,0,"MAX.IMG",maximum,2);
+        vm.press(113);vm.click(178,42);check(vm.desktopState(15)==27,"guest file browser selects another storage bank");
+        vm.click(20,24+28+1);check(vm.appState(1)==3,"maximum linked image streams without extra RAM");
+        check((vm.ram[475][247]&255)==127&&(vm.ram[416][120]&255)==0,"240-square media scales to a bounded 120-square image");
+        vm.press(113);vm.click(133,42);check(vm.desktopState(15)==26,"file bank can be restored");
+        check(vm.ram[252][220]==26,"guest application execution preserves DOS bank");
+        vm.press(27,27);check(vm.r[11]==0,"guest interpreter returns through normal DOS ABI");
+        System.out.println("PASS: guest-only JCTRL COM execution, DOS print compatibility, RAM-backed pixels, image/music playback and invalid operand handling");
+    }
+
+    private static void desktopDragChecks() throws Exception {
+        DosStorageRegression vm=terminal();chain(29,0,"JCTRL.COM",xyz.ignite4inferneo.jvdos.DesktopImage.program(),0);
+        file(29,150,"A.TXT","A");file(29,151,"DOCS","");Storage.writeRange((29<<16)+(151<<8)+13,new byte[]{4});
+        file(29,152,"A.TXT","EXISTING");Storage.writeRange((29<<16)+0xff00+153,new byte[]{(byte)152});
+        file(29,153,"B.TXT","B");vm.ram[252][220]=29;vm.command("RUN JCTRL.COM");
+        byte[] before=Storage.readRange(29<<16,65536);
+        vm.mouse(30,59,0);vm.mouse(30,59,1);vm.mouse(30,65,1);vm.mouse(30,65,0);
+        check(java.util.Arrays.equals(before,Storage.readRange(29<<16,65536)),"duplicate-name drop leaves disk unchanged");
+        vm.mouse(30,71,0);vm.mouse(30,71,1);vm.mouse(30,65,1);vm.mouse(30,65,0);
+        check((Storage.readRange((29<<16)+0xff00+154,1)[0]&255)==152,"drag moves file into destination folder");
+        check(chainText(29,153).equals("B"),"drag preserves linked file contents");
+        byte[] after=Storage.readRange(29<<16,65536);before[0xff00+154]=(byte)152;
+        check(java.util.Arrays.equals(before,after),"move changes only parent metadata");
+        vm.mouse(30,65,0);vm.mouse(30,65,1);vm.mouse(35,65,1);vm.mouse(35,65,0);
+        check(java.util.Arrays.equals(after,Storage.readRange(29<<16,65536)),"folder cannot be dropped into itself");
+        System.out.println("PASS: guest drag/drop folder move, duplicate rejection, self-drop rejection and byte preservation");
+    }
+
+    private static void desktopShellChecks() throws Exception {
+        DosStorageRegression vm=terminal();chain(28,0,"JCTRL.COM",xyz.ignite4inferneo.jvdos.DesktopImage.program(),0);
+        vm.ram[252][220]=28;vm.command("RUN JCTRL.COM");vm.press(115);
+        for(int frame=0;frame<50;frame++)vm.press(0);
+        check(vm.appState(1)==5 && vm.appState(0)==1,"resident DOS shell starts in guest interpreter");
+        vm.command("WRITE WINDOW.TXT HELLO");
+        for(int frame=0;frame<200 && find(28,"WINDOW.TXT")==-1;frame++)vm.press(0);
+        check(find(28,"WINDOW.TXT")!=-1,"existing DOS WRITE command runs inside window");
+        for(int frame=0;frame<50;frame++)vm.press(0);
+        check(chainText(28,find(28,"WINDOW.TXT")).equals("HELLO"),"windowed DOS writes real file contents");
+        vm.press(113);int count=vm.ram[252][131]&255;vm.type("IGNORED");
+        for(int frame=0;frame<20;frame++)vm.press(0);
+        check((vm.ram[252][131]&255)==count,"unfocused DOS window receives no keyboard input");
+        vm.press(115);vm.command("REN WINDOW.TXT MOVED.TXT");
+        for(int frame=0;frame<200 && find(28,"MOVED.TXT")==-1;frame++)vm.press(0);
+        check(find(28,"MOVED.TXT")!=-1,"existing DOS rename works after focus returns");
+        for(int frame=0;frame<40;frame++)vm.press(0);
+        vm.mouse(30,40,0);vm.mouse(30,40,1);vm.mouse(40,60,1);vm.mouse(40,60,0);
+        check(vm.desktopState(168)==30&&vm.desktopState(169)==56,"DOS window title drag preserves shell state");
+        boolean ink=false;for(int page=416;page<480;page++)for(byte pixel:vm.ram[page])if(pixel!=0)ink=true;
+        check(ink,"resident DOS text reaches window framebuffer");
+        vm.snapshot("jctrl-dos");
+        vm.press(113,118);for(int frame=0;frame<50;frame++)vm.press(0);
+        check(find(28,"NEWDIR")==-1,"explorer draft has not executed a command");
+        vm.command("NEWDIR");for(int frame=0;frame<150&&find(28,"NEWDIR")==-1;frame++)vm.press(0);
+        check(find(28,"NEWDIR")!=-1,"explorer new-folder action uses actual DOS command");
+        for(int frame=0;frame<40;frame++)vm.press(0);
+        vm.command("MOVE MOVED.TXT NEWDIR");for(int frame=0;frame<150;frame++)vm.press(0);
+        int moved=find(28,"MOVED.TXT"),directory=find(28,"NEWDIR");check((Storage.readRange((28<<16)+0xff00+moved+1,1)[0]&255)==directory+1,"MOVE works in actual desktop DOS shell");
+        vm.command("CD NEWDIR");for(int frame=0;frame<40;frame++)vm.press(0);vm.command("MOVE MOVED.TXT /");for(int frame=0;frame<150;frame++)vm.press(0);vm.command("CD /");for(int frame=0;frame<40;frame++)vm.press(0);
+        vm.press(113,36,40,119);for(int frame=0;frame<50;frame++)vm.press(0);
+        vm.command("COPY.TXT");for(int frame=0;frame<200&&find(28,"COPY.TXT")==-1;frame++)vm.press(0);
+        check(find(28,"COPY.TXT")!=-1,"explorer copy prepares the real COPY command");
+        for(int frame=0;frame<40;frame++)vm.press(0);
+        check(chainText(28,find(28,"COPY.TXT")).equals("HELLO"),"explorer copy preserves content");
+        vm.press(113,36,40,40,40,127);for(int frame=0;frame<50;frame++)vm.press(0);
+        check(find(28,"COPY.TXT")!=-1,"delete draft does not delete before Enter");
+        vm.press(10);for(int frame=0;frame<150&&find(28,"COPY.TXT")!=-1;frame++)vm.press(0);
+        check(find(28,"COPY.TXT")==-1,"explorer delete executes only after Enter");
+        vm.press(113);vm.click(239,60);check(vm.appState(0)==0&&vm.appState(1)==0,"DOS window closes through X"); // Close the moved DOS window through its title-bar X.
+        vm.press(115);for(int frame=0;frame<20;frame++)vm.press(0);
+        check(vm.appState(1)==5&&vm.appState(0)==1,"closed DOS window can be reopened");
+        System.out.println("PASS: actual resident DOS in movable guest window, file writes, rename and focus-gated keyboard");
     }
 
     private static void browserChecks(DosStorageRegression vm) throws Exception {
@@ -111,7 +353,10 @@ public final class DosStorageRegression {
     }
 
     public static void main(String[] args) throws Exception {
+        MonitorRegression.run();
+        FramePacerRegression.run();
         MemoryRegression.run();
+        xyz.ignite4inferneo.jvdos.DesktopAssemblyRegression.run();
         Path image = Path.of(args.length == 0 ? "build/check/regression.img" : args[0]);
         Files.deleteIfExists(image);
         Storage.load(image);
@@ -132,7 +377,7 @@ public final class DosStorageRegression {
         file(2,254,"LAST.TXT","END");
         Storage.writeRange(0x2ff00, new byte[]{0x4a});
         DiskInstaller.installIfMissing();
-        check(Storage.readRange(0,8)[5] == 14, "system revision");
+        check(Storage.readRange(0,8)[5] == 16, "system revision");
         check(Storage.readRange(0x20010,3)[0] == 'O', "installation preserves files");
         DosStorageRegression vm = new DosStorageRegression();
         byte[][] pages = Programs.bootImage();
@@ -278,6 +523,11 @@ public final class DosStorageRegression {
         browserChecks(vm);
         networkGuestChecks(vm);
         folderChecks(vm);
+        moveChecks();
+        desktopChecks();
+        desktopApplicationChecks();
+        desktopShellChecks();
+        desktopDragChecks();
         shellNavigationChecks();
         // Image rendering crosses disk blocks and RAM pages using the entire display area.
         for(int[] size:new int[][]{{2,2},{15,15},{16,17},{240,240},{1,240},{240,1}}) {
@@ -391,6 +641,7 @@ public final class DosStorageRegression {
     }
     private void run() {
         for(int steps=0;steps<200_000_000;steps++) {
+            instructions++;
             byte[] m=ram[(r[11]<<8)|r[9]]; int pc=r[8],op=m[pc]&255;
             int a=m[(pc+1)&255]&255,b=m[(pc+2)&255]&255,c=m[(pc+3)&255]&255,d=m[(pc+4)&255]&255;
             int length=OPCode.values()[op].length(); r[8]=(pc+length)&255;
@@ -400,10 +651,11 @@ public final class DosStorageRegression {
                 case 2 -> r[b]=a;
                 case 3 -> r[8]=a;
                 case 4 -> throw new AssertionError("Unexpected HALT");
-                case 5,14 -> { }
-                case 12 -> pixels[r[b]][r[a]]=r[c];
+                case 5 -> { }
+                case 14 -> displayFrames++;
+                case 12 -> {pixelWrites++;pixels[r[b]][r[a]]=r[c];}
                 case 13 -> {for(int[] row:pixels)java.util.Arrays.fill(row,0);}
-                case 17 -> { if(r[b]==60)note60Updates++; }
+                case 17 -> { if(r[a]==6&&r[c]!=0)zeroDurationFrame=displayFrames; if(r[a]==7){if(r[c]!=0)noteOnFrame=displayFrames;else noteOffFrame=displayFrames;} if(r[b]==60)note60Updates++;if(r[a]<8)voiceControls[r[a]]=r[c]; }
                 case 6 -> { if(r[a]==r[b])r[8]=c; }
                 case 7 -> r[a]=m[b]&255;
                 case 8 -> m[b]=(byte)r[a];
@@ -413,7 +665,12 @@ public final class DosStorageRegression {
                 case 15 -> r[c]=0;
                 case 16 -> {
                     if(a==0&&keys.isEmpty()&&ram[252][176]==0&&(!browserNetwork || Network.read(0)==0)) {r[8]=pc;return;}
-                    r[b]=a==0&&!keys.isEmpty()?keys.removeFirst():a==0x40?(Storage.isMounted(r[10])?1:0):0;
+                    r[b]=switch(a) {
+                        case 0 -> keys.isEmpty()?0:keys.removeFirst();
+                        case 0x30 -> mouseX;case 0x31 -> mouseY;case 0x32 -> mouseButtons;
+                        case 0x33 -> {int wheel=mouseWheel;mouseWheel=0;yield wheel&255;}
+                        case 0x40 -> Storage.isMounted(r[10])?1:0;default -> 0;
+                    };
                 }
                 case 18 -> r[d]=Storage.readData(r[10],(byte)r[a],(byte)r[b],(byte)r[c])&255;
                 case 19 -> Storage.writeData(r[10],(byte)r[a],(byte)r[b],(byte)r[c],(byte)r[d]);

@@ -14,7 +14,7 @@ public final class DiskInstaller {
     private static final byte BOOTSTRAP_PAGE = (byte) 255;
     // Bump this when the resident opcode image changes so an earlier boot image is replaced.
     // User files live well beyond IMAGE_OFFSET and are therefore preserved during that update.
-    private static final byte[] MAGIC = new byte[] {'J', 'V', 'C', 'P', 'M', 14};
+    private static final byte[] MAGIC = new byte[] {'J', 'V', 'C', 'P', 'M', 16};
 
     private DiskInstaller() {
     }
