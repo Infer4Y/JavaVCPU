@@ -59,7 +59,7 @@ globalThis.runDiskTests = function () {
   rejects(()=>new D.Disk(malformed,3));malformed[(3<<16)+256+15]=255;rejects(()=>new D.Disk(malformed,3));
   const longTune=D.tune(Array.from({length:255},()=>({frames:0,voice:0,note:60,control:0})));
   check(longTune.length===1024&&D.decodeTune(longTune).length===255,'Expanded tune limit');
-  for(let revision=4;revision<=16;revision++) {
+  for(let revision=4;revision<=20;revision++) {
     const current=new Uint8Array(D.SIZE);current.set([74,86,67,80,77,revision,253,1]);
     new D.Disk(current);
   }
@@ -74,6 +74,31 @@ globalThis.runDiskTests = function () {
   rejects(()=>fc.remove(0));rejects(()=>fc.put('DOCS',D.textBytes('BAD'),1));
   fc.cwd=1;fc.remove(fc.list()[0].slot);fc.cwd=0;fc.remove(0);
   check(fc.list().length===1,'Remove empty folder');
+  const spill=new D.Disk(blank);
+  spill.put('PHOTOS',new Uint8Array());spill.bytes[D.BASE+13]=4;spill.cwd=1;
+  spill.put('FIRST.BIN',new Uint8Array(40000));
+  check(spill.capacity().used===168&&spill.capacity().freeBytes===20880,'Capacity includes all folders');
+  const original=spill.bytes.slice(D.BASE,D.BASE+65536);
+  const placed=spill.importFile('SECOND.BIN',new Uint8Array(30000).fill(91));
+  check(placed.bank===3&&spill.bank===3&&spill.cwd===1,'Overflow selects another bank and folder');
+  check(spill.all().find(f=>f.type===4).name==='PHOTOS','Overflow preserves folder path');
+  check(spill.list()[0].data.every(b=>b===91),'Overflow content preserved');
+  check(original.every((b,i)=>b===spill.bytes[D.BASE+i]),'Overflow preserves original bank');
+  spill.importFile('THIRD.TXT',D.textBytes('Next'),1);
+  check(spill.bank===3&&spill.list().length===2,'Subsequent imports reuse available bank');
+  const stable=spill.bytes.slice();
+  rejects(()=>spill.importFile('SECOND.BIN',new Uint8Array(D.MAX),0));
+  check(spill.bank===3&&stable.every((b,i)=>b===spill.bytes[i]),'Existing files never silently move');
+  spill.put('FILL.BIN',new Uint8Array(30000));
+  const invalid=spill.bytes.slice();
+  rejects(()=>spill.importFile('INVALID.IMG',new Uint8Array(30000),2));
+  check(spill.bank===3&&invalid.every((b,i)=>b===spill.bytes[i]),'Invalid overflow import is atomic');
+  const occupied=new D.Disk(blank);
+  occupied.put('FULL.BIN',new Uint8Array(D.MAX));
+  for(let bank=3;bank<=255;bank++)occupied.bytes[(bank<<16)+1]=65;
+  const full=occupied.bytes.slice();
+  rejects(()=>occupied.importFile('NEW.TXT',D.textBytes('X'),1));
+  check(full.every((b,i)=>b===occupied.bytes[i])&&occupied.bank===2,'No empty bank leaves disk unchanged');
   if(typeof DosDesktop!=='undefined') {
     const payload=Uint8Array.from(atob(DosDesktop),c=>c.charCodeAt(0));
     check(payload.length>240&&payload.length<=D.MAX,'Desktop COM length');

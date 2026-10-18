@@ -31,9 +31,9 @@ public final class DesktopImage {
         PRINT_COL=284,PRINT_ROW=285,PRINT_CHAR=286,PRINT_BITS=287,PRINT_FONT_PAGE=288,PRINT_FONT_OFFSET=289,
         PRINT_GY=290,PRINT_GX=291,PRINT_MASK=292,DRIVE=293,
         IW=294,IH=295,IX=296,IY=297,ISCALE=298,IMAGEX=299,IMAGEY=300,
-        FRAMES=301,VOICE=302,NOTE=303,CONTROL=304,VERSION=305,EVENTS=306,MAPPED=307,FETCH_COUNT=308,SP_LO=309,SP_HI=310,TOKLEN=311,TOKNUM=312,TOKREG=313,SCHAR=314,SEO=315,BRANCH=316,DIRTY=317,SDELIM=318,SLINE=319,
+        FRAMES=301,VOICE=302,NOTE=303,CONTROL=304,VERSION=305,EVENTS=306,MAPPED=307,FETCH_COUNT=308,DIRTY=317,
         RET_INIT=320,RET_LOAD=322,RET_STEP=324,RET_FETCH=326,RET_MEMORY=328,
-        RET_PIXEL=330,RET_FRAME=332,RET_CLEAR=334,RET_PRINT=336,RET_IMAGE=338,RET_NUMBER=340,RET_SCAN=342,RET_TOKEN=344,RET_PARSE=346,RET_REGISTER=348,RET_NEXT=350,RET_HEX=354,SELECTED=356,HDEPTH=357,MBANK=358,QHEAD=359,QTAIL=360,SLICE=361,FSOURCE=362,FDOWN=363,FDRAG=364,FTARGET=365,FCOUNT=366,FNAME=367,FSX=368,FSY=369,FCAND=370,DRAFT=371,SWAIT=372,SHELLDRIVE=373,SHELLUSED=374;
+        RET_PIXEL=330,RET_FRAME=332,RET_CLEAR=334,RET_PRINT=336,RET_IMAGE=338,RET_NUMBER=340,RET_HEX=354,SELECTED=356,HDEPTH=357,MBANK=358,QHEAD=359,QTAIL=360,SLICE=361,FSOURCE=362,FDOWN=363,FDRAG=364,FTARGET=365,FCOUNT=366,FNAME=367,FSX=368,FSY=369,FCAND=370,DRAFT=371,SWAIT=372,SHELLDRIVE=373,SHELLUSED=374;
     private static final int WIDTH=216,HEIGHT=168;
     record Compilation(byte[] bytes,int baselineBytes,int passes,int localJumps,int localConditionals,int farBranches) { }
     private static final Compilation COMPILED=assembleOptimized(DesktopImage::emitProgram);
@@ -75,6 +75,9 @@ public final class DesktopImage {
     private static void emitProgram(Asm s) {
         s.relocateData=true;
         s.label("entry");
+        // Require the stable resident graphics ABI before calling any shared code.
+        for(int i=0;i<3;i++){s.emit(LOAD_MEM_ABSOLUTE,0,JvDosServices.PAGE,JvDosServices.GRAPHICS_SIGNATURE+i,A);s.notEqual(A,new int[]{'J','G',JvDosServices.GRAPHICS_VERSION}[i],"incompatible");}
+        s.jump("compatible");s.label("incompatible");s.store(0,A);s.store(249,B);s.store(9,C);s.emit(CHANGE_BANK_PAGE_JUMP,A,B,C);s.label("compatible");
         // Rehouse overflow literal pages in eight explicitly reserved guest RAM pages.
         s.store(1,A);s.store(128,B);s.store(234,E);s.store(0,C);
         s.label("literals.copy");s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.emit(STORE_MEM_ON_BANK,D,A,E,C);s.emit(INCREMENT_REGISTER,C);s.notEqual(C,0,"literals.copy");s.emit(INCREMENT_REGISTER,B);s.emit(INCREMENT_REGISTER,E);s.notEqual(E,240,"literals.copy");s.store(231,E);
@@ -192,8 +195,8 @@ public final class DesktopImage {
         s.label("viewer.next");s.get(A,NEXT);s.put(A,TARGET);s.get(A,NEXT_H);s.put(A,TARGET_H);s.jump("paint");
         s.label("paint");s.set(DIRTY,0);s.emit(CLEAR_GRA);
         s.rect(0,0,0,0,9);s.rect(0,0,0,16,5);s.rect(0,240,0,16,1);
-        s.at(4,5);s.text("FILES           ABOUT           HELP            DOS");
-        s.at(4,245);s.text("F4 DOS  F6 REN F7 MKDIR F8 COPY DEL DELETE");
+        s.at(20,5);s.text("FILES           ABOUT           HELP          EXIT DOS");
+        s.at(4,245);s.text("F1 HELP  F2 FILES  F4 DOS  ESC BACK");
         // Repaint from back to front. Active is restored to the top window afterwards.
         for(int z:new int[]{Z0,Z1,Z2}) {s.get(A,z);s.put(A,ACTIVE);s.call("window",RETURN_WIN);}
         // Choose the foremost open window; closed windows do not receive keyboard input.
@@ -209,13 +212,14 @@ public final class DesktopImage {
         s.label("window");s.windowGet(2,A);s.equal(A,0,"window.done");
         s.windowGet(0,A);s.put(A,RX);s.windowGet(1,A);s.put(A,RY);s.set(RW,WIDTH);s.set(RH,HEIGHT);s.set(COLOR,127);s.call("rect",RETURN_RECT);
         s.windowGet(0,A);s.emit(INCREMENT_REGISTER,A);s.put(A,RX);s.windowGet(1,A);s.emit(INCREMENT_REGISTER,A);s.put(A,RY);s.set(RW,WIDTH-2);s.set(RH,HEIGHT-2);s.set(COLOR,5);s.call("rect",RETURN_RECT);
-        s.windowGet(0,A);s.emit(INCREMENT_REGISTER,A);s.put(A,RX);s.windowGet(1,A);s.emit(INCREMENT_REGISTER,A);s.put(A,RY);s.set(RW,WIDTH-2);s.set(RH,10);s.set(COLOR,22);s.call("rect",RETURN_RECT);
+        s.windowGet(0,A);s.emit(INCREMENT_REGISTER,A);s.put(A,RX);s.windowGet(1,A);s.emit(INCREMENT_REGISTER,A);s.put(A,RY);s.set(RW,WIDTH-2);s.set(RH,10);s.set(COLOR,9);s.get(A,ACTIVE);s.get(B,Z2);String inactive=s.unique("title.inactive");s.ne(A,B,inactive);s.set(COLOR,22);s.label(inactive);s.call("rect",RETURN_RECT);
+
         s.relative(5,3);s.get(A,ACTIVE);s.equal(A,0,"window.files");s.equal(A,1,"window.view");
         s.text("SYSTEM / HELP");s.jump("window.title.done");
-        s.label("window.files");s.text("DIR - FILES");s.relative(124,3);s.text("BANK 0X");s.get(A,BANK);s.store(0,B);
+        s.label("window.files");s.text("FILES");s.relative(124,3);s.text("BANK 0X");s.get(A,BANK);s.store(0,B);
         s.label("files.bank.digit");s.less(A,16,"files.bank.hex");s.store(16,C);s.emit(SUB,A,C,A);s.emit(INCREMENT_REGISTER,B);s.jump("files.bank.digit");
         s.label("files.bank.hex");s.put(A,TEMP);s.put(B,OFFSET);s.get(A,OFFSET);s.put(A,CHAR);s.call("files.hex",RET_HEX);s.get(A,TEMP);s.put(A,CHAR);s.call("files.hex",RET_HEX);s.jump("window.title.done");
-        s.label("window.view");s.get(A,APP);s.equal(A,5,"window.shell.title");s.text("JCTRL - FILE / APPLICATION");s.jump("window.title.done");s.label("window.shell.title");s.text("JV-DOS - COMMAND WINDOW");
+        s.label("window.view");s.get(A,APP);s.equal(A,5,"window.shell.title");s.text("APPLICATION");s.jump("window.title.done");s.label("window.shell.title");s.text("DOS CONSOLE");
         s.label("window.title.done");s.relative(WIDTH-9,3);s.text("X");
         s.get(A,ACTIVE);s.equal(A,0,"window.dir");s.equal(A,1,"window.reader");
         s.get(A,INFO);s.equal(A,1,"window.help");
@@ -230,13 +234,14 @@ public final class DesktopImage {
         s.label("window.reader");s.call("view.draw",RETURN_VIEW);
         s.label("window.done");s.ret(RETURN_WIN);
         emitFiles(s);emitViewer(s);emitApplications(s);emitGraphics(s);
-        s.label("exit");s.get(A,SHELLUSED);s.equal(A,0,"exit.drive.ready");s.get(A,SHELLDRIVE);s.store(0,B);s.emit(ADD,A,B,10);s.label("exit.drive.ready");s.call("app.stop",RET_STEP);s.store(0,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,176);s.emit(STORE_MEM_ABSOLUTE,A,0,252,139);s.store(252,A);s.emit(STORE_MEM_ABSOLUTE,A,0,255,0);s.store(244,A);s.emit(STORE_MEM_ABSOLUTE,A,0,255,1);s.store(236,A);s.emit(STORE_MEM_ABSOLUTE,A,0,255,2);s.emit(CLEAR_GRA);s.store(4,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,129);s.emit(STORE_MEM_ABSOLUTE,A,0,252,130);
+        s.label("exit");s.get(A,SHELLUSED);s.equal(A,0,"exit.drive.ready");s.get(A,SHELLDRIVE);s.store(0,B);s.emit(ADD,A,B,10);s.label("exit.drive.ready");s.call("app.stop",RET_STEP);s.store(0,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,176);s.emit(STORE_MEM_ABSOLUTE,A,0,252,139);s.store(252,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,24);s.store(244,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,25);s.store(236,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,26);s.emit(CLEAR_GRA);s.store(4,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,129);s.emit(STORE_MEM_ABSOLUTE,A,0,252,130);
         s.store(0,A);s.store(249,B);s.store(9,C);s.emit(CHANGE_BANK_PAGE_JUMP,A,B,C);
     }
 
     private static void emitFiles(Asm s) {
         s.label("files.hex");s.get(A,CHAR);String digit=s.unique("hex.digit"),print=s.unique("hex.print");s.less(A,10,digit);s.store(55,B);s.jump(print);s.label(digit);s.store('0',B);s.label(print);s.emit(ADD,A,B,A);s.put(A,CHAR);s.call("glyph",RETURN_GLYPH);s.ret(RET_HEX);
-        s.label("files.draw");s.relative(6,16);s.text("UP      NEXT      HOME      BANK-      BANK+");
+        s.label("files.draw");
+        s.relative(12,16);s.text("UP     NEXT      HOME      BANK-       BANK+");
         s.set(LOOP,0);
         s.label("files.clear");s.get(C,LOOP);s.store(255,D);s.store(1,A);s.store(MAP,B);s.emit(STORE_MEM_ON_BANK,D,A,B,C);
         s.get(A,LOOP);s.emit(INCREMENT_REGISTER,A);s.put(A,LOOP);s.notEqual(A,22,"files.clear");
@@ -262,7 +267,7 @@ public final class DesktopImage {
         s.label("files.done");s.ret(RETURN_FILES);
     }
     private static void emitViewer(Asm s) {
-        s.label("view.draw");s.get(A,APP);s.notEqual(A,0,"app.draw");s.relative(6,16);s.text("HOME            NEXT             RUN / OPEN");
+        s.label("view.draw");s.get(A,APP);s.notEqual(A,0,"app.draw");s.relative(24,16);s.text("HOME            NEXT             RUN / OPEN");
         s.get(A,TYPE);s.notEqual(A,1,"view.unsupported");
         s.call("stream.init",RET_INIT);s.get(A,ERROR);s.notEqual(A,0,"view.bad");
         s.get(A,TARGET);s.put(A,SKIP);s.get(A,TARGET_H);s.put(A,SKIP_H);
@@ -312,29 +317,32 @@ public final class DesktopImage {
         s.set(LOOP,0);s.label("shell.reg.clear");s.get(C,LOOP);s.store(0,D);s.store(1,A);s.store(228,B);s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.get(A,LOOP);s.emit(INCREMENT_REGISTER,A);s.put(A,LOOP);s.notEqual(A,20,"shell.reg.clear");
         s.store(249,A);s.vwriteLiteral(9,A);s.store(9,A);s.vwriteLiteral(8,A);s.get(A,DRIVE);s.vwriteLiteral(10,A);
         s.get(A,BANK);s.emit(STORE_MEM_ABSOLUTE,A,0,252,220);s.get(A,CWD);s.emit(STORE_MEM_ABSOLUTE,A,0,253,70);
-        s.store(124,A);s.emit(STORE_MEM_ABSOLUTE,A,0,255,0);s.emit(STORE_MEM_ABSOLUTE,A,0,255,1);s.store(116,A);s.emit(STORE_MEM_ABSOLUTE,A,0,255,2);s.store(4,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,129);s.emit(STORE_MEM_ABSOLUTE,A,0,252,130);s.store(0,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,176);
+        s.store(124,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,24);s.emit(STORE_MEM_ABSOLUTE,A,0,252,25);s.store(116,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,26);s.store(4,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,129);s.emit(STORE_MEM_ABSOLUTE,A,0,252,130);s.store(0,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,176);
         s.set(QHEAD,0);s.set(QTAIL,0);s.get(A,DRIVE);s.put(A,SHELLDRIVE);s.set(SHELLUSED,1);s.set(APP_KEY,0);s.set(APP,5);s.set(RUN,1);s.get(A,DRAFT);s.equal(A,0,"shell.focus");
-        for(int action=1;action<=4;action++) {s.equal(A,action,"shell.draft."+action);}
-        for(int action=1;action<=4;action++) {
-            s.label("shell.draft."+action);String prefix=new String[]{"REN ","MKDIR ","COPY ","DEL "}[action-1];
+        for(int action=1;action<=5;action++) {s.equal(A,action,"shell.draft."+action);}
+        for(int action=1;action<=5;action++) {
+            s.label("shell.draft."+action);String prefix=new String[]{"REN ","MKDIR ","COPY ","DEL ","RUN "}[action-1];
             for(int c=0;c<prefix.length();c++){s.store(prefix.charAt(c),D);s.emit(STORE_MEM_ABSOLUTE,D,1,230,c);}
             s.set(QTAIL,prefix.length());if(action==2)s.jump("shell.draft.done");else s.jump("shell.draft.name");
         }
         s.label("shell.draft.name");s.set(FNAME,1);
         s.label("shell.draft.copy");s.get(C,FNAME);s.get(A,BANK);s.get(B,FSOURCE);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.equal(D,0,"shell.draft.space");s.get(C,QTAIL);s.store(1,A);s.store(230,B);s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.emit(INCREMENT_REGISTER,C);s.put(C,QTAIL);s.get(A,FNAME);s.emit(INCREMENT_REGISTER,A);s.put(A,FNAME);s.notEqual(A,13,"shell.draft.copy");
         s.label("shell.draft.space");s.get(C,QTAIL);s.store(1,A);s.store(230,B);s.store(32,D);s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.emit(INCREMENT_REGISTER,C);s.put(C,QTAIL);
-        s.label("shell.draft.done");s.set(DRAFT,0);
+        s.label("shell.draft.done");s.get(A,DRAFT);s.notEqual(A,5,"shell.draft.ready");
+        // Source runs through the actual resident DOS parser, loader and interpreter.
+        s.get(C,QTAIL);s.store(1,A);s.store(230,B);s.store(10,D);s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.emit(INCREMENT_REGISTER,C);s.put(C,QTAIL);
+        s.label("shell.draft.ready");s.set(DRAFT,0);
         s.label("shell.focus");s.set(ACTIVE,1);s.store(1,A);s.windowPut(2,A);s.raise();s.jump("paint");
         s.label("app.escape");s.get(A,APP);s.equal(A,0,"exit");s.call("app.stop",RET_STEP);s.set(APP,0);s.jump("paint");
         s.label("app.open");s.call("app.stop",RET_STEP);s.set(ACTIVE,1);s.store(1,A);s.windowPut(2,A);s.raise();
-        s.call("frame.clear",RET_CLEAR);s.set(PRINT_COL,0);s.set(PRINT_ROW,0);
+        s.get(A,TYPE);s.notEqual(A,1,"app.binary");s.get(A,VIEW_HEAD);s.put(A,FSOURCE);s.set(DRAFT,5);s.jump("shell.open");
+        s.label("app.binary");s.call("frame.clear",RET_CLEAR);s.set(PRINT_COL,0);s.set(PRINT_ROW,0);
         s.call("stream.init",RET_INIT);s.get(A,ERROR);s.notEqual(A,0,"app.error");
         s.get(A,REMAIN);s.put(A,FILE_LO);s.get(A,REMAIN_H);s.put(A,FILE_HI);
         s.get(A,TYPE);s.equal(A,2,"image.open");s.equal(A,3,"music.open");
-        // Programs and source have an explicit 8 KiB code/data workspace.
+        // Interpreted COM programs have an explicit 8 KiB code/data workspace.
         s.get(A,FILE_HI);s.less(A,32,"app.size.ok");s.notEqual(A,32,"app.error");s.get(A,FILE_LO);s.notEqual(A,0,"app.error");
         s.label("app.size.ok");s.call("program.load",RET_LOAD);s.get(A,ERROR);s.notEqual(A,0,"app.error");
-        s.get(A,TYPE);s.equal(A,1,"script.open");
         s.set(APP,1);s.set(RUN,1);s.set(LOOP,0);
         s.label("vm.clear.regs");s.get(C,LOOP);s.store(0,D);s.store(1,A);s.store(228,B);s.emit(STORE_MEM_ON_BANK,D,A,B,C);
         s.get(A,LOOP);s.emit(INCREMENT_REGISTER,A);s.put(A,LOOP);s.notEqual(A,20,"vm.clear.regs");
@@ -342,15 +350,13 @@ public final class DesktopImage {
         s.get(A,FILE_HI);s.notEqual(A,0,"vm.large");s.get(A,FILE_LO);s.less(A,241,"vm.small");
         s.label("vm.large");s.store(1,D);s.vwriteLiteral(11,D);s.jump("paint");
         s.label("vm.small");s.store(248,D);s.vwriteLiteral(9,D);s.jump("paint");
-        s.label("script.open");s.set(APP,2);s.set(RUN,1);s.set(SP_LO,0);s.set(SP_HI,0);s.set(SEO,0);s.set(LOOP,0);
-        s.label("script.reg.clear");s.get(C,LOOP);s.store(0,D);s.store(1,A);s.store(228,B);s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.get(A,LOOP);s.emit(INCREMENT_REGISTER,A);s.put(A,LOOP);s.notEqual(A,20,"script.reg.clear");s.jump("paint");
         s.label("app.error");s.call("app.stop",RET_STEP);s.set(APP,6);s.jump("paint");
         s.label("app.stop");s.set(DIRTY,1);s.set(RUN,0);s.store(0,A);s.store(3,D);s.emit(WRITE_NETWORK,A,D);s.store(0,B);s.store(0,C);
         for(int voice=0;voice<8;voice++){s.store(voice,A);s.emit(OUTPUT_AUDIO,A,B,C);}s.ret(RET_STEP);
-        s.label("app.draw");s.relative(6,16);s.get(A,APP);s.equal(A,5,"shell.draw.header");s.text("HOME            NEXT             RUN / OPEN");s.jump("app.draw.frame");s.label("shell.draw.header");s.text("REAL DOS - CLICK WINDOW TO TYPE");s.label("app.draw.frame");
+        s.label("app.draw");s.relative(6,16);s.get(A,APP);s.equal(A,5,"shell.draw.header");s.relative(24,16);s.text("HOME            NEXT             RUN / OPEN");s.jump("app.draw.frame");s.label("shell.draw.header");s.text("REAL DOS - CLICK WINDOW TO TYPE");s.label("app.draw.frame");
         s.call("frame.draw",RET_FRAME);s.get(A,APP);s.equal(A,5,"app.draw.done");s.relative(6,158);s.get(A,APP);s.equal(A,6,"app.draw.error");
-        s.get(A,RUN);s.equal(A,1,"app.draw.running");s.text("FINISHED - RUN TO RESTART / ESC BACK");s.ret(RETURN_VIEW);
-        s.label("app.draw.running");s.text("RUNNING - ESC / X STOPS APPLICATION");s.label("app.draw.done");s.ret(RETURN_VIEW);
+        s.get(A,RUN);s.equal(A,1,"app.draw.running");s.text("DONE   F5 RESTART / ESC BACK");s.ret(RETURN_VIEW);
+        s.label("app.draw.running");s.text("RUNNING   ESC STOP / X CLOSE");s.label("app.draw.done");s.ret(RETURN_VIEW);
         s.label("app.draw.error");s.text("INVALID / UNSUPPORTED APP OR MEDIA");s.ret(RETURN_VIEW);
         s.label("program.load");s.set(LOAD_LO,0);s.set(LOAD_HI,0);
         // Clear the workspace so reads of uninitialized application data are deterministic.
@@ -360,7 +366,7 @@ public final class DesktopImage {
         s.label("program.load.more");s.call("view.read",RETURN_READ);s.get(A,ERROR);s.notEqual(A,0,"program.load.done");
         s.get(D,CHAR);s.get(B,LOAD_HI);s.store(128,A);s.emit(ADD,A,B,B);s.get(C,LOAD_LO);s.store(1,A);s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.inc16(LOAD_LO,LOAD_HI);s.jump("program.load.byte");
         s.label("program.load.done");s.ret(RET_LOAD);
-        emitFrame(s);emitGuestPrint(s);emitGuestMedia(s);emitVirtualCpu(s);emitGuestScript(s);
+        emitFrame(s);emitGuestPrint(s);emitGuestMedia(s);emitVirtualCpu(s);
     }
     private static void emitFrame(Asm s) {
         s.label("frame.clear");s.set(DIRTY,1);s.set(FRAME_PAGE,160);s.set(FRAME_OFFSET,0);
@@ -437,7 +443,7 @@ public final class DesktopImage {
     }
     /** An interpreter emitted as guest instructions, not a host-side VM hook. */
     private static void emitVirtualCpu(Asm s) {
-        s.label("app.tick");s.set(BUDGET,64);s.get(A,APP);s.equal(A,5,"shell.tick");s.equal(A,4,"music.tick");s.equal(A,2,"script.tick");s.equal(A,1,"vm.step");s.ret(RET_STEP);
+        s.label("app.tick");s.set(BUDGET,64);s.get(A,APP);s.equal(A,5,"shell.tick");s.equal(A,4,"music.tick");s.equal(A,1,"vm.step");s.ret(RET_STEP);
         s.label("shell.tick");s.set(SLICE,8);s.set(BUDGET,255);s.jump("vm.step");
         s.label("app.finished");s.jump("app.stop");
         s.label("app.tick.error");s.set(APP,6);s.jump("app.stop");
@@ -527,46 +533,6 @@ public final class DesktopImage {
         s.label("frame.read.divide");s.less(A,2,"frame.read.address");s.store(2,C);s.emit(SUB,A,C,A);s.emit(INCREMENT_REGISTER,B);s.jump("frame.read.divide");
         s.label("frame.read.address");s.store(128,C);s.emit(MULTIPLY,A,C,C);s.get(A,PX);s.emit(ADD,A,C,C);s.store(160,A);s.emit(ADD,A,B,B);s.store(1,A);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.put(D,PCOLOR);s.ret(RET_PIXEL);
     }
-    /** Small DOS-source interpreter, also emitted entirely as guest bytecode. */
-    private static void emitGuestScript(Asm s) {
-        s.label("script.tick");s.store(0,A);s.store(0,B);s.store(0,C);s.emit(OUTPUT_AUDIO,A,B,C);
-        s.call("script.token",RET_TOKEN);s.get(A,TOKLEN);s.notEqual(A,0,"script.dispatch");s.get(A,SEO);s.equal(A,1,"app.finished");s.jump("app.tick.done");
-        s.label("script.dispatch");
-        for(String command:new String[]{"PRINT","ECHO","REM","END","STOP","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP"}){
-            String next=s.unique("source.next");s.get(A,TOKLEN);s.notEqual(A,command.length(),next);
-            for(int c=0;c<command.length();c++){s.emit(LOAD_MEM_ABSOLUTE,1,233,c,A);s.notEqual(A,command.charAt(c),next);}s.jump("script."+command);s.label(next);
-        }
-        s.jump("app.tick.error");
-        s.label("script.END");s.label("script.STOP");s.jump("app.finished");
-        s.label("script.REM");s.jump("script.line.done");
-        s.label("script.PRINT");s.label("script.ECHO");s.get(A,SDELIM);s.equal(A,10,"script.print.newline");s.get(A,SEO);s.equal(A,1,"script.print.newline");
-        s.label("script.print.loop");s.call("script.char",RET_SCAN);s.get(A,SEO);s.equal(A,1,"script.print.newline");s.get(A,SCHAR);s.equal(A,10,"script.print.newline");s.put(A,PRINT_CHAR);s.call("app.print",RET_PRINT);s.jump("script.print.loop");
-        s.label("script.print.newline");s.set(PRINT_CHAR,10);s.call("app.print",RET_PRINT);s.set(SDELIM,10);s.jump("app.tick.done");
-        s.label("script.STORE");s.sourceNumber(AV);s.sourceRegister(OB);s.get(D,AV);s.result(OB,D);s.jump("script.line.done");
-        for(OPCode op:new OPCode[]{ADD,SUB,MULTIPLY}){s.label("script."+op.name());s.sourceRegister(OA);s.sourceRegister(OB);s.sourceRegister(OC);s.arg(OA,AV);s.arg(OB,BV);s.get(A,AV);s.get(B,BV);s.emit(op,A,B,D);s.result(OC,D);s.jump("script.line.done");}
-        s.label("script.INC");s.sourceRegister(OA);s.arg(OA,AV);s.get(D,AV);s.emit(INCREMENT_REGISTER,D);s.result(OA,D);s.jump("script.line.done");
-        s.label("script.OUTPUT");s.sourceRegister(OA);s.arg(OA,VALUE);s.call("app.number",RET_NUMBER);s.jump("script.line.done");
-        s.label("script.GOTO");s.sourceNumber(BRANCH);s.jump("script.goto");
-        s.label("script.IF");s.sourceRegister(OA);s.sourceNumber(BV);s.sourceNumber(BRANCH);s.arg(OA,AV);s.get(A,AV);s.get(B,BV);s.ne(A,B,"script.line.done");s.jump("script.goto");
-        s.label("script.BEEP");s.store(0,A);s.store(84,B);s.store(131,C);s.emit(OUTPUT_AUDIO,A,B,C);s.jump("script.line.done");
-        s.label("script.line.done");s.get(A,SDELIM);s.equal(A,10,"app.tick.done");s.get(A,SEO);s.equal(A,1,"app.tick.done");s.call("script.nextline",RET_NEXT);s.jump("app.tick.done");
-        s.label("script.goto");s.get(A,BRANCH);s.equal(A,0,"app.tick.error");s.set(SP_LO,0);s.set(SP_HI,0);s.set(SEO,0);s.set(SLINE,1);
-        s.label("script.goto.scan");s.get(A,SLINE);s.get(B,BRANCH);s.eq(A,B,"app.tick.done");s.call("script.nextline",RET_NEXT);s.get(A,SEO);s.equal(A,1,"app.tick.error");s.get(A,SLINE);s.emit(INCREMENT_REGISTER,A);s.put(A,SLINE);s.jump("script.goto.scan");
-        s.label("script.nextline");s.call("script.char",RET_SCAN);s.get(A,SEO);String nextdone=s.unique("line.done");s.equal(A,1,nextdone);s.get(A,SCHAR);s.notEqual(A,10,"script.nextline");s.label(nextdone);s.ret(RET_NEXT);
-        s.label("script.char");s.get(A,SP_HI);s.get(B,FILE_HI);s.emit(COMPARE_UNSIGNED,A,B,C);String read=s.unique("source.read");s.equal(C,1,read);s.equal(C,2,"script.eof");s.get(A,SP_LO);s.get(B,FILE_LO);s.emit(COMPARE_UNSIGNED,A,B,C);s.notEqual(C,1,"script.eof");s.label(read);
-        s.get(B,SP_HI);s.store(128,A);s.emit(ADD,A,B,B);s.get(C,SP_LO);s.store(1,A);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.put(D,SCHAR);s.inc16(SP_LO,SP_HI);s.ret(RET_SCAN);
-        s.label("script.eof");s.set(SEO,1);s.set(SCHAR,0);s.ret(RET_SCAN);
-        s.label("script.token");s.set(TOKLEN,0);
-        s.label("script.token.skip");s.call("script.char",RET_SCAN);s.get(A,SEO);s.equal(A,1,"script.token.done");s.get(A,SCHAR);for(int c:new int[]{32,9,13})s.equal(A,c,"script.token.skip");s.equal(A,10,"script.token.done");
-        s.label("script.token.store");s.get(C,TOKLEN);s.store(1,A);s.store(233,B);s.get(D,SCHAR);s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.get(A,TOKLEN);s.emit(INCREMENT_REGISTER,A);s.put(A,TOKLEN);s.equal(A,32,"app.tick.error");
-        s.call("script.char",RET_SCAN);s.get(A,SEO);s.equal(A,1,"script.token.done");s.get(A,SCHAR);for(int c:new int[]{32,9,13,10})s.equal(A,c,"script.token.done");s.jump("script.token.store");
-        s.label("script.token.done");s.get(A,SCHAR);s.put(A,SDELIM);s.ret(RET_TOKEN);
-        s.label("script.number");s.get(A,TOKLEN);s.equal(A,0,"app.tick.error");s.set(TOKNUM,0);s.set(OFFSET,0);
-        s.label("script.number.digit");s.get(C,OFFSET);s.store(1,A);s.store(233,B);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.store('0',B);s.emit(COMPARE_UNSIGNED,D,B,C);s.equal(C,1,"app.tick.error");s.emit(SUB,D,B,D);s.store(9,B);s.emit(COMPARE_UNSIGNED,D,B,C);s.equal(C,2,"app.tick.error");s.put(D,DV);
-        s.get(A,TOKNUM);s.store(25,B);s.emit(COMPARE_UNSIGNED,A,B,C);s.equal(C,2,"app.tick.error");String fits=s.unique("number.fits");s.equal(C,1,fits);s.get(A,DV);s.store(5,B);s.emit(COMPARE_UNSIGNED,A,B,C);s.equal(C,2,"app.tick.error");s.label(fits);
-        s.get(A,TOKNUM);s.store(10,B);s.emit(MULTIPLY,A,B,A);s.get(B,DV);s.emit(ADD,A,B,A);s.put(A,TOKNUM);s.get(A,OFFSET);s.emit(INCREMENT_REGISTER,A);s.put(A,OFFSET);s.get(B,TOKLEN);s.ne(A,B,"script.number.digit");s.ret(RET_PARSE);
-        s.label("script.register");s.get(A,TOKLEN);s.notEqual(A,1,"app.tick.error");s.emit(LOAD_MEM_ABSOLUTE,1,233,0,A);s.store('A',B);s.emit(COMPARE_UNSIGNED,A,B,C);s.equal(C,1,"app.tick.error");s.less(A,'I',"script.register.low");s.less(A,'Q',"script.register.high");s.jump("app.tick.error");s.label("script.register.low");s.store('A',B);s.jump("script.register.value");s.label("script.register.high");s.store('I'-12,B);s.label("script.register.value");s.emit(SUB,A,B,A);s.put(A,TOKREG);s.ret(RET_REGISTER);
-    }
     private static void emitGraphics(Asm s) {
         // Keep the pixel loop in registers: moving a window should not perform RAM
         // lookups for every coordinate. A zero width or height denotes 256 pixels.
@@ -579,18 +545,11 @@ public final class DesktopImage {
         s.label("text");s.get(B,STRING_PAGE);s.get(C,STRING_OFFSET);s.store(1,A);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.equal(D,0,"text.done");s.put(D,CHAR);s.call("glyph",RETURN_GLYPH);
         s.get(A,STRING_OFFSET);s.emit(INCREMENT_REGISTER,A);s.put(A,STRING_OFFSET);s.get(A,STRING_COUNT);s.emit(INCREMENT_REGISTER,A);s.put(A,STRING_COUNT);s.notEqual(A,3,"text");s.set(STRING_COUNT,0);s.get(A,STRING_OFFSET);s.store(2,B);s.emit(ADD,A,B,A);s.put(A,STRING_OFFSET);s.jump("text");
         s.label("text.done");s.ret(RETURN_TEXT);
-        s.label("glyph");s.get(A,CHAR);s.less(A,32,"glyph.fallback");s.less(A,127,"glyph.valid");
-        s.label("glyph.fallback");s.store('?',A);
-        s.label("glyph.valid");s.store(32,B);s.emit(SUB,A,B,A);s.store(2,B);s.emit(MULTIPLY,A,B,A);s.store(64,B);s.emit(ADD,A,B,C);
-        s.store(0,A);s.store(246,B);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.put(D,GLYPH_PAGE);s.emit(INCREMENT_REGISTER,C);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.put(D,GLYPH_OFFSET);
-        s.set(GLYPH_ROW,0);
-        s.label("glyph.row");s.get(C,GLYPH_OFFSET);s.get(A,GLYPH_ROW);s.emit(ADD,C,A,C);s.get(B,GLYPH_PAGE);s.store(0,A);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.put(D,BITS);
-        for(int col=0;col<3;col++) {
-            String blank=s.unique("glyph.blank");s.get(A,BITS);s.store(128>>col,B);s.emit(COMPARE_UNSIGNED,A,B,C);s.equal(C,1,blank);s.emit(SUB,A,B,A);s.put(A,BITS);
-            s.get(A,TX);s.store(col,C);s.emit(ADD,A,C,A);s.get(B,TY);s.get(C,GLYPH_ROW);s.emit(ADD,B,C,B);s.get(C,INK);s.emit(PUSH_GRA_MEM,A,B,C);s.label(blank);
-        }
-        s.get(A,GLYPH_ROW);s.emit(INCREMENT_REGISTER,A);s.put(A,GLYPH_ROW);s.notEqual(A,5,"glyph.row");
-        s.get(A,TX);s.store(4,B);s.emit(ADD,A,B,A);s.put(A,TX);s.ret(RETURN_GLYPH);
+        s.label("glyph");s.get(K,TX);s.get(L,TY);s.get(M,INK);s.get(D,CHAR);s.store(0,E);
+        s.store(1,N);s.ref("glyph.return",true,O);s.ref("glyph.return",false,P);
+        s.store(0,A);s.store(249,B);s.store(JvDosServices.GLYPH,C);s.emit(CHANGE_BANK_PAGE_JUMP,A,B,C);
+        s.label("glyph.return");s.get(A,TX);s.store(4,B);s.emit(ADD,A,B,A);s.put(A,TX);s.ret(RETURN_GLYPH);
+
     }
 
     /** Tiny assembler for the ordinary COM loader. Data bytes are literal instruction operands, so the
@@ -646,8 +605,6 @@ public final class DesktopImage {
         void arg(int operand,int dest){get(C,operand);String ok=unique("reg.valid");less(C,20,ok);jump("app.tick.error");label(ok);store(1,A);store(228,B);emit(LOAD_MEM_ON_BANK,A,B,C,D);put(D,dest);}
         void result(int operand,int value){get(C,operand);String ok=unique("dest.valid");less(C,20,ok);jump("app.tick.error");label(ok);store(1,A);store(228,B);emit(STORE_MEM_ON_BANK,value,A,B,C);}
         void half(int source,int dest){get(A,source);store(0,B);String loop=unique("half"),done=unique("half.done");label(loop);less(A,2,done);store(2,C);emit(SUB,A,C,A);emit(INCREMENT_REGISTER,B);jump(loop);label(done);put(B,dest);}
-        void sourceNumber(int dest){call("script.token",RET_TOKEN);call("script.number",RET_PARSE);get(A,TOKNUM);put(A,dest);}
-        void sourceRegister(int dest){call("script.token",RET_TOKEN);call("script.register",RET_REGISTER);get(A,TOKREG);put(A,dest);}
         void diskRead(int offset,int dest){store(offset,C);diskReadAt(C,dest);}
         void diskReadAt(int offset,int dest){get(A,BANK);get(B,SLOT);emit(READ_BYTE_FROM_STORAGE,A,B,offset,dest);}
         void inc16(int low,int high){get(A,low);emit(INCREMENT_REGISTER,A);put(A,low);String done=unique("inc16");notEqual(A,0,done);get(A,high);emit(INCREMENT_REGISTER,A);put(A,high);label(done);}

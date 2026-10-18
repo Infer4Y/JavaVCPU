@@ -31,7 +31,7 @@ public final class JvDosImage {
             L=Registers.L.address();
     private static final int SOURCE_REGISTER_COUNT = 16;
     private static final int SOURCE_REGISTER_BASE = 224;
-    private static final String[] COMMANDS={"BROWSE","MKDIR","MD","CD","CHDIR","RMDIR","RD","HELP","CODEHELP","DRIVE","BANK","DIR","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","ERASE","WRITE","EDIT","APPEND","COPY","REN","RENAME","MOVE","DELETE","ECHO","PRINT","CLS","CLEAR","VER","MEM","RUN","SAVE","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","SOUND","REM","END","STOP","REBOOT","EXIT"};
+    private static final String[] COMMANDS={"BROWSE","MKDIR","MD","CD","CHDIR","RMDIR","RD","HELP","CODEHELP","DRIVE","BANK","DIR","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","ERASE","WRITE","EDIT","APPEND","COPY","REN","RENAME","MOVE","DELETE","ECHO","PRINT","CLS","CLEAR","VER","MEM","RUN","SAVE","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","SOUND","JCTRL","REM","END","STOP","REBOOT","EXIT"};
     private static final int NAME=250, LINE=251, STATE=252, TPA=248;
     private static final int CH=64,X=65,Y=66,COUNT=67,ARG=68,SLOT=69,INDEX=70,
             LENGTH=71,FOUND=72,FREE=73,TEMP=74,MODE=75,SECOND=76,SOURCE=77,
@@ -62,13 +62,13 @@ public final class JvDosImage {
             C_ACTIVE=238,C_NEXT=239,C_START=240,C_END=241,C_COUNT=242,C_CURSOR=243,C_PREFIX=244,
             C_TYPE=245,C_WRAP=246,C_INDEX=247,C_MATCH=248,C_BANK=249,C_PAGE=250,C_OFFSET=251,
             C_CHAR=252,C_OUT=253,C_TOTAL=254,C_NEW_CURSOR=255,C_RETURN=256,C_SPACE=258;
-    private static final int IMAGE_SCALE=259,IMAGE_LEFT=260,IMAGE_TOP=261, CWD=262, DIR_TARGET=263;
+    private static final int IMAGE_SCALE=259,IMAGE_LEFT=260,IMAGE_TOP=261, CWD=262, DIR_TARGET=263, DESKTOP_LOADING=273, DESKTOP_BANK=274, DESKTOP_CWD=275, DESKTOP_DRIVE=276;
 
     /** Exports the assembled boot sector and byte arrays for the unchanged disk installer. */
     public static void main(String[] args) throws java.io.IOException {
         if(args.length!=1) throw new IllegalArgumentException("Supply an output image path");
         byte[][] pages=Programs.bootImage(); byte[] image=new byte[65536];
-        byte[] header={'J','V','C','P','M',16,(byte)pages.length,1};
+        byte[] header={'J','V','C','P','M',20,(byte)pages.length,1};
         System.arraycopy(header,0,image,0,header.length);
         for(int page=0;page<pages.length;page++) System.arraycopy(pages[page],0,image,512+page*256,pages[page].length);
         java.nio.file.Files.write(java.nio.file.Path.of(args[0]),image);
@@ -93,9 +93,9 @@ public final class JvDosImage {
     private static byte[][] assembleInto(Asm s) {
         s.label("boot");
         // Display geometry used by the same shell in fullscreen and JCTRL.
-        s.store(252,A);s.emit(STORE_MEM_ABSOLUTE,A,0,255,0);
-        s.store(244,A);s.emit(STORE_MEM_ABSOLUTE,A,0,255,1);
-        s.store(236,A);s.emit(STORE_MEM_ABSOLUTE,A,0,255,2);
+        s.store(252,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,24);
+        s.store(244,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,25);
+        s.store(236,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,26);
         s.store(0,Registers.STORAGE_PAGE.address());
         s.emit(CLEAR_GRA);
         s.set(X,4);
@@ -112,26 +112,43 @@ public final class JvDosImage {
         s.set(H_NEXT,0);
         s.set(H_VIEW,0);
         s.set(C_ACTIVE,0);
+        s.set(DESKTOP_LOADING,0);
         s.set(DISK_BANK,2);
         s.set(CWD,0);
         s.set(SHIFT,0);
-        s.text("JV-DOS 1.4\n128K RAM  16M DISK\nHELP FOR COMMANDS\n");
+        s.text("JV-DOS 1.4\n128K RAM  16M DISK\nHELP FOR COMMANDS\nJCTRL FOR DESKTOP\n");
         // Seed a real executable once; later boots preserve the user's directory and data.
         s.store(2,A);
         s.store(255,B);
         s.store(0,C);
         s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);
         s.store(0x4a,A);
-        s.eq(D,A,"shell");
+        s.eq(D,A,"boot.autoexec");
         byte[] hello=helloProgram();
-        s.diskLiteral(0,0,hello.length);
+        s.store(2,A);s.store(0,B);
+        s.store(0,C);s.store(hello.length,D);s.emit(WRITE_BYTE_TO_STORAGE,A,B,C,D);
         String filename="HELLO.COM";
-        for(int i=0;i<12;i++) s.diskLiteral(0,i+1,i<filename.length()?filename.charAt(i):0);
-        for(int i=0;i<hello.length;i++) s.diskLiteral(0,16+i,hello[i]&255);
+        for(int i=0;i<12;i++) { s.store(i+1,C);s.store(i<filename.length()?filename.charAt(i):0,D);s.emit(WRITE_BYTE_TO_STORAGE,A,B,C,D); }
+        for(int i=0;i<hello.length;i++) { s.store(16+i,C);s.store(hello[i]&255,D);s.emit(WRITE_BYTE_TO_STORAGE,A,B,C,D); }
         s.diskLiteral(255,0,0x4a);
-        s.jump("shell");
+        s.label("boot.autoexec");
+        // Optional startup source on the system disk, bank 2 root. Never create or replace it.
+        String autoexec="AUTOEXEC.JVS";
+        for(int n=0;n<12;n++) {
+            s.store(autoexec.charAt(n),D);
+            s.emit(STORE_MEM_ABSOLUTE,D,0,NAME,64+n);
+        }
+        s.call("search",SEARCH_RETURN);
+        s.get(A,FOUND);s.store(255,B);s.eq(A,B,"shell");
+        s.put(A,SLOT);
+        s.call("file.load",FILE_RETURN);
+        s.jump("script.start");
 
         s.label("shell");
+        s.get(A,DESKTOP_LOADING);s.store(0,B);s.eq(A,B,"shell.desktop.restored");
+        s.get(A,DESKTOP_BANK);s.put(A,DISK_BANK);s.get(A,DESKTOP_CWD);s.put(A,CWD);
+        s.get(A,DESKTOP_DRIVE);s.store(0,B);s.emit(ADD,A,B,Registers.STORAGE_PAGE.address());
+        s.set(DESKTOP_LOADING,0);s.label("shell.desktop.restored");
         s.get(A,SCRIPT_ACTIVE);
         s.store(1,B);
         s.eq(A,B,"script.next");
@@ -284,13 +301,16 @@ public final class JvDosImage {
         s.store(0,D);
         s.store(LINE,E);
         s.emit(STORE_MEM_ON_PAGE,D,E,C);
+        // Interactive Enter moves past the prompt; source statements should not add blank lines.
+        s.get(A,SCRIPT_ACTIVE);s.store(1,B);s.eq(A,B,"command.dispatch");
         s.text("\n");
+        s.label("command.dispatch");
         s.get(A,COUNT);
         s.store(0,B);
         s.eq(A,B,"shell");
         for(String command:COMMANDS) {
             String next=s.unique("command");
-            if(!java.util.Set.of("PRINT","ECHO","CLS","CLEAR","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","REM","END","STOP").contains(command)) {
+            if(!java.util.Set.of("PRINT","ECHO","CLS","CLEAR","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","REM","END","STOP","JCTRL").contains(command)) {
                 s.get(A,SCRIPT_ACTIVE);
                 s.store(1,B);
                 s.eq(A,B,next);
@@ -322,7 +342,7 @@ public final class JvDosImage {
         s.text("BROWSE HOST[:PORT]/PATH - HTTP\n");
         s.text("MKDIR NAME  CD NAME  CD ..\nCD /  RMDIR NAME\nMOVE FILE FOLDER OR NEWNAME\nMOVE FILE .. OR /\nDELETE = DEL; RENAME = REN\n");
         s.text("DIR  TYPE FILE  DEL FILE\nWRITE FILE TEXT\nAPPEND FILE TEXT\nEDIT FILE - ESC SAVES\nCOPY FILE NEW  REN FILE NEW\nRUN FILE.COM  ECHO TEXT\nSAVE FILE HEX BYTE PAIRS\nCLS VER MEM REBOOT EXIT\nBACKSPACE EDITS INPUT\n");
-        s.text("DRIVE N - SELECT DISK 0-255\nDRIVE SHOWS CURRENT DISK\n");
+        s.text("DRIVE N - SELECT DISK 0-255\nDRIVE SHOWS CURRENT DISK\nJCTRL - OPEN BUNDLED DESKTOP\n");
         s.text("UP DOWN HISTORY  TAB COMPLETE\nBANK + / BANK -\nBANK SHOWS CURRENT BANK\nCODEHELP FOR SOURCE PROGRAMS\nSOUND ON OR SOUND OFF\nVIEW FILE  IMAGE FILE  PLAY FILE\n");
         s.jump("shell");
         s.label("cmd.CLEAR");
@@ -463,6 +483,32 @@ public final class JvDosImage {
                 s.jump("do."+command);
             }
         }
+        s.label("cmd.JCTRL");
+        // Desktop takes over the source buffer; launching it ends the current script.
+        s.set(SCRIPT_ACTIVE,0);
+        // The managed desktop lives on the system disk; the record is outside the boot image.
+        s.store(0,A);s.emit(ADD,Registers.STORAGE_PAGE.address(),A,A);s.put(A,WORK);s.store(0,Registers.STORAGE_PAGE.address());
+        int[] packageMagic={'J','C','T',1};
+        for(int n=0;n<packageMagic.length;n++) {
+            s.store(0,A);s.store(1,B);s.store(n,C);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.store(packageMagic[n],A);s.ne(D,A,"desktop.missing");
+        }
+        s.store(0,A);s.store(1,B);s.store(4,C);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.store(2,A);s.emit(COMPARE_UNSIGNED,D,A,C);s.store(1,A);s.eq(C,A,"desktop.missing");
+        // Save the file-operation context while loading the executable from the system disk.
+        s.get(A,DISK_BANK);s.put(A,DESKTOP_BANK);s.get(A,CWD);s.put(A,DESKTOP_CWD);
+        s.get(A,WORK);s.put(A,DESKTOP_DRIVE);s.put(D,DISK_BANK);
+        s.set(DESKTOP_LOADING,1);s.set(CWD,0);
+        String desktopCommand="RUN JCTRL.COM";
+        for(int n=0;n<desktopCommand.length();n++){s.store(desktopCommand.charAt(n),D);s.emit(STORE_MEM_ABSOLUTE,D,0,LINE,64+n);}
+        s.set(COUNT,desktopCommand.length());s.set(ARG,4);
+        s.call("parse.name",SEARCH_RETURN);s.call("search",SEARCH_RETURN);
+        s.get(A,FOUND);s.store(255,B);s.eq(A,B,"missing");s.put(A,SLOT);
+        s.call("file.load",FILE_RETURN);
+        s.get(A,DESKTOP_LOADING);s.store(0,B);s.eq(A,B,"desktop.context.restored");
+        s.get(A,DESKTOP_BANK);s.put(A,DISK_BANK);s.get(A,DESKTOP_CWD);s.put(A,CWD);
+        s.get(A,DESKTOP_DRIVE);s.store(0,B);s.emit(ADD,A,B,Registers.STORAGE_PAGE.address());
+        s.set(DESKTOP_LOADING,0);s.label("desktop.context.restored");
+        s.jump("do.RUN");
+        s.label("desktop.missing");s.get(A,WORK);s.store(0,B);s.emit(ADD,A,B,Registers.STORAGE_PAGE.address());s.text("BUNDLED DESKTOP NOT INSTALLED\n");s.jump("shell");
         s.label("missing");
         s.text("FILE NOT FOUND\n");
         s.jump("shell");
@@ -1469,56 +1515,38 @@ public final class JvDosImage {
         s.set(INK,28);
         s.ret(HILITE_RETURN);
         s.label("glyph");
-        s.store(32,A); s.emit(COMPARE_UNSIGNED,D,A,C); s.store(1,B); s.eq(C,B,"glyph.fallback");
-        s.store(126,A); s.emit(COMPARE_UNSIGNED,D,A,C); s.store(2,B); s.ne(C,B,"glyph.lookup");
-        s.label("glyph.fallback"); s.store(63,D);
-        s.label("glyph.lookup");
-        s.store(32,A);
-        s.emit(SUB,D,A,C);
-        s.store(2,B);
-        s.emit(MULTIPLY,C,B,C);
-        s.store(64,A);
-        s.emit(ADD,C,A,C);
-        s.readAt(246,C,D);
-        s.put(D,FONT_PAGE);
-        s.emit(INCREMENT_REGISTER,C);
-        s.readAt(246,C,D);
-        s.put(D,FONT_OFFSET);
-        s.set(FONT_ROW,0);
-        s.set(FONT_COL,0);
-        s.label("glyph.pixel");
-        s.get(A,FONT_PAGE);
-        s.get(C,FONT_OFFSET);
-        s.readDynamic(A,C,D);
-        // Each row stores three ink bits in its high bits; the fourth column is spacing.
-        s.get(B,FONT_COL); s.store(0,C); s.store(2,A);
-        s.label("glyph.shift"); s.eq(B,C,"glyph.bit"); s.emit(MULTIPLY,D,A,D);
-        s.store(1,C); s.emit(SUB,B,C,B); s.store(0,C); s.jump("glyph.shift");
-        s.label("glyph.bit"); s.store(128,A); s.emit(COMPARE_UNSIGNED,D,A,C);
-        s.store(0,D); s.store(1,B); s.eq(C,B,"glyph.bit.done"); s.store(1,D);
-        s.label("glyph.bit.done");
-        s.put(D,FONT_PIXEL);
-        s.get(K,X);
-        s.get(B,FONT_COL);
-        s.emit(ADD,K,B,K);
-        s.get(L,Y);
-        s.get(B,FONT_ROW);
-        s.emit(ADD,L,B,L);
-        s.get(A,INK);
-        s.get(D,FONT_PIXEL);
-        s.emit(MULTIPLY,A,D,D);
-        s.emit(PUSH_GRA_MEM,K,L,D);
-        s.get(A,FONT_COL);
-        s.emit(INCREMENT_REGISTER,A); s.put(A,FONT_COL); s.store(4,B);
-        s.ne(A,B,"glyph.pixel");
-        s.get(A,FONT_OFFSET); s.emit(INCREMENT_REGISTER,A); s.put(A,FONT_OFFSET);
-        s.set(FONT_COL,0);
-        s.get(A,FONT_ROW);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,FONT_ROW);
-        s.store(6,B);
-        s.ne(A,B,"glyph.pixel");
-        s.ret(GLYPH_RETURN);
+        // DOS and external clients share the same register-only rasterizer.
+        s.get(K,X);s.get(L,Y);s.get(Registers.M.address(),INK);s.store(1,E);
+        s.store(0,Registers.N.address());s.ref("glyph.return",true,Registers.O.address());s.ref("glyph.return",false,Registers.P.address());
+        s.jump("graphics.glyph");s.label("glyph.return");s.ret(GLYPH_RETURN);
+        emitSharedGlyph(s);
+
+    }
+
+    /** Graphics ABI v1 at bank zero 249:18. K/L=x/y, M=ink, D=character,
+     * E=0 for transparent 3x5, nonzero for opaque 4x6. N/O/P=return bank/page/offset.
+     * Clobbers A-M; preserves N-P and all RAM, storage and display pacing state.
+     * Register-only scratch permits use while the interpreted DOS is mid-glyph.
+     */
+    private static void emitSharedGlyph(Asm s) {
+        final int M=16,N=17,O=18,P=19;
+        s.label("graphics.glyph");
+        s.store(32,A);s.emit(COMPARE_UNSIGNED,D,A,C);s.store(1,B);s.eq(C,B,"graphics.fallback");
+        s.store(126,A);s.emit(COMPARE_UNSIGNED,D,A,C);s.store(2,B);s.ne(C,B,"graphics.lookup");
+        s.label("graphics.fallback");s.store('?',D);
+        s.label("graphics.lookup");s.store(32,A);s.emit(SUB,D,A,C);s.store(2,B);s.emit(MULTIPLY,C,B,C);s.store(64,A);s.emit(ADD,C,A,C);
+        s.store(0,A);s.store(246,B);s.emit(LOAD_MEM_ON_BANK,A,B,C,I);s.emit(INCREMENT_REGISTER,C);s.emit(LOAD_MEM_ON_BANK,A,B,C,J);s.store(0,F);
+        s.label("graphics.row");s.store(0,A);s.emit(LOAD_MEM_ON_BANK,A,I,J,D);
+        for(int col=0;col<4;col++) {
+            String blank=s.unique("graphics.blank"),draw=s.unique("graphics.draw"),next=s.unique("graphics.next");
+            s.store(128>>col,B);s.emit(COMPARE_UNSIGNED,D,B,C);s.store(1,A);s.eq(C,A,blank);
+            s.emit(SUB,D,B,D);s.store(0,A);s.emit(ADD,M,A,C);s.jump(draw);
+            s.label(blank);s.store(0,A);s.eq(E,A,next);s.store(0,C);
+            s.label(draw);s.store(col,A);s.emit(ADD,K,A,A);s.store(0,B);s.emit(ADD,L,B,B);s.emit(PUSH_GRA_MEM,A,B,C);s.label(next);
+        }
+        s.emit(INCREMENT_REGISTER,J);s.emit(INCREMENT_REGISTER,L);s.emit(INCREMENT_REGISTER,F);
+        s.store(6,A);s.eq(F,A,"graphics.done");s.store(5,A);s.ne(F,A,"graphics.row");s.store(0,A);s.ne(E,A,"graphics.row");
+        s.label("graphics.done");s.emit(CHANGE_BANK_PAGE_JUMP,N,O,P);
     }
 
     /** The text language uses the existing shell dispatcher and bytecode arithmetic instructions. */
@@ -3260,11 +3288,12 @@ public final class JvDosImage {
             }
             while(pages.size()+first<=STATE) pages.add(new byte[256]);
             byte[] services=pages.get(249-first);
-            for(int i=0;i<2;i++) {
-                int address=labels.get(i==0?"com.print":"shell"); int offset=i*9;
+            for(int i=0;i<3;i++) {
+                int address=labels.get(new String[]{"com.print","shell","graphics.glyph"}[i]); int offset=i*9;
                 int[] code={STORE.code(),address/256,G,STORE.code(),address%256,H,CHANGE_PAGE_JUMP.code(),G,H};
                 for(int j=0;j<code.length;j++) services[offset+j]=(byte)code[j];
             }
+            services[JvDosServices.GRAPHICS_SIGNATURE]='J';services[JvDosServices.GRAPHICS_SIGNATURE+1]='G';services[JvDosServices.GRAPHICS_SIGNATURE+2]=JvDosServices.GRAPHICS_VERSION;
             for(int bank:new int[]{246,247,NAME,LINE,STATE}) installReaders(pages.get(bank-first));
             byte[] state=pages.get(STATE-first);
             byte[] pointers=pages.get(246-first);

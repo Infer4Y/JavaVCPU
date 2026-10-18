@@ -26,6 +26,7 @@ JV-DOS runs as guest bytecode. It provides a shell, persistent named files, an e
 | `MOVE NAME ..`, `MOVE NAME /` | Move a file/folder to its parent or bank root |
 | `DEL NAME`, `ERASE NAME`, `DELETE NAME` | Delete a file |
 | `SAVE NAME HEX` | Create binary content from uppercase hex byte pairs |
+| `JCTRL` | Launch the bundled desktop on system disk 0 |
 | `RUN NAME` | Interpret text, load bytecode, or open image/music by type |
 | `IMAGE NAME`, `SHOW NAME` | Display a palette image |
 | `PLAY NAME` | Play a MIDI-note stream |
@@ -59,6 +60,8 @@ The [screenshot gallery](Screenshots) also shows startup, programming help and p
 
 See [JVS programming](JVS-programming), [COM programming](COM-programming), and [Tooling and Disk Workshop](Tooling-and-Disk-Workshop).
 
+`JCTRL` launches the desktop bundled with DOS, from its managed bank on system disk 0. Startup installs it into an empty bank and updates unchanged managed copies automatically. Manual and modified copies are preserved. See [the desktop guide](Experimental-desktop.md).
+
 ## Disk banks (JV-DOS 1.3)
 
 The disk has 254 file banks, numbered 2-255, with 255 blocks shared by all files in each bank. `BANK` shows the selected bank. `BANK +` and `BANK -` move one bank at a time and stop at the boundaries. Reboot returns to bank 2. Existing files remain in bank 2; no disk conversion is required. All file commands use the selected bank and current folder, and COPY/REN stay within that folder. Changing banks resets the current folder to root. Reboot also resets the folder to root while preserving folders and files. Larger files consume multiple blocks; small files retain their existing layout.
@@ -79,7 +82,7 @@ Tab completes the word at the cursor. Repeated Tab cycles matching command names
 
 A-D hold working values, E/F support existing addressing sequences, and G/H implement far branches and the COM entry stubs. I/J handle indirect RAM reads without overwriting A-H. K/L hold glyph pixel coordinates, avoiding temporary RAM writes during rendering. M-P are available for future routines. Helpers can overwrite their documented scratch registers; guest JVS variables A-P live separately at bank 0, page 252, offsets 224-239.
 
-The register parser converts letters A-P directly into variable indices. `RUN` clears all sixteen JVS variables. Existing COM entry points and disk file layouts are unchanged. System-image revision 16 triggers installation of the updated kernel on next startup while preserving user files.
+The register parser converts letters A-P directly into variable indices. `RUN` clears all sixteen JVS variables. Existing COM entry points and disk file layouts are unchanged. System-image revision 19 triggers installation of the updated kernel on next startup while preserving user files.
 
 ## Folder storage
 
@@ -104,3 +107,9 @@ Additional disks are mounted with program arguments such as `--disk=1=secondary.
 ## Experimental desktop
 
 Run `RUN JCTRL.COM` after adding it through Disk Workshop. The [desktop guide](Experimental-desktop.md) covers mouse windows, the guest program runner, image/music playback, and installation.
+
+## Startup script
+
+After DOS initializes, it runs `AUTOEXEC.JVS` from the root of bank 2 on system disk 0, if present. This also runs on `REBOOT`. Create it with `EDIT AUTOEXEC.JVS` while in that bank and folder; Esc saves. It uses the normal JVS language and returns to the prompt when finished. Esc between statements stops it. Delete or rename the file to disable it.
+
+For an automatic desktop launch, use `WRITE AUTOEXEC.JVS JCTRL`. `JCTRL` ends the current script and launches the bundled desktop; closing the desktop returns to DOS.

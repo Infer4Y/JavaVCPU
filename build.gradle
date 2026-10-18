@@ -46,3 +46,32 @@ tasks.register('desktopImage', JavaExec) {
 application {
     mainClass = 'xyz.ignite4inferneo.Main'
 }
+
+// Build JCTRL guest examples without adding their generators to the application jar.
+tasks.register('compileJctrlExamples', JavaCompile) {
+    source = files(sourceSets.main.java, fileTree('examples/jctrl') { include '*.java' })
+    classpath = files()
+    options.incremental = false
+    destinationDirectory = layout.buildDirectory.dir('classes/jctrlExamples')
+}
+tasks.register('jctrlExamples', JavaExec) {
+    dependsOn compileJctrlExamples
+    classpath = files(layout.buildDirectory.dir('classes/jctrlExamples'))
+    mainClass = 'xyz.ignite4inferneo.jvdos.PongImage'
+    args file('examples/jctrl/PONG.COM').absolutePath
+}
+
+tasks.register('browserExample', JavaExec) {
+    dependsOn compileJctrlExamples
+    classpath = files(layout.buildDirectory.dir('classes/jctrlExamples'))
+    mainClass = 'xyz.ignite4inferneo.jvdos.BrowserImage'
+    args file('examples/jctrl/WEB.COM').absolutePath
+}
+
+// Run the windowed guest HTTP reader against a local test server.
+tasks.register('browserRegression', JavaExec) {
+    dependsOn compileStorageRegression, browserExample
+    classpath = files(regressionClasses)
+    mainClass = 'BrowserRegression'
+}
+check.dependsOn browserRegression

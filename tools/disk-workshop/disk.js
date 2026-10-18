@@ -17,7 +17,7 @@ globalThis.DosDisk = (() => {
   class Disk {
     constructor(bytes,bank=2) {
       if(bytes.length!==SIZE)fail('Select a 16 MiB JavaVCPU storage.img.');
-      if(textOf(bytes.slice(0,5))!=='JVCPM'||![4,5,6,7,8,9,10,11,12,13,14,15,16].includes(bytes[5])||!bytes[6])fail('This image has no supported JVCPM BIOS header.');
+      if(textOf(bytes.slice(0,5))!=='JVCPM'||![4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20].includes(bytes[5])||!bytes[6])fail('This image has no supported JVCPM BIOS header.');
       this.cwd=0; this.bank=integer(bank,2,255,'Bank'); this.bytes=new Uint8Array(bytes); this.list();
     }
     clone(){const copy=new Disk(this.bytes,this.bank);copy.cwd=this.cwd;return copy;}
@@ -44,6 +44,42 @@ globalThis.DosDisk = (() => {
       for(let slot=0;slot<SLOTS;slot++)if(this.bytes[base+slot*256+1]===255&&!used.has(slot))fail('Orphaned continuation block '+slot+'.');
       return all?files:files.filter(f=>f.parent===this.cwd);
     }
+    capacity(){
+      const used=this.all().reduce((n,file)=>n+file.blocks.length,0);
+      return {used,free:SLOTS-used,total:SLOTS,freeBytes:(SLOTS-used)*BLOCK};
+    }
+    // Imports may use a new empty bank, retaining the current folder path. Existing
+    // files stay in place; no disk-format extension or cross-bank links are needed.
+    importFile(name,data,type=0){
+      const capacity=this.capacity(),old=this.list().find(f=>f.name===name.toUpperCase());
+      const needed=Math.max(1,Math.ceil(data.length/BLOCK));
+      if(old||needed<=capacity.free){const slot=this.put(name,data,type);return {bank:this.bank,slot};}
+      if(data.length>MAX)this.put(name,data,type); // Preserve the ordinary size error.
+      const path=[];let parent=this.cwd;const entries=this.all(),seen=new Set();
+      while(parent){
+        if(seen.has(parent))fail('Cyclic folder path.');seen.add(parent);
+        const folder=entries.find(f=>f.slot+1===parent&&f.type===4);
+        if(!folder)fail('Invalid folder path.');path.unshift(folder.name);parent=folder.parent;
+      }
+      if(needed+path.length>SLOTS)fail('File and folder path cannot fit in one bank.');
+      const originalBank=this.bank;
+      // Leave partly occupied banks alone, including the managed desktop bank.
+      for(let bank=2;bank<=255;bank++){
+        if(bank===originalBank)continue;
+        const base=bank<<16;
+        if(Array.from({length:SLOTS},(_,slot)=>this.bytes[base+slot*256+1]).some(Boolean))continue;
+        // Stage the complete change so invalid media or folders cannot leave debris.
+        const staged=this.clone();staged.bank=bank;staged.cwd=0;
+        for(const folder of path){
+          const slot=staged.put(folder,new Uint8Array());
+          staged.bytes[base+slot*256+13]=4;staged.cwd=slot+1;
+        }
+        const slot=staged.put(name,data,type);
+        this.bytes=staged.bytes;this.bank=bank;this.cwd=staged.cwd;
+        return {bank,slot};
+      }
+      fail(`Bank ${originalBank} has ${capacity.freeBytes} free bytes; no empty storage bank is available. File unchanged.`);
+    }
     put(name,data,type=0){
       name=name.toUpperCase();if(!/^[A-Z0-9_.-]{1,12}$/.test(name))fail('Names use 1–12 letters, digits, dots, underscores or hyphens.');
       if(data.length>MAX)fail(name+': '+data.length+' bytes exceeds the '+MAX+'-byte limit.');
@@ -56,7 +92,7 @@ globalThis.DosDisk = (() => {
       // Preflight capacity: a failed import/overwrite cannot change the original file.
       for(let candidate=1;blocks.length<needed&&candidate<SLOTS;candidate++)
         if(candidate!==slot&&!this.bytes[base+candidate*256+1])blocks.push(candidate);
-      if(blocks.length<needed)fail('Not enough free blocks in this bank.');
+      if(blocks.length<needed)fail(`Bank ${this.bank} needs ${needed} blocks for ${name}; only ${blocks.length} are available including its existing blocks. All folders share this bank. File unchanged.`);
       for(const released of old?.blocks.slice(needed)||[])this.bytes.fill(0,base+released*256,base+(released+1)*256);
       blocks.forEach((block,index)=>{
         const p=base+block*256;this.bytes.fill(0,p,p+256);

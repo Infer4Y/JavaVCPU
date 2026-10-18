@@ -1,13 +1,14 @@
 # Experimental DOS desktop
 
-The desktop is a separate JavaVCPU guest application, `JCTRL.COM`, launched with `RUN JCTRL.COM`. DOS remains resident underneath it. Its windows, file browser, and text renderer run entirely on the guest CPU, using the existing instruction set, 128 KiB RAM, and normal device ports.
+The desktop is a separate JavaVCPU guest application, `JCTRL.COM`, launched with the `JCTRL` command (or `RUN JCTRL.COM` for a manual copy). DOS remains resident underneath it. Its windows, file browser, and text renderer run entirely on the guest CPU, using the existing instruction set, 128 KiB RAM, and normal device ports.
 
 ## Install and start
 
-1. Stop the VM and open `tools/disk-workshop/index.html`.
-2. Open `storage.img`, select a bank/folder with enough free space, and click **Add JCTRL desktop**. Alternatively import `examples/dos/JCTRL.COM` as a binary.
-3. Download the updated disk and replace `storage.img` while the VM is stopped.
-4. Boot DOS, select that bank/folder, and run `RUN JCTRL.COM`.
+Start the VM and enter `JCTRL` at the DOS prompt. DOS updates now install and maintain a bundled `JCTRL.COM` on the system disk (device 0), in the first empty bank found scanning from 255 down to 2. The command selects that bank's root folder and runs the ordinary COM file through DOS's loader. No Workshop import is required.
+
+The installer records the managed file's location and SHA-256 in reserved disk bytes 256..295, outside the boot image and file banks. On startup it checks desktop content independently of the OS revision, replacing an unchanged managed copy when the bundled executable changes. Updates preserve other files. Modified, renamed, moved, missing or corrupt managed copies are left alone; insufficient space or corrupt/cross-linked neighboring files also leave the bank unchanged. A manual same-name copy is preserved and is not adopted as the managed package. If every bank is occupied, automatic initial installation is skipped.
+
+For a manual copy, stop the VM, open `storage.img` in Workshop, select a folder and click **Add JCTRL desktop**, then download and replace the disk while stopped. Alternatively import `examples/dos/JCTRL.COM`. Launch a manual copy with `RUN JCTRL.COM` in its folder. Manual copies are not automatically updated.
 
 The desktop opens the current folder on the currently selected storage device. Browsing and viewing do not modify files. Drag-and-drop and DOS file commands persist changes to the selected disk. Explorer navigation stays separate from DOS's location; commands in the DOS window update the real shell's location.
 
@@ -45,7 +46,7 @@ Commands are not executed until Enter is pressed; edit or cancel them first. Ope
 
 ## Programs and media
 
-Click a COM file to run it. For JVS source, open it in the text reader and click **Run / Open** or press **F5**. Output appears in the application window. Existing `HI.COM`, COUNT, MATH, REGISTERS, and linked LONG JVS examples are covered by regression checks.
+Click a COM file to run it. For JVS source, open it in the text reader and click **Run / Open** or press **F5**. JCTRL opens its DOS console, queues `RUN filename` and executes it through the resident DOS parser, linked-file loader and JVS interpreter. Output remains in the console; run again from its prompt or reopen the source. COM output appears in the application window. Existing `HI.COM`, COUNT, MATH, REGISTERS, and linked LONG JVS examples are covered by regression checks.
 
 ![JVS program output inside JCTRL](images/jctrl-source.png)
 
@@ -53,7 +54,7 @@ The program runner is an interpreter **written in guest bytecode**. It executes 
 
 COM compatibility includes all current opcode forms, with bounds checks on virtual registers, instruction fetches, and application RAM accesses. Small COM files start at virtual bank 0 page 248; larger files start at virtual bank 1 page 0. Virtual bank-one pages 0..31 provide the 8 KiB workspace; legacy bank-zero page 248 aliases its first page. Branches and code fetches must remain within the loaded file. Bank-zero DOS entries 249:0 and 249:9 are handled by the guest interpreter for print-and-return and application completion. Other DOS internals and memory outside the workspace are unavailable. Graphics coordinates are reduced from 256x256 into the 128x128 buffer, while text uses a 32-column console. Storage/network/audio operations use the existing guest device instructions; normal application disk writes are persistent.
 
-The JVS subset supports uppercase `PRINT`, `ECHO`, `REM`, `STORE`, `ADD`, `SUB`, `MULTIPLY`, `INC`, `OUTPUT`, `IF`, `GOTO`, `BEEP`, `END`, and `STOP`. Values are unsigned bytes, registers are A-P, and branch targets are physical line numbers 1-255. Unsupported commands and programs larger than 8 KiB show an error in the window. The runner is intended for small DOS applications, rather than unrestricted native COM execution.
+JVS uses the full resident DOS language, including comments and `CLEAR`; JCTRL no longer embeds a second source interpreter, tokenizer, number parser, register parser or line scanner. The DOS window keeps the existing 8 KiB file-buffer limit and checks Esc between statements. Source remains cooperative: the desktop can repaint, move windows and deliver cancellation while the resident interpreter runs.
 
 Palette images (`JI`, type 2) stream across linked blocks directly into the guest pixel buffer. Images up to 128x128 use their original pixels; larger images, up to 240x240, reduce both dimensions by two. The image does not require a full-size second framebuffer or a complete file buffer.
 
@@ -65,7 +66,7 @@ Music (`JM`, type 3) supports versions 1 and 2, eight voices, and the existing f
 
 `DISPLAY` uses a monotonic 33 ms target interval. Guest execution consumes that budget, so presentation waits only for the remaining time. Overruns rebase the next deadline without catch-up bursts. Sustained-note regression checks require fewer than 1,000 guest instructions per idle playback tick and zero pixel writes (currently 122 instructions). They also verify note durations and zero-duration event grouping. Window dragging and other expensive UI operations can still delay playback; music still counts display intervals rather than reading an independent clock.
 
-JCTRL occupies about 143 of a bank's 255 blocks. Use **BANK- / BANK+** to browse another bank for large media files; this is important for images that cannot share a bank with the desktop executable. Switching banks stops the current application and starts at that bank's root folder. No swap file or hidden cache is used.
+JCTRL occupies 121 of a bank's 255 blocks. Use **BANK- / BANK+** to browse another bank for large media files; this is important for images that cannot share a bank with the desktop executable. Switching banks stops the current application and starts at that bank's root folder. No swap file or hidden cache is used.
 
 Drag a title bar to move its window; click any visible part of a window to bring it forward. X closes the window. The toolbar reopens Files, About, and Help; DOS exits the desktop. There is one instance of each tool window.
 
@@ -84,6 +85,14 @@ Drag a title bar to move its window; click any visible part of a window to bring
 | Backspace in Files | Parent folder |
 | BANK- / BANK+ | Browse another storage bank |
 | Wheel down / up | Next page / first page in the focused tool |
+
+## Resident DOS services
+
+System image revision 18 installs the desktop package and adds the `JCTRL` launcher. JCTRL requires graphics ABI v1, introduced in revision 17. Normal VM startup upgrades the system image and its managed desktop copy together. If the graphics signature is missing or incompatible, JCTRL returns to DOS before initializing the desktop.
+
+DOS and JCTRL now share one resident glyph renderer through bank-zero service `249:18`. Both use the existing font table; DOS requests opaque 4x6 character cells and JCTRL requests transparent 3x5 glyphs. The renderer keeps its scratch values in registers and writes no RAM, so desktop drawing cannot corrupt a paused DOS-window operation. The existing print and shell service addresses remain unchanged. See [COM programming](COM-programming.md) for the service contract.
+
+Sharing the glyph renderer and the full resident source execution path reduces the desktop from 34,304 to 28,928 bytes (5,376 bytes, 21 load pages). The glyph service saved 512 bytes; removing the duplicate JVS engine saved another 4,864 bytes. The machine still has 128 KiB RAM and the application workspace remains 8 KiB. COM virtualization, window management and streamed media remain in JCTRL because they provide its bounded, cooperative execution and window surfaces.
 
 ## Application layout and rebuilding
 
@@ -104,7 +113,7 @@ The application memory layout is entirely within the original 128 KiB:
 | 229 | Explorer directory-page history (up to 255 page starts) |
 | 230 | Focused DOS keyboard queue |
 | 231..232, 234..239 | Relocated immutable literals |
-| 233 | Source token scratch |
+| 233 | Reserved (former source token scratch) |
 | 240..250 | Existing DOS history/draft buffers, preserved |
 
 Bank-zero DOS and its font table remain resident; the renderer reads the font through ordinary bank-zero loads. Mouse input uses existing ports 0x30..0x33. The bytecode interpreter implements a dynamic READ_INPUT port by patching one literal operand in its own guest code, using normal RAM writes.

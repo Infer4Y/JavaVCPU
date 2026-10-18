@@ -1,59 +1,102 @@
 # JavaVCPU
 
-> **An experimental virtual CPU, built in Java.**
->
-> JavaVCPU executes byte-sized instructions to work with its own paged memory and palette display. It is a small place to experiment with the pieces beneath a computer: registers, opcodes, jumps, memory pages, and pixels.
+An experimental virtual CPU built in Java, with a bytecode operating system, paged RAM, persistent disks, a palette display, audio, keyboard/mouse input, and TCP networking.
 
+The default boot starts **JV-DOS 1.4**. The shell, editor, JVS interpreter, media tools, and optional desktop run as guest bytecode on the virtual CPU.
+
+## Get started
+
+Install **JDK 26** and run these commands from the project root:
+
+```powershell
+.\gradlew.bat build
+.\gradlew.bat run
 ```
- bytecode program  ──►  JavaVCPU  ──►  memory pages
-                         │
-                         └────────►  256 × 256 display
-```
+
+On macOS/Linux, use `./gradlew` instead. You can also launch `xyz.ignite4inferneo.Main` from IntelliJ IDEA with JDK 26 selected.
+
+Click the display window before typing. Enter `HELP` for shell commands or `CODEHELP` for programming help. `SOUND OFF` disables keyboard clicks.
+
+The VM uses `storage.img` in its working directory. On first launch, the installer writes the BIOS and DOS image; later launches update the system image as needed while preserving user files. The bootstrap reads the installed image through the storage device and transfers execution to the BIOS.
 
 ## See it run
 
 | JV-DOS shell | Highlighted source editor |
 | --- | --- |
-| ![JV-DOS 1.1 startup and command prompt](docs/wiki/images/dos-shell.png) | ![JV-DOS editor showing an arithmetic JVS program](docs/wiki/images/dos-editor.png) |
+| ![JV-DOS startup and command prompt](docs/wiki/images/dos-shell.png) | ![JV-DOS editor showing an arithmetic JVS program](docs/wiki/images/dos-editor.png) |
 
-The [complete screenshot gallery](docs/wiki/Screenshots.md) shows boot, help, directory, documents, images, music, program execution, graphics demos and Disk Workshop.
+The [screenshot gallery](docs/wiki/Screenshots.md) shows the shell, documents, media, graphics demos, and Disk Workshop. Screenshots may show earlier DOS versions.
 
-The default BIOS boots **JV-DOS 1.3**, implemented using the existing VCPU opcodes. It provides an editable command line, persistent named files, a source editor with highlighting, runnable JVS programs, COM bytecode loading, palette images, a document pager, and a four-voice music player. Type `HELP` or `CODEHELP` in the display window.
+## Use JV-DOS
 
-Click the JavaVCPU display window before typing.
+| Command | Purpose |
+| --- | --- |
+| `DIR` | List the current folder |
+| `MKDIR DEMOS`, `CD DEMOS`, `CD ..` | Create and navigate folders |
+| `EDIT DEMO.JVS` | Open the source editor; Esc saves and exits |
+| `RUN DEMO.JVS` | Run JVS source or COM bytecode; also opens image/music files |
+| `VIEW FILE.TXT` | Page through a document; Esc closes it |
+| `IMAGE FILE.IMG` | Display a palette image |
+| `PLAY FILE.JMT` | Play a note stream; Esc stops playback |
+| `BANK`, `BANK +`, `BANK -` | Inspect or change the selected file bank |
+| `DRIVE 1` | Select a mounted disk |
+| `BROWSE example.com/` | Open the guest HTTP text browser |
 
-Open [Disk Workshop](tools/disk-workshop/index.html) locally to import small text/source/binary files, convert images or MIDI clips, and download an updated `storage.img`. Stop the VM before replacing its disk, then restart. The tool preserves the BIOS and OS bytes. [Format documentation and limits](tools/disk-workshop/README.md) explain the linked files up to 61,200 bytes and media conversions.
+The prompt keeps 16 commands of history until reboot. Up/Down recall commands; Tab completes command names and filenames in the current folder. In the editor, arrow keys navigate and Tab inserts four spaces.
+
+Each 16 MiB disk has 254 file banks (2-255), each sharing 255 blocks between files and folders. Names can contain up to 12 characters; linked files can hold up to 61,200 bytes when space permits. File commands use names in the current folder; navigate with `CD` before operating on another folder.
+
+Mount additional disks at startup:
+
+```powershell
+.\gradlew.bat run --args="--disk=1=secondary.img"
+```
+
+Device 0 uses `storage.img`. See [JV-DOS commands](docs/wiki/JV-DOS.md) and [peripheral buses](docs/wiki/Peripheral-buses.md) for more details.
+
+The text browser supports plain HTTP and custom ports, for example `BROWSE http://localhost:8000/index.html`. It strips response headers and HTML tags and keeps up to 60,000 bytes of text in RAM. Up/Down scroll, Home returns to the top, and Esc exits or cancels. HTTPS, redirects, JavaScript, CSS layout, entity decoding, images, clickable links, and chunked responses are unsupported; servers must close the response connection. Script/style contents may appear as text.
+
+## Disk Workshop and desktop
+
+Open [Disk Workshop](tools/disk-workshop/index.html) locally in a browser to edit a disk, import text/source/binary files, convert images or MIDI clips, and install the experimental JCTRL desktop.
 
 ![Disk Workshop directory and JVS source editor](docs/wiki/images/workshop-text.png)
 
-Use `VIEW FILE.TXT` to page through documents, `IMAGE FILE.IMG` to display a palette image, and `PLAY FILE.JMT` to play imported MIDI-note streams. Arrow keys navigate documents; Esc closes a viewer or stops music. `RUN` also recognizes imported image/music types. Shift supplies punctuation, including symbols, braces and quotes; keypad keys work. `SOUND OFF` disables keyboard clicks.
+Workshop downloads an updated image and preserves the BIOS/OS bytes. **Stop the VM before replacing `storage.img`, then restart.** See the [Workshop guide](tools/disk-workshop/README.md) for formats and conversion limits.
 
-Use `BROWSE example.com/` or `BROWSE http://localhost:8000/index.html` for the guest HTTP text browser. URLs use lowercase letters by default; hold Shift for uppercase. Up/Down page through the result, Home returns to the top, and Esc exits or cancels a request. The browser requests HTTP/1.0, removes response headers and HTML tags, and keeps up to 60,000 bytes of text in RAM without writing to disk. It supports plain HTTP and custom ports. HTTPS, redirects, JavaScript, CSS layout, character entities, images, and clickable links are not supported; script/style contents may appear as text. Servers must close the response connection; chunked responses are not decoded. The system image updates automatically on restart and preserves user files.
+The DOS installer now includes and updates **JCTRL** automatically. Start the VM and enter `JCTRL` to open the managed desktop on the system disk; no manual import is needed. The installer uses an empty file bank and preserves user-modified or manual desktop copies. JCTRL provides draggable windows, a file explorer, a DOS window, document/media viewing, and guest program execution. JVS source runs through the resident DOS interpreter. Workshop's **Add JCTRL desktop** and [the bundled executable](examples/dos/JCTRL.COM) remain available for manual copies, launched with `RUN JCTRL.COM`. See the [desktop guide](docs/wiki/Experimental-desktop.md) for installation, controls and limits.
 
-On first launch, `DiskInstaller` writes the BIOS and MicroDOS bytecode image to `storage.img`. Later launches execute a small bootstrap program that reads the image through the storage instruction, writes it into virtual memory, and begins at its BIOS entry page.
-
-## Get started
-
-JavaVCPU requires **JDK 26**.
+Rebuild the desktop executable and Workshop installation asset with:
 
 ```powershell
-./gradlew.bat build
+.\gradlew.bat desktopImage
 ```
 
-Then run `xyz.ignite4inferneo.Main` from IntelliJ IDEA with JDK 26 selected. There is currently no Gradle `run` task.
+## Virtual hardware
 
-## What is inside?
-
-| Part | What it does |
+| Part | Details |
 | --- | --- |
-| **CPU** | Executes bytecode through eight general-purpose registers plus a program counter and active-page register. |
-| **Memory** | Provides two banks of 256 pages of 256 bytes: **128 KiB** in total. |
-| **Display** | Renders a 256 × 256 palette framebuffer in an 800 × 800 Swing window. |
-| **Programs** | Includes a POST boot flow, text rendering, a snowfall animation, and memory-page examples. |
+| CPU | 31 opcodes (0-30), sixteen byte-sized general-purpose registers, and four control registers |
+| RAM | Two banks of 256 pages of 256 bytes: **128 KiB** total |
+| Display | 256 × 256 framebuffer, 128 palette colors, scaled to an 800 × 800 Swing window |
+| Storage | Separately addressed 16 MiB disk images, selectable by device ID |
+| Input | Keyboard events/state and mouse input |
+| Audio | 16 synthesized hardware voices |
+| Network | Asynchronous TCP controller on a separate byte-addressed register bus |
+
+General-purpose registers A-H use indices 0-7, and I-P use 12-19. Control registers are `COUNTER` (8), `PAGE` (9), `STORAGE_PAGE` (10, the legacy name for the storage device selector), and `MEMORY_BANK` (11).
+
+Instruction fetches and ordinary memory operations use `MEMORY_BANK:PAGE`. Addresses and register values are unsigned bytes where used for addressing; arithmetic wraps to the low byte. Far memory instructions access another bank/page without changing the execution bank, while far jumps replace bank, page, and counter together.
+
+Colors use the low seven bits in `RRGGGBB` order: four red levels, eight green levels, and four blue levels. The high bit is ignored on pixel writes. `DISPLAY` presents the completed framebuffer with pacing at roughly 30 frames per second.
+
+See [architecture](docs/wiki/Architecture.md), the [complete instruction set](docs/wiki/Instruction-set.md), and [peripheral protocols](docs/wiki/Peripheral-buses.md).
 
 ## Write a program
 
-Programs are byte arrays assembled with the opcode and register helpers:
+Use `EDIT DEMO.JVS` and `RUN DEMO.JVS` for guest source programs. The [JVS guide](docs/wiki/JVS-programming.md) describes the language; the [COM guide](docs/wiki/COM-programming.md) covers bytecode programs and DOS conventions.
+
+Raw bytecode can also be assembled with the Java opcode and register helpers:
 
 ```java
 static final byte[] PROGRAM_EXAMPLE = new byte[] {
@@ -63,109 +106,34 @@ static final byte[] PROGRAM_EXAMPLE = new byte[] {
 };
 ```
 
-Add the bytecode to `Programs`, add a matching `Program` enum value and loader case, then select it in `Main.main()`. Jump targets are byte addresses, so include every opcode and operand when calculating them.
+This stores 42 in A, prints its signed value to the host console, then halts. Built-in examples live in `Programs.java` and load through `Programs.load(Program)`. The normal entry point boots the disk; to experiment with a built-in program, replace the `DiskInstaller.boot()` call in `Main` with the corresponding loader call.
 
-## Included programs
+Jump targets count every opcode and operand byte. Keep instructions within a 256-byte page. There is no CPU call/return instruction or hardware stack. The kernel and desktop have Java-based assemblers; [examples](docs/wiki/Example-programs.md) include commented hex that can be converted with `examples/build.ps1`.
 
-| Program | Demonstrates |
+Built-in programs include `BIOS_POST`, `DEMO_OS` (the legacy name for JV-DOS), `PERIPHERAL_DIAGNOSTICS`, `HELLO_CPU`, `DISPLAY_HELLO_CPU`, `LOOP_127_3`, `PAGED_MEMORY`, and `SNOWFALL`.
+
+## Development
+
+```powershell
+# Build and run checks (including the headless storage regressions)
+.\gradlew.bat build
+
+# Run the headless RAM/filesystem regression suite directly
+.\gradlew.bat storageRegression
+```
+
+The `storageRegression` task compiles and runs without external test-library dependencies. Its disk image is written under `build/`.
+
+| Source / directory | Purpose |
 | --- | --- |
-| `BIOS_POST` | The default BIOS POST and handoff to the resident monitor. |
-| `DEMO_OS` | Legacy enum name for the resident JV-DOS 1.2 bytecode operating system. |
-| `PERIPHERAL_DIAGNOSTICS` | Storage read/write, keyboard polling, audio control, multiplication, and increment. |
-| `DISPLAY_HELLO_CPU` | Drawing **HELLO CPU** with graphics bytecode. |
-| `SNOWFALL` | Pixel reads and writes for falling, accumulating snow. |
-| `PAGED_MEMORY` | Independent values at the same address on different pages. |
-| `LOOP_127_3` | Register arithmetic and conditional looping. |
-| `HELLO_CPU` | Building ASCII values with arithmetic and printing them. |
-
-## Architecture reference
-
-<details>
-<summary><strong>Memory and registers</strong></summary>
-
-JavaVCPU has 256 memory pages of 256 bytes each. `PAGE` selects the page used for instruction fetches and memory instructions; changing pages preserves register values. Page numbers, addresses, and register operands are interpreted as unsigned bytes. Arithmetic wraps when stored back into a register.
-
-| Register | Index | Purpose |
-| --- | --- | --- |
-| A–H | 0–7 | General-purpose byte registers |
-| COUNTER | 8 | Next instruction address on the active page |
-| PAGE | 9 | Active memory page |
-
-`Programs.load` uploads a program and resets `PAGE` and `COUNTER` to zero. It replaces only the uploaded byte range; it does not clear the rest of memory.
-
-</details>
-
-<details>
-<summary><strong>Instruction set</strong></summary>
-
-Each instruction is one opcode byte followed by zero or more operands. In the table, `r`, `a`, `b`, and `out` are register indices; `value` and `address` are literal bytes. `R[r]` is a register value and `M[address]` is an address on the active page.
-
-| Opcode | Instruction | Bytes | Behavior |
-| --- | --- | --- | --- |
-| 0 | `ADD a, b, out` | 4 | `R[out] = R[a] + R[b]` |
-| 1 | `SUB a, b, out` | 4 | `R[out] = R[a] - R[b]` |
-| 2 | `STORE value, r` | 3 | `R[r] = value` |
-| 3 | `JMP address` | 2 | Set `COUNTER` to `address` |
-| 4 | `STOP` | 1 | End execution and print timing information |
-| 5 | `OUTPUT r` | 2 | Print the signed value of `R[r]` |
-| 6 | `COND_JUMP a, b, address` | 4 | Jump when `R[a] == R[b]` |
-| 7 | `LOAD_MEM r, address` | 3 | `R[r] = M[address]` |
-| 8 | `STORE_MEM r, address` | 3 | `M[address] = R[r]` |
-| 9 | `CHANGE_PAGE r` | 2 | Set `PAGE = R[r]` |
-| 10 | `CHANGE_PAGE_JUMP r, target` | 3 | Set `PAGE = R[r]`, then `COUNTER = R[target]` |
-| 11 | `CHANGE_PAGE_COND_JUMP r, a, b, address` | 5 | On equality, select the page and jump |
-| 12 | `PUSH_GRA_MEM x, y, color` | 4 | Write `R[color]` at `(R[x], R[y])` |
-| 13 | `CLEAR_GRA` | 1 | Fill the framebuffer with black |
-| 14 | `DISPLAY` | 1 | Present the framebuffer and limit execution to roughly 30 frames/second |
-| 15 | `READ_GRA_MEM x, y, out` | 4 | Store the palette color at `(R[x], R[y])` in `R[out]` |
-| 16 | `READ_INPUT device, out` | 3 | Read a device port into `R[out]` |
-| 17 | `OUTPUT_AUDIO voice, note, control` | 4 | Configure an audio voice from registers |
-| 18 | `READ_BYTE_FROM_STORAGE x, y, z, out` | 5 | Read storage byte `(R[x], R[y], R[z])` into `R[out]` |
-| 19 | `WRITE_BYTE_TO_STORAGE x, y, z, value` | 5 | Write `R[value]` to storage byte `(R[x], R[y], R[z])` |
-| 20 | `MULTIPLY a, b, out` | 4 | `R[out] = R[a] * R[b]` |
-| 21 | `INCREMENT_REGISTER r` | 2 | Increment `R[r]` |
-| 22 | `STORE_MEM_ON_PAGE value, page, address` | 4 | `Memory[R[page]][R[address]] = R[value]` |
-
-</details>
-
-<details>
-<summary><strong>Display and colors</strong></summary>
-
-`Monitor` stores a 256 × 256 framebuffer and uses nearest-neighbor scaling for an 800 × 800 Swing window. Call `DISPLAY` after drawing a frame.
-
-`PUSH_GRA_MEM` and `READ_GRA_MEM` read their coordinates from registers. Valid coordinates are `0` through `255`; coordinates are interpreted as unsigned bytes.
-
-Colors use the low seven bits of a byte in `RRGGGBB` order:
-
-| Bits | Channel | Levels |
-| --- | --- | --- |
-| 6–5 | Red | 4 |
-| 4–2 | Green | 8 |
-| 1–0 | Blue | 4 |
-
-The high bit is ignored on writes. `0b11_111_00` is yellow and `0b11_111_11` is white.
-
-</details>
-
-## Project map
-
-| File | Purpose |
-| --- | --- |
-| `Main.java` | CPU state, instruction dispatch, and implementations |
-| `Memory.java` | Paged-memory storage |
-| `Monitor.java` | Framebuffer access and Swing rendering |
-| `OPCode.java` | Opcode values and instruction lengths |
-| `Programs.java` | Built-in bytecode and its loader |
-| `jvdos/JvDosImage.java` | Assembles the guest DOS kernel, editor, source interpreter, and media tools |
-| `tools/disk-workshop/index.html` | Browser-local disk importer/editor and image/MIDI converters |
-| `Registers.java` | Register indices |
-
-JV-DOS 1.2 expands storage to 254 banks of 255 shared blocks. Use `BANK`, `BANK +`, and `BANK -` to inspect and change banks. The device remains 16 MiB; files can now use linked blocks up to 61,200 bytes when bank space permits; existing files stay in bank 2. The DOS assembler is now in `xyz.ignite4inferneo.jvdos`.
-
-RAM now provides 131,072 eight-bit locations (128 KiB) through two 64 KiB banks. Legacy programs boot in bank 0. Opcodes 23–25 provide cross-bank jumps, reads and writes; see [the instruction set](docs/wiki/Instruction-set.md). Storage remains separately addressed at 16 MiB.
-
-JV-DOS 1.3 supports larger text/JVS/COM files, 16-bit editor cursors and longer music streams (255 events). `./gradlew storageRegression` runs the headless RAM/filesystem checks without external test libraries.
-
-The DOS prompt supports Up/Down history (16 commands, cleared on reboot) and Tab completion of command names and bank-local filenames. Repeated Tab cycles matches; EDIT retains arrow navigation and four-space Tab indentation.
-
-Multiple 16 MiB disk images can be mounted with program arguments such as `--disk=1=secondary.img`; select one in DOS with `DRIVE 1`. Network opcodes 29/30 expose an asynchronous TCP controller over its own byte-addressed register bus, using the host?s internet connection. See [Peripheral buses](docs/wiki/Peripheral-buses.md) for the device protocol and a runnable guest network example.
+| `src/main/java/xyz/ignite4inferneo/Main.java` | CPU state and instruction dispatch |
+| `Memory.java`, `Registers.java`, `OPCode.java` | RAM, register indices, instruction encodings |
+| `Monitor.java`, `FramePacer.java` | Framebuffer presentation and frame pacing |
+| `Input.java`, `Audio.java`, `Storage.java`, `Network.java` | Host-backed devices |
+| `DiskInstaller.java`, `Programs.java` | Boot installation and built-in bytecode |
+| `jvdos/JvDosImage.java` | Guest DOS kernel, editor, interpreter, and media tools |
+| `jvdos/DesktopImage.java` | Guest desktop assembler |
+| `src/test/java/` | Headless regression checks |
+| `examples/` | Guest source, bytecode, and sample media |
+| `tools/disk-workshop/` | Browser-local disk editor and media converters |
+| `docs/wiki/` | Detailed usage, architecture, and programming guides |

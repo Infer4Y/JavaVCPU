@@ -14,28 +14,25 @@ public final class DiskInstaller {
     private static final byte BOOTSTRAP_PAGE = (byte) 255;
     // Bump this when the resident opcode image changes so an earlier boot image is replaced.
     // User files live well beyond IMAGE_OFFSET and are therefore preserved during that update.
-    private static final byte[] MAGIC = new byte[] {'J', 'V', 'C', 'P', 'M', 16};
+    private static final byte[] MAGIC = new byte[] {'J', 'V', 'C', 'P', 'M', 20};
 
     private DiskInstaller() {
     }
 
-    /** Installs the firmware and operating-system image when the disk has no valid system image. */
+    /** Updates firmware, the resident OS and its managed desktop before guest execution. */
     public static void installIfMissing() throws IOException {
-        if (isInstalled()) {
-            return;
+        boolean changed=false;
+        if (!isInstalled()) {
+            byte[][] pages=Programs.bootImage();
+            if(pages.length>255)throw new IllegalStateException("Boot image exceeds the available page count");
+            byte[] header=new byte[8];System.arraycopy(MAGIC,0,header,0,MAGIC.length);
+            header[6]=(byte)pages.length;header[7]=1;
+            Storage.writeRange(IMAGE_OFFSET,flatten(pages));Storage.writeRange(HEADER_OFFSET,header);
+            IO.println("Installed JVCPM system disk");changed=true;
         }
-        byte[][] pages = Programs.bootImage();
-        if (pages.length > 255) {
-            throw new IllegalStateException("Boot image exceeds the available page count");
-        }
-        byte[] header = new byte[8];
-        System.arraycopy(MAGIC, 0, header, 0, MAGIC.length);
-        header[6] = (byte) pages.length;
-        header[7] = 1;
-        Storage.writeRange(IMAGE_OFFSET, flatten(pages));
-        Storage.writeRange(HEADER_OFFSET, header);
-        Storage.save();
-        IO.println("Installed JVCPM system disk");
+        // Desktop content is checked even when the kernel revision is already current.
+        changed|=BundledDesktopInstaller.install(xyz.ignite4inferneo.jvdos.DesktopImage.program());
+        if(changed)Storage.save();
     }
 
     /**

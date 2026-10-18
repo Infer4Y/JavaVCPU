@@ -189,12 +189,13 @@ public final class DosStorageRegression {
         check((vm.ram[484][19]&255)==1,"relocated self-modifying READ_INPUT operand uses the mounted-drive port");
         vm.press(113);vm.click(20,24+28+30+1);vm.applicationFrames();check(vm.appState(1)==6,"bad register operand is rejected without corrupting JCTRL");
         for(int row=6;row<=9;row++) {
-            vm.press(113);vm.click(20,24+28+row*6+1);vm.press(116);vm.applicationFrames();
-            check(vm.appState(1)==2,"existing source example executes in guest: row "+row);
-            if(row==6)check((vm.ram[484][0]&255)==5,"JVS IF/GOTO loop");
-            if(row==7)check((vm.ram[484][2]&255)==42&&(vm.ram[484][0]&255)==0,"JVS arithmetic and wraparound");
-            if(row==8)check((vm.ram[484][19]&255)==42,"JVS extended registers");
-            if(row==9)check((vm.ram[484][1]&255)==55,"linked JVS source and physical line targets");
+            vm.press(113);vm.click(20,24+28+row*6+1);vm.press(116);
+            vm.sourceFrames();
+            check(vm.appState(1)==5&&vm.appState(103)==vm.appState(104)&&vm.appState(116)==1&&vm.ram[252][176]==0,"source completes through resident DOS: row "+row);
+            if(row==6)check((vm.ram[252][224]&255)==5,"JVS IF/GOTO loop");
+            if(row==7)check((vm.ram[252][226]&255)==42&&(vm.ram[252][224]&255)==0,"JVS arithmetic and wraparound");
+            if(row==8)check((vm.ram[252][239]&255)==42,"JVS extended registers");
+            if(row==9)check((vm.ram[252][225]&255)==55,"linked JVS source and physical line targets");
         }
         vm.snapshot("jctrl-source");
         vm.press(113);vm.click(20,24+28+10*6+1);vm.applicationFrames();
@@ -242,6 +243,33 @@ public final class DosStorageRegression {
         vm.mouse(30,65,0);vm.mouse(30,65,1);vm.mouse(35,65,1);vm.mouse(35,65,0);
         check(java.util.Arrays.equals(after,Storage.readRange(29<<16,65536)),"folder cannot be dropped into itself");
         System.out.println("PASS: guest drag/drop folder move, duplicate rejection, self-drop rejection and byte preservation");
+    }
+
+    private void sourceFrames() {
+        for(int frame=0;frame<2000&&(appState(103)!=appState(104)||appState(116)!=1||ram[252][176]!=0);frame++) {
+            press(0);
+        }
+        check(appState(1)==5&&appState(103)==appState(104)&&appState(116)==1&&ram[252][176]==0,"source returns to resident DOS prompt");
+    }
+    private static void desktopSourceChecks() throws Exception {
+        DosStorageRegression vm=terminal();
+        chain(31,0,"JCTRL.COM",xyz.ignite4inferneo.jvdos.DesktopImage.program(),0);
+        chain(31,145,"FULL.JVS","; RESIDENT PARSER COMMENT\nSTORE 7 A\nCLEAR\nINC A\nOUTPUT A\nEND\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII),1);
+        chain(31,146,"LOOP.JVS","GOTO 1\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII),1);
+        chain(31,147,"QUIET.JVS",("STORE 7 A\n"+"INC A\n".repeat(50)+"END\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII),1);
+        DosStorageRegression quiet=terminal();quiet.ram[252][220]=31;quiet.command("CLS");quiet.command("RUN QUIET.JVS");
+        check((quiet.ram[252][224]&255)==57&&(quiet.ram[252][130]&255)==12,"source arithmetic does not print blank lines or force scrolling");
+        vm.ram[252][220]=31;vm.command("RUN JCTRL.COM");
+        vm.click(20,24+28+6+1);vm.press(116);vm.sourceFrames();
+        check((vm.ram[252][24]&255)==124&&(vm.ram[252][25]&255)==124&&(vm.ram[252][26]&255)==116,"resident console geometry wraps and scrolls within its surface");
+        check((vm.ram[252][224]&255)==8,"JCTRL reuses DOS comment, CLEAR, arithmetic and output semantics");
+        vm.press(113);vm.click(20,24+28+12+1);vm.press(116);
+        for(int frame=0;frame<1000&&vm.ram[252][176]==0;frame++)vm.press(0);
+        check(vm.ram[252][176]==1,"resident source loop starts without blocking desktop");
+        vm.mouse(35,40,0);vm.mouse(35,40,1);vm.mouse(40,45,1);vm.mouse(40,45,0);
+        vm.press(27);vm.sourceFrames();
+        check(vm.r[11]==1&&vm.desktopState(169)==41,"source cancellation and window dragging keep desktop resident");
+        System.out.println("PASS: JCTRL source uses full resident DOS interpreter, comments/CLEAR, loop cancellation and responsive window dragging");
     }
 
     private static void desktopShellChecks() throws Exception {
@@ -357,6 +385,7 @@ public final class DosStorageRegression {
         FramePacerRegression.run();
         MemoryRegression.run();
         xyz.ignite4inferneo.jvdos.DesktopAssemblyRegression.run();
+        sharedGraphicsChecks();
         Path image = Path.of(args.length == 0 ? "build/check/regression.img" : args[0]);
         Files.deleteIfExists(image);
         Storage.load(image);
@@ -372,18 +401,24 @@ public final class DosStorageRegression {
         check(Storage.readRange(Storage.STORAGE_SIZE - 1, 1)[0] == 123, "disk persistence");
 
         PeripheralRegression.run(image);
+        DesktopInstallRegression.run(image);
 
         for (int slot=0;slot<16;slot++) file(2,slot,"F"+slot+".TXT","OLD");
         file(2,254,"LAST.TXT","END");
         Storage.writeRange(0x2ff00, new byte[]{0x4a});
         DiskInstaller.installIfMissing();
-        check(Storage.readRange(0,8)[5] == 16, "system revision");
+        check(Storage.readRange(0,8)[5] == 20, "system revision");
         check(Storage.readRange(0x20010,3)[0] == 'O', "installation preserves files");
         DosStorageRegression vm = new DosStorageRegression();
         byte[][] pages = Programs.bootImage();
         check(pages.length <= 255, "boot image fits RAM");
         for(int p=0;p<pages.length;p++) System.arraycopy(pages[p],0,vm.ram[p],0,pages[p].length);
         vm.run();
+        autoexecChecks();
+        DosStorageRegression desktopLaunch=terminal();desktopLaunch.command("DRIVE 1");desktopLaunch.ram[252][220]=29;desktopLaunch.command("MKDIR CONTEXT");desktopLaunch.command("CD CONTEXT");desktopLaunch.command("JCTRL");
+        check(desktopLaunch.r[11]==1&&desktopLaunch.desktopState(15)==29&&desktopLaunch.desktopState(16)==1&&desktopLaunch.r[10]==1,"JCTRL loads from system disk while preserving selected drive, bank and folder");
+        desktopLaunch.click(220,5);check(desktopLaunch.r[11]==0,"managed desktop returns to DOS");
+        check((desktopLaunch.ram[252][24]&255)==252&&(desktopLaunch.ram[252][25]&255)==244&&(desktopLaunch.ram[252][26]&255)==236,"desktop exit restores fullscreen console geometry");
         vm.command("DRIVE 1"); vm.command("MKDIR REMOTE"); vm.command("CD REMOTE");
         vm.command("WRITE DRIVE.TXT SECOND");
         check(Storage.readData(1,(byte)2,(byte)1,(byte)16)=='S',"DOS writes selected drive folder");
@@ -526,6 +561,8 @@ public final class DosStorageRegression {
         moveChecks();
         desktopChecks();
         desktopApplicationChecks();
+        pongChecks();
+        desktopSourceChecks();
         desktopShellChecks();
         desktopDragChecks();
         shellNavigationChecks();
@@ -550,6 +587,23 @@ public final class DosStorageRegression {
 
         Storage.save();
         System.out.println("PASS: disk persistence, compatible files, linked-file limits, editing/copying/deletion, JVS/COM/music, paging and corrupt/full-bank preservation");
+    }
+
+    private static void autoexecChecks() throws Exception {
+        chain(2,240,"AUTOEXEC.JVS","STORE 41 A\nINC A\nEND\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII),1);
+        DosStorageRegression vm=terminal();
+        check(vm.ram[252][224]==42,"autoexec runs after cold boot");
+        vm.command("STORE 0 A");vm.command("REBOOT");
+        check(vm.ram[252][224]==42,"autoexec runs on REBOOT");
+        vm.command("STORE 0 A");vm.command("VER");
+        check(vm.ram[252][224]==0,"autoexec does not rerun at ordinary prompt");
+        chain(2,240,"AUTOEXEC.JVS","JCTRL\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII),1);
+        vm.command("REBOOT");
+        check(vm.r[11]==1,"autoexec can launch bundled desktop");
+        vm.click(220,5);vm.ram[252][220]=2;vm.command("DEL AUTOEXEC.JVS");
+        vm.command("REBOOT");vm.command("VER");
+        check(vm.ram[252][176]==0,"missing autoexec leaves interactive shell");
+        System.out.println("PASS: optional AUTOEXEC.JVS cold boot, reboot, single execution and desktop launch");
     }
 
     private static DosStorageRegression terminal() {
@@ -639,6 +693,71 @@ public final class DosStorageRegression {
             position+=count;slot=Storage.readRange(p+15,1)[0]&255;}while(position<length);
         return new String(bytes,java.nio.charset.StandardCharsets.US_ASCII);
     }
+    private static void sharedGraphicsChecks() {
+        DosStorageRegression vm=new DosStorageRegression();byte[][] pages=Programs.bootImage();
+        for(int p=0;p<pages.length;p++)System.arraycopy(pages[p],0,vm.ram[p],0,pages[p].length);
+        // A keyboard poll is a return sentinel, in either caller bank.
+        for(int bank=0;bank<2;bank++)vm.ram[(bank<<8)|248][0]=16;
+        byte[][] before=java.util.Arrays.stream(vm.ram).map(byte[]::clone).toArray(byte[][]::new);
+        for(int bank=0;bank<2;bank++)for(int mode=0;mode<2;mode++)for(int ch=0;ch<256;ch++) {
+            for(int[] row:vm.pixels)java.util.Arrays.fill(row,9);
+            vm.r[9]=249;vm.r[8]=18;vm.r[11]=0;vm.r[3]=ch;vm.r[4]=mode;
+            vm.r[14]=254;vm.r[15]=253;vm.r[16]=127;vm.r[17]=bank;vm.r[18]=248;vm.r[19]=0;
+            vm.run();
+            check(vm.r[11]==bank&&vm.r[9]==248&&vm.r[8]==0,"graphics cross-bank return");
+            int glyph=ch>=32&&ch<=126?ch:'?',index=64+(glyph-32)*2;
+            int page=vm.ram[246][index]&255,offset=vm.ram[246][index+1]&255;
+            for(int y=0;y<7;y++)for(int x=0;x<5;x++) {
+                boolean ink=y<5&&x<3&&(vm.ram[page][offset+y]&(128>>x))!=0;
+                int expected=ink?127:mode!=0&&x<4&&y<6?0:9;
+                check(vm.pixels[(253+y)&255][(254+x)&255]==expected,"shared glyph pixels, spacing, fallback and coordinate wrap");
+            }
+            check(vm.r[17]==bank&&vm.r[18]==248&&vm.r[19]==0,"graphics return registers preserved");
+        }
+        check(java.util.Arrays.deepEquals(before,vm.ram),"shared graphics preserves all guest RAM");
+        byte[] desktop=xyz.ignite4inferneo.jvdos.DesktopImage.program();
+        for(int i=0;i<desktop.length;i++)vm.ram[256+i/256][i%256]=desktop[i];
+        vm.ram[249][9]=16;vm.ram[249][10]=0;vm.ram[249][11]=0;
+        for(int missing=0;missing<3;missing++) {
+            vm.ram[249][27]='J';vm.ram[249][28]='G';vm.ram[249][29]=1;vm.ram[249][27+missing]=0;
+            vm.ram[256+224][0]=93;vm.r[11]=1;vm.r[9]=0;vm.r[8]=0;vm.run();
+            check(vm.r[11]==0&&vm.r[9]==249&&vm.r[8]==9,"incompatible graphics ABI returns to DOS");
+            check(vm.ram[256+224][0]==93,"incompatible ABI does not initialize desktop");
+        }
+        System.out.println("PASS: shared resident graphics, all byte characters, opaque/transparent pixels, cross-bank returns and RAM preservation");
+    }
+
+    private static void pongChecks() throws Exception {
+        byte[] game=Files.readAllBytes(Path.of("examples/jctrl/PONG.COM"));
+        DosStorageRegression vm=terminal();
+        chain(100,0,"JCTRL.COM",xyz.ignite4inferneo.jvdos.DesktopImage.program(),0);
+        chain(100,160,"PONG.COM",game,0);vm.ram[252][220]=100;
+        vm.command("RUN PONG.COM");
+        check(vm.r[11]==0,"Pong rejects direct DOS execution");
+        vm.command("RUN JCTRL.COM");vm.click(20,24+28+6+1);
+        byte[] disk=Storage.readRange(100<<16,65536);
+
+        byte[] state=vm.ram[256+128+31];
+        for(int n=0;n<150 && (state[0]&255)!=132;n++)vm.press(0);
+        int boardTicks=0;
+        while((state[0]&255)!=180 && boardTicks<120){vm.press(0);boardTicks++;}
+        check((state[0]&255)==180&&boardTicks<60,"Pong advances twelve board updates within sixty desktop ticks");
+        System.out.println("Pong: twelve board updates in "+boardTicks+" desktop ticks");
+        check(vm.appState(0)!=0&&vm.appState(1)==1,"Pong runs in JCTRL interpreter");
+        check((state[0]&255)!=128,"Pong ball advances");
+        vm.mouse(100,100,0);for(int n=0;n<120 && (state[4]&255)!=56;n++)vm.press(0);
+        check((state[4]&255)>0&&(state[4]&255)<208,"Pong mouse moves paddle");
+        // Force the next miss to be the winning point; real guest code handles it.
+        state[6]=6;state[0]=(byte)248;state[2]=4;
+        for(int attempt=0;attempt<4 && state[6]!=7;attempt++){state[0]=(byte)248;state[2]=4;for(int n=0;n<120 && state[6]!=7;n++)vm.press(0);}
+        check(state[6]==7,"Pong scoring reaches seven and stops play");
+        vm.press(82);for(int n=0;n<20;n++)vm.press(0);
+        check(state[6]==0&&state[7]==0,"Pong R restarts match");
+        vm.snapshot("jctrl-pong");vm.press(27);
+        check(vm.appState(0)==0,"Pong Escape returns to desktop");
+        check(java.util.Arrays.equals(disk,Storage.readRange(100<<16,65536)),"Pong never writes storage");
+        System.out.println("PASS: JCTRL Pong launch guard, gameplay, mouse, scoring, restart, cancellation and disk preservation");
+    }
     private void run() {
         for(int steps=0;steps<200_000_000;steps++) {
             instructions++;
@@ -664,7 +783,7 @@ public final class DosStorageRegression {
                 case 11 -> { if(r[b]==r[c]) {r[9]=r[a];r[8]=d;} }
                 case 15 -> r[c]=0;
                 case 16 -> {
-                    if(a==0&&keys.isEmpty()&&ram[252][176]==0&&(!browserNetwork || Network.read(0)==0)) {r[8]=pc;return;}
+                    if(a==0&&keys.isEmpty()&&(ram[252][176]==0||(r[11]==1&&r[9]<128))&&(!browserNetwork || Network.read(0)==0)) {r[8]=pc;return;}
                     r[b]=switch(a) {
                         case 0 -> keys.isEmpty()?0:keys.removeFirst();
                         case 0x30 -> mouseX;case 0x31 -> mouseY;case 0x32 -> mouseButtons;
