@@ -98,6 +98,11 @@ public final class DosStorageRegression {
         check(vm.desktopState(160)==8&&vm.desktopState(161)==24,"initial window position");
         check(vm.pixels[25][9]==22&&vm.pixels[100][220]==5,"desktop window chrome");
         check(vm.desktopState(9)==0,"file window focused");
+        int[][] frame=java.util.Arrays.stream(vm.pixels).map(int[]::clone).toArray(int[][]::new);
+        long writes=vm.pixelWrites,steps=vm.instructions;
+        vm.mouse(250,220,0);vm.mouse(249,219,0);vm.mouse(255,255,0);vm.mouse(0,0,0);
+        check(vm.pixelWrites-writes==16&&vm.instructions-steps<1600,"pointer motion restores four pixels per move without repainting windows");
+        check(java.util.Arrays.deepEquals(frame,vm.pixels),"pointer motion restores underlying pixels, overlaps and wrapped screen edges");
         vm.mouse(20,28,0);vm.mouse(20,28,1);vm.mouse(40,48,1);vm.mouse(40,48,0);
         check(vm.desktopState(160)==28&&vm.desktopState(161)==44,"title drag preserves pointer offset");
         vm.mouse(40,48,0);vm.mouse(40,48,1);vm.mouse(255,255,1);vm.mouse(255,255,0);
@@ -319,9 +324,10 @@ public final class DosStorageRegression {
 
     private static void browserChecks(DosStorageRegression vm) throws Exception {
         vm.command("CLS"); vm.type("A");
+        int inputX=vm.ram[252][167]&255;
         String glyph="010101111101101000";
         for(int y=0;y<6;y++) for(int x=0;x<4;x++)
-            check(vm.pixels[4+y][24+x]==(x<3 && glyph.charAt(y*3+x)=='1'?28:0),"packed font pixel "+x+","+y);
+            check(vm.pixels[4+y][inputX+x]==(x<3 && glyph.charAt(y*3+x)=='1'?28:0),"packed font pixel "+x+","+y);
         vm.press(27);
         vm.type("BROWSE "); vm.press(72,16,65,144);
         check(vm.line().equals("BROWSE hA"),"browser URL keyboard letter case"); vm.press(27);
@@ -407,7 +413,7 @@ public final class DosStorageRegression {
         file(2,254,"LAST.TXT","END");
         Storage.writeRange(0x2ff00, new byte[]{0x4a});
         DiskInstaller.installIfMissing();
-        check(Storage.readRange(0,8)[5] == 20, "system revision");
+        check(Storage.readRange(0,8)[5] == 21, "system revision");
         check(Storage.readRange(0x20010,3)[0] == 'O', "installation preserves files");
         DosStorageRegression vm = new DosStorageRegression();
         byte[][] pages = Programs.bootImage();
@@ -415,6 +421,7 @@ public final class DosStorageRegression {
         for(int p=0;p<pages.length;p++) System.arraycopy(pages[p],0,vm.ram[p],0,pages[p].length);
         vm.run();
         autoexecChecks();
+        compactShellChecks();
         DosStorageRegression desktopLaunch=terminal();desktopLaunch.command("DRIVE 1");desktopLaunch.ram[252][220]=29;desktopLaunch.command("MKDIR CONTEXT");desktopLaunch.command("CD CONTEXT");desktopLaunch.command("JCTRL");
         check(desktopLaunch.r[11]==1&&desktopLaunch.desktopState(15)==29&&desktopLaunch.desktopState(16)==1&&desktopLaunch.r[10]==1,"JCTRL loads from system disk while preserving selected drive, bank and folder");
         desktopLaunch.click(220,5);check(desktopLaunch.r[11]==0,"managed desktop returns to DOS");
@@ -606,6 +613,34 @@ public final class DosStorageRegression {
         System.out.println("PASS: optional AUTOEXEC.JVS cold boot, reboot, single execution and desktop launch");
     }
 
+    private static void compactShellChecks() throws Exception {
+        DosStorageRegression vm=terminal();vm.snapshot("dos-boot-refined");vm.ram[252][220]=32;
+        check(vm.ram[252][183]==0,"keyboard clicks default to off");
+        vm.command("SOUND ON");check(vm.ram[252][183]==1,"keyboard clicks can be enabled");vm.command("SOUND OFF");
+        vm.command("CLS");vm.command("HELP");check((vm.ram[252][130]&255)<200,"compact command help fits on one full screen");vm.snapshot("dos-help-refined");
+        check((vm.ram[252][167]&255)==4+"0:32> ".length()*4,"prompt identifies selected drive and bank");
+        byte[] executable={2,99,3,28,3,0,(byte)253,100,2,0,0,2,(byte)249,1,2,9,2,23,0,1,2};
+        chain(32,0,"PROG.COM",executable,0);
+        file(32,1,"PROG.JVS","STORE 44 A\nEND\n");file(32,2,"SCRIPT.JVS","STORE 55 B\nEND\n");
+        file(32,3,"EXACT","STORE 66 C\nEND\n");file(32,4,"VER","STORE 88 P\nEND\n");
+        vm.command("PROG");check((vm.ram[253][100]&255)==99&&vm.ram[252][224]==0,"bare executable uses .COM before .JVS");
+        vm.ram[253][100]=0;vm.command("PROG.COM");check((vm.ram[253][100]&255)==99,"explicit executable filename launches directly");
+        vm.command("PROG.JVS");check(vm.ram[252][224]==44,"explicit source filename launches directly");vm.command("EXACT");
+        check(vm.ram[252][226]==66,"exact extensionless source file launches");
+        vm.command("SCRIPT");check(vm.ram[252][225]==55,"bare source name falls back to .JVS");
+        vm.command("MD CHILD");vm.command("CD CHILD");vm.command("WRITE LOCAL.JVS STORE 8 P");vm.command("LOCAL");
+        check(vm.ram[252][239]==8,"bare program lookup follows current folder");
+        check((vm.ram[252][167]&255)==4+"0:32:CHILD> ".length()*4,"prompt identifies current folder");
+        vm.command("CD /");vm.command("VER");check(vm.ram[252][239]==8,"built-in commands take priority over filenames");
+        byte[] before=Storage.readRange(32<<16,65536);vm.ram[253][100]=0;
+        for(String bad:new String[]{"PROGX","ECHOX","PROG EXTRA","CHILD","VERBOSE"})vm.command(bad);
+        check(vm.ram[253][100]==0&&java.util.Arrays.equals(before,Storage.readRange(32<<16,65536)),"unknown commands, token suffixes, unsupported command tails and folders cannot execute or write files");
+        file(32,7,"BLOCK.JVS","WRITE BAD.TXT WRONG\nEND\n");vm.command("RUN BLOCK.JVS");
+        check(find(32,"BAD.TXT")==-1,"table dispatch retains source-command restrictions");
+        vm.snapshot("dos-refined");
+        System.out.println("PASS: quiet boot, compact help, location prompt, direct COM/JVS launch, exact matching and script restrictions");
+    }
+
     private static DosStorageRegression terminal() {
         DosStorageRegression terminal=new DosStorageRegression();byte[][] pages=Programs.bootImage();
         for(int page=0;page<pages.length;page++)System.arraycopy(pages[page],0,terminal.ram[page],0,pages[page].length);
@@ -781,7 +816,7 @@ public final class DosStorageRegression {
                 case 9 -> r[9]=r[a];
                 case 10 -> { r[9]=r[a]; r[8]=r[b]; }
                 case 11 -> { if(r[b]==r[c]) {r[9]=r[a];r[8]=d;} }
-                case 15 -> r[c]=0;
+                case 15 -> r[c]=pixels[r[b]][r[a]];
                 case 16 -> {
                     if(a==0&&keys.isEmpty()&&(ram[252][176]==0||(r[11]==1&&r[9]<128))&&(!browserNetwork || Network.read(0)==0)) {r[8]=pc;return;}
                     r[b]=switch(a) {

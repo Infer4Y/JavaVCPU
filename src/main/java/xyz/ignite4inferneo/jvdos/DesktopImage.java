@@ -35,6 +35,7 @@ public final class DesktopImage {
         RET_INIT=320,RET_LOAD=322,RET_STEP=324,RET_FETCH=326,RET_MEMORY=328,
         RET_PIXEL=330,RET_FRAME=332,RET_CLEAR=334,RET_PRINT=336,RET_IMAGE=338,RET_NUMBER=340,RET_HEX=354,SELECTED=356,HDEPTH=357,MBANK=358,QHEAD=359,QTAIL=360,SLICE=361,FSOURCE=362,FDOWN=363,FDRAG=364,FTARGET=365,FCOUNT=366,FNAME=367,FSX=368,FSY=369,FCAND=370,DRAFT=371,SWAIT=372,SHELLDRIVE=373,SHELLUSED=374;
     private static final int WIDTH=216,HEIGHT=168;
+    private static final int CURSOR_INK=375,CURSOR_SHADOW=376;
     record Compilation(byte[] bytes,int baselineBytes,int passes,int localJumps,int localConditionals,int farBranches) { }
     private static final Compilation COMPILED=assembleOptimized(DesktopImage::emitProgram);
     private static final byte[] IMAGE=COMPILED.bytes();
@@ -78,10 +79,13 @@ public final class DesktopImage {
         // Require the stable resident graphics ABI before calling any shared code.
         for(int i=0;i<3;i++){s.emit(LOAD_MEM_ABSOLUTE,0,JvDosServices.PAGE,JvDosServices.GRAPHICS_SIGNATURE+i,A);s.notEqual(A,new int[]{'J','G',JvDosServices.GRAPHICS_VERSION}[i],"incompatible");}
         s.jump("compatible");s.label("incompatible");s.store(0,A);s.store(249,B);s.store(9,C);s.emit(CHANGE_BANK_PAGE_JUMP,A,B,C);s.label("compatible");
-        // Rehouse overflow literal pages in eight explicitly reserved guest RAM pages.
-        s.store(1,A);s.store(128,B);s.store(234,E);s.store(0,C);
-        s.label("literals.copy");s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.emit(STORE_MEM_ON_BANK,D,A,E,C);s.emit(INCREMENT_REGISTER,C);s.notEqual(C,0,"literals.copy");s.emit(INCREMENT_REGISTER,B);s.emit(INCREMENT_REGISTER,E);s.notEqual(E,240,"literals.copy");s.store(231,E);
-        s.label("literals.copy.last");s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.emit(STORE_MEM_ON_BANK,D,A,E,C);s.emit(INCREMENT_REGISTER,C);s.notEqual(C,0,"literals.copy.last");s.emit(INCREMENT_REGISTER,B);s.emit(INCREMENT_REGISTER,E);s.notEqual(E,233,"literals.copy.last");
+        // Copy only literal pages actually loaded above 127. Compact images skip this entirely.
+        s.store(1,A);s.store(128,B);s.imagePages(F);s.store(234,E);s.store(0,C);
+        s.emit(COMPARE_UNSIGNED,B,F,D);s.equal(D,1,"literals.copy");s.jump("literals.ready");
+        s.label("literals.copy");s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.emit(STORE_MEM_ON_BANK,D,A,E,C);s.emit(INCREMENT_REGISTER,C);s.notEqual(C,0,"literals.copy");
+        s.emit(INCREMENT_REGISTER,B);s.emit(INCREMENT_REGISTER,E);s.ne(B,F,"literals.more");s.jump("literals.ready");
+        s.label("literals.more");s.notEqual(B,134,"literals.copy");s.store(231,E);s.jump("literals.copy");
+        s.label("literals.ready");
         s.store(1,A);s.store(STATE,B);s.store(0,C);s.store(0,D);
         s.label("state.clear");s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.emit(INCREMENT_REGISTER,C);s.equal(C,192,"state.ready");s.jump("state.clear");s.label("state.ready");
         s.store(1,A);s.store(225,B);s.store(0,C);s.store(0,D);
@@ -144,7 +148,10 @@ public final class DesktopImage {
         }
         s.jump("paint");
         s.label("mouse.release");s.set(OLD_BUTTON,0);s.set(DRAG,255);
-        s.label("mouse.cursor");s.get(A,MX);s.get(B,OLDX);s.ne(A,B,"paint");s.get(A,MY);s.get(B,OLDY);s.ne(A,B,"paint");s.get(A,DIRTY);s.notEqual(A,0,"paint");s.jump("poll");
+        s.label("mouse.cursor");s.get(A,DIRTY);s.notEqual(A,0,"paint");s.get(A,MX);s.get(B,OLDX);s.ne(A,B,"cursor.move");s.get(A,MY);s.get(B,OLDY);s.ne(A,B,"cursor.move");s.jump("poll");
+        // Restore the two pixels under the old pointer; ordinary motion needs no window repaint.
+        s.label("cursor.move");s.get(A,OLDX);s.get(B,OLDY);s.get(C,CURSOR_INK);s.emit(PUSH_GRA_MEM,A,B,C);
+        s.emit(INCREMENT_REGISTER,A);s.emit(INCREMENT_REGISTER,B);s.get(C,CURSOR_SHADOW);s.emit(PUSH_GRA_MEM,A,B,C);s.jump("cursor.draw");
         s.label("toolbar");s.get(A,MX);s.less(A,64,"files.open");s.less(A,128,"about");s.less(A,192,"help");s.jump("exit");
         s.label("help");s.set(INFO,1);s.jump("info.open");
         s.label("about");s.set(INFO,0);
@@ -206,8 +213,9 @@ public final class DesktopImage {
             s.get(A,z);s.put(A,ACTIVE);s.windowGet(2,B);s.equal(B,0,closed);s.jump(done);s.label(closed);
         }
         s.set(ACTIVE,255);s.label("focus.done");
-        s.get(A,MX);s.put(A,OLDX);s.get(B,MY);s.put(B,OLDY);s.store(127,C);s.emit(PUSH_GRA_MEM,A,B,C);
-        s.store(1,C);s.emit(ADD,A,C,A);s.emit(ADD,B,C,B);s.store(0,C);s.emit(PUSH_GRA_MEM,A,B,C);
+        s.label("cursor.draw");s.get(A,MX);s.put(A,OLDX);s.get(B,MY);s.put(B,OLDY);
+        s.emit(READ_GRA_MEM,A,B,C);s.put(C,CURSOR_INK);s.store(127,C);s.emit(PUSH_GRA_MEM,A,B,C);
+        s.emit(INCREMENT_REGISTER,A);s.emit(INCREMENT_REGISTER,B);s.emit(READ_GRA_MEM,A,B,C);s.put(C,CURSOR_SHADOW);s.store(0,C);s.emit(PUSH_GRA_MEM,A,B,C);
         s.jump("poll");
         s.label("window");s.windowGet(2,A);s.equal(A,0,"window.done");
         s.windowGet(0,A);s.put(A,RX);s.windowGet(1,A);s.put(A,RY);s.set(RW,WIDTH);s.set(RH,HEIGHT);s.set(COLOR,127);s.call("rect",RETURN_RECT);
@@ -223,8 +231,8 @@ public final class DesktopImage {
         s.label("window.title.done");s.relative(WIDTH-9,3);s.text("X");
         s.get(A,ACTIVE);s.equal(A,0,"window.dir");s.equal(A,1,"window.reader");
         s.get(A,INFO);s.equal(A,1,"window.help");
-        s.relative(6,22);s.text("VER: JV-DOS 1.4");s.relative(6,34);s.text("MEM: 131072 BYTES RAM");
-        s.relative(6,46);s.text("DESKTOP RUNS AS A DOS APPLICATION");s.relative(6,58);s.text("FILES STAY ON THE SELECTED DISK");
+        s.relative(6,22);s.text("JV-DOS 1.5 / JCTRL");s.relative(6,34);s.text("128K RAM / 8K PROGRAM WORKSPACE");
+        s.relative(6,46);s.text("F2 FILES / F4 DOS / ESC RETURN");
         s.jump("window.done");
         s.label("window.help");
         String[] help={"DRAG TITLE; DROP FILE ON FOLDER","F4: REAL DOS; CLICK TO FOCUS","F6 REN; F7 MKDIR; F8 COPY; DEL","BANK- / BANK+: CHANGE FILE BANK"};
@@ -451,10 +459,16 @@ public final class DesktopImage {
         s.get(A,APP);s.equal(A,5,"vm.fetch.start");s.get(A,VBANK);s.notEqual(A,0,"vm.fetch.start");s.get(A,PAGE);s.notEqual(A,249,"vm.fetch.start");s.get(A,ADDRESS);s.equal(A,9,"app.finished");s.notEqual(A,0,"app.tick.error");
         s.vreadLiteral(3,A);s.put(A,PRINT_CHAR);s.call("app.print",RET_PRINT);s.vreadLiteral(0,A);s.vreadLiteral(1,B);s.vwriteLiteral(9,A);s.vwriteLiteral(8,B);s.jump("vm.done");
         s.label("vm.fetch.start");s.set(FETCH_COUNT,0);s.call("vm.fetch",RET_FETCH);s.get(A,VALUE);s.put(A,OPC);
+        s.less(A,OPCode.values().length,"vm.decode");s.jump("app.tick.error");
+        // Share the resident instruction lengths and one operand loop across every opcode.
+        s.label("vm.decode");s.get(A,OPC);s.store(5,B);s.emit(MULTIPLY,A,B,C);s.store(64,B);s.emit(ADD,C,B,C);s.store(0,A);s.store(247,B);
+        s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.put(D,ILEN);
+        s.label("vm.decode.operand");s.get(A,FETCH_COUNT);s.get(B,ILEN);s.eq(A,B,"vm.dispatch");s.call("vm.fetch",RET_FETCH);
+        s.get(A,FETCH_COUNT);s.store((OA&255)-2,B);s.emit(ADD,A,B,C);s.get(D,VALUE);s.store(1,A);s.store(225,B);s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.jump("vm.decode.operand");
+        s.label("vm.dispatch");s.get(A,OPC);
         for(OPCode op:OPCode.values())s.equal(A,op.code()&255,"vm.op."+op.name());s.jump("app.tick.error");
         for(OPCode op:OPCode.values()) {
-            s.label("vm.op."+op.name());s.set(ILEN,op.length());
-            for(int n=0;n<op.inputLength();n++){s.call("vm.fetch",RET_FETCH);s.get(A,VALUE);s.put(A,new int[]{OA,OB,OC,OD}[n]);}
+            s.label("vm.op."+op.name());
             switch(op){
                 case ADD,SUB,MULTIPLY,COMPARE_UNSIGNED -> {s.arg(OA,AV);s.arg(OB,BV);s.get(A,AV);s.get(B,BV);s.emit(op,A,B,D);s.result(OC,D);}
                 case STORE -> {s.get(D,OA);s.result(OB,D);}
@@ -559,6 +573,7 @@ public final class DesktopImage {
         final List<Fix> fixes=new ArrayList<>();final Map<String,String> strings=new LinkedHashMap<>();
         final Set<Integer> localBranches;
         final List<Branch> branches=new ArrayList<>();
+        final List<Integer> imagePageFixes=new ArrayList<>();
         int page,pos,serial,branchSerial;boolean relocateData;int codePages;
         record Branch(int id,int page,String target,boolean local,boolean conditional) { }
         record Fix(int page,int offset,String label,boolean high) { }
@@ -569,6 +584,7 @@ public final class DesktopImage {
         void emit(OPCode op,int... operands){if(operands.length!=op.inputLength())throw new IllegalArgumentException(op.name());reserve(op.length());raw(op.code());raw(operands);}
         void label(String name){if(labels.put(name,page*256+pos)!=null)throw new IllegalStateException(name);}
         void store(int value,int register){emit(STORE,value,register);}
+        void imagePages(int register){reserve(3);raw(STORE.code(),0,register);imagePageFixes.add(page*256+pos-2);}
         void ref(String label,boolean high,int register){reserve(3);raw(STORE.code(),0,register);fixes.add(new Fix(page,pos-2,label,high));}
         void jump(String label){
             int id=branchSerial++;boolean local=localBranches.contains(id);reserve(local?2:9);
@@ -621,6 +637,7 @@ public final class DesktopImage {
                 for(int i=0;i<item.getKey().length()+1;i+=3)raw(STORE_MEM_ABSOLUTE.code(),D,value.charAt(i),value.charAt(i+1),value.charAt(i+2));
             }
             if(pages.size()>256)throw new IllegalStateException("Desktop assembly exceeds bank");
+            for(int address:imagePageFixes)pages.get(address/256)[address&255]=(byte)pages.size();
             for(Fix fix:fixes){Integer address=labels.get(fix.label);if(address==null)throw new IllegalStateException("Undefined "+fix.label);pages.get(fix.page)[fix.offset]=(byte)(fix.high?(relocateData&&address/256>=128?(address/256<134?address/256+106:address/256+97):address>>>8):address&255);}
             byte[] out=new byte[pages.size()*256];for(int i=0;i<pages.size();i++)System.arraycopy(pages.get(i),0,out,i*256,256);return out;
         }

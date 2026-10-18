@@ -47,7 +47,7 @@ public final class DesktopInstallRegression {
             // The package updates independently of kernel revision, including already-current kernels.
             DiskInstaller.installIfMissing();check(Arrays.equals(readPackage(),bundled),"current DOS refreshes stale managed package");
             byte[] header=Storage.readRange(0,8);header[5]=17;Storage.writeRange(0,header);
-            DiskInstaller.installIfMissing();check(Storage.readRange(0,8)[5]==20&&Arrays.equals(readPackage(),bundled),"DOS revision upgrade includes desktop");
+            DiskInstaller.installIfMissing();check(Storage.readRange(0,8)[5]==21&&Arrays.equals(readPackage(),bundled),"DOS revision upgrade includes desktop");
             check(Arrays.equals(foreign,Storage.readRange((255<<16)+(254<<8),256)),"OS upgrade preserves user files beside package");
             // No record: a manual same-name file is not adopted or overwritten.
             byte[] manual=Storage.readRange(255<<16,65536);Storage.writeRange(256,new byte[40]);

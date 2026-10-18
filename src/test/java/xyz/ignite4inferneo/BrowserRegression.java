@@ -1,3 +1,5 @@
+package xyz.ignite4inferneo;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;

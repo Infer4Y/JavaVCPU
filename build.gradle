@@ -72,6 +72,6 @@ tasks.register('browserExample', JavaExec) {
 tasks.register('browserRegression', JavaExec) {
     dependsOn compileStorageRegression, browserExample
     classpath = files(regressionClasses)
-    mainClass = 'BrowserRegression'
+    mainClass = 'xyz.ignite4inferneo.BrowserRegression'
 }
 check.dependsOn browserRegression

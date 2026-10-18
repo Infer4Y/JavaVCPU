@@ -33,6 +33,13 @@ public final class DesktopAssemblyRegression {
             });
             check(execute(loop.bytes())[0]==3,"backward loop across pages");
         }
+        for(int padding:new int[]{0,80,160}) {
+            var counted=DesktopImage.assembleOptimized(s -> {
+                for(int i=0;i<padding;i++)s.store(0,4);
+                s.imagePages(3);s.emit(STOP);
+            });
+            check(execute(counted.bytes())[3]==counted.bytes().length/256,"image page count resolves after final layout");
+        }
         System.out.println("PASS: relaxed local/far branches, true/false page conditions, backward loops, boundaries and deterministic layout");
     }
     private static void selection(DesktopImage.Asm s,boolean equal,int before,int between) {

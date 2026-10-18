@@ -2,7 +2,7 @@
 
 An experimental virtual CPU built in Java, with a bytecode operating system, paged RAM, persistent disks, a palette display, audio, keyboard/mouse input, and TCP networking.
 
-The default boot starts **JV-DOS 1.4**. The shell, editor, JVS interpreter, media tools, and optional desktop run as guest bytecode on the virtual CPU.
+The default boot starts **JV-DOS 1.5**. The shell, editor, JVS interpreter, media tools, and optional desktop run as guest bytecode on the virtual CPU.
 
 ## Get started
 
@@ -15,7 +15,7 @@ Install **JDK 26** and run these commands from the project root:
 
 On macOS/Linux, use `./gradlew` instead. You can also launch `xyz.ignite4inferneo.Main` from IntelliJ IDEA with JDK 26 selected.
 
-Click the display window before typing. Enter `HELP` for shell commands or `CODEHELP` for programming help. `SOUND OFF` disables keyboard clicks.
+Click the display window before typing. Enter `HELP` for shell commands or `CODEHELP` for programming help. Keyboard clicks are off by default; `SOUND ON` enables them.
 
 The VM uses `storage.img` in its working directory. On first launch, the installer writes the BIOS and DOS image; later launches update the system image as needed while preserving user files. The bootstrap reads the installed image through the storage device and transfers execution to the BIOS.
 
@@ -43,6 +43,8 @@ The [screenshot gallery](docs/wiki/Screenshots.md) shows the shell, documents, m
 | `BROWSE example.com/` | Open the guest HTTP text browser |
 
 The prompt keeps 16 commands of history until reboot. Up/Down recall commands; Tab completes command names and filenames in the current folder. In the editor, arrow keys navigate and Tab inserts four spaces.
+
+The compact prompt shows `drive:bank[:folder]>`, for example `0:2:DOCS>`. Launch a program directly with `HI.COM` or `HI`: DOS searches the current folder for the exact name, then `.COM`, then `.JVS`. Built-in commands take priority. `RUN` remains available; direct launches do not accept arguments.
 
 Each 16 MiB disk has 254 file banks (2-255), each sharing 255 blocks between files and folders. Names can contain up to 12 characters; linked files can hold up to 61,200 bytes when space permits. File commands use names in the current folder; navigate with `CD` before operating on another folder.
 

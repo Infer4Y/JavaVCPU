@@ -46,3 +46,10 @@ The COM example runs at page 248:0 and calls DOS services at 249:0 (print D, ret
 See [the wiki sources](../docs/wiki/Home.md) for architecture, the full instruction set, language syntax, device ports, and disk format.
 
 `JCTRL.COM` is generated from Java assembly source rather than a hex listing. Run `gradlew.bat desktopImage` to rebuild it and the offline Workshop installation asset. The Workshop's **Add JCTRL desktop** button installs the same executable. See [the desktop guide](../docs/wiki/Experimental-desktop.md) for controls and memory use.
+
+## JCTRL games
+
+See [jctrl/README.md](jctrl/README.md) for mouse-controlled **Pong**, its COM file,
+installation instructions, and the `gradlew.bat jctrlExamples` build task.
+These examples require the JCTRL application runner; Pong returns to the prompt
+when launched directly from JV-DOS.

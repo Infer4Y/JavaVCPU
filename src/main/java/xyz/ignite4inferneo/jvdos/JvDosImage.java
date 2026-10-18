@@ -32,6 +32,8 @@ public final class JvDosImage {
     private static final int SOURCE_REGISTER_COUNT = 16;
     private static final int SOURCE_REGISTER_BASE = 224;
     private static final String[] COMMANDS={"BROWSE","MKDIR","MD","CD","CHDIR","RMDIR","RD","HELP","CODEHELP","DRIVE","BANK","DIR","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","ERASE","WRITE","EDIT","APPEND","COPY","REN","RENAME","MOVE","DELETE","ECHO","PRINT","CLS","CLEAR","VER","MEM","RUN","SAVE","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","SOUND","JCTRL","REM","END","STOP","REBOOT","EXIT"};
+    private static final java.util.Set<String> SCRIPT_COMMANDS=java.util.Set.of("PRINT","ECHO","CLS","CLEAR","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","REM","END","STOP","JCTRL");
+    private static final java.util.Set<String> FILE_COMMANDS=java.util.Set.of("CD","CHDIR","RMDIR","RD","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","DELETE","ERASE","WRITE","EDIT","APPEND","COPY","REN","RENAME","MOVE","RUN","SAVE");
     private static final int NAME=250, LINE=251, STATE=252, TPA=248;
     private static final int CH=64,X=65,Y=66,COUNT=67,ARG=68,SLOT=69,INDEX=70,
             LENGTH=71,FOUND=72,FREE=73,TEMP=74,MODE=75,SECOND=76,SOURCE=77,
@@ -63,12 +65,15 @@ public final class JvDosImage {
             C_TYPE=245,C_WRAP=246,C_INDEX=247,C_MATCH=248,C_BANK=249,C_PAGE=250,C_OFFSET=251,
             C_CHAR=252,C_OUT=253,C_TOTAL=254,C_NEW_CURSOR=255,C_RETURN=256,C_SPACE=258;
     private static final int IMAGE_SCALE=259,IMAGE_LEFT=260,IMAGE_TOP=261, CWD=262, DIR_TARGET=263, DESKTOP_LOADING=273, DESKTOP_BANK=274, DESKTOP_CWD=275, DESKTOP_DRIVE=276;
+    private static final int CMD_INDEX=277,CMD_FLAGS=278,CMD_PAGE=279,CMD_OFFSET=280,
+            CMD_INPUT_BANK=281,CMD_INPUT_PAGE=282,CMD_INPUT_OFFSET=283,
+            CMD_ENTRY_RETURN=284,CMD_FIND_RETURN=286,LAUNCH_LENGTH=288;
 
     /** Exports the assembled boot sector and byte arrays for the unchanged disk installer. */
     public static void main(String[] args) throws java.io.IOException {
         if(args.length!=1) throw new IllegalArgumentException("Supply an output image path");
         byte[][] pages=Programs.bootImage(); byte[] image=new byte[65536];
-        byte[] header={'J','V','C','P','M',20,(byte)pages.length,1};
+        byte[] header={'J','V','C','P','M',21,(byte)pages.length,1};
         System.arraycopy(header,0,image,0,header.length);
         for(int page=0;page<pages.length;page++) System.arraycopy(pages[page],0,image,512+page*256,pages[page].length);
         java.nio.file.Files.write(java.nio.file.Path.of(args[0]),image);
@@ -104,7 +109,7 @@ public final class JvDosImage {
         s.set(RENDERING,0);
         s.set(ENTER_PENDING,0);
         s.set(SCRIPT_ACTIVE,0);
-        s.set(KEY_SOUND,1);
+        s.set(KEY_SOUND,0);
         s.set(INK,28);
         s.set(TAB_PENDING,0);
         s.set(KEY_SYNTH,0);
@@ -116,7 +121,7 @@ public final class JvDosImage {
         s.set(DISK_BANK,2);
         s.set(CWD,0);
         s.set(SHIFT,0);
-        s.text("JV-DOS 1.4\n128K RAM  16M DISK\nHELP FOR COMMANDS\nJCTRL FOR DESKTOP\n");
+        s.text("JV-DOS 1.5\nHELP FOR COMMANDS\n\n");
         // Seed a real executable once; later boots preserve the user's directory and data.
         s.store(2,A);
         s.store(255,B);
@@ -159,7 +164,13 @@ public final class JvDosImage {
         s.set(MODE,0);
         s.set(H_VIEW,0);
         s.set(C_ACTIVE,0);
-        s.text("DOS> ");
+        s.store(0,A);s.emit(ADD,Registers.STORAGE_PAGE.address(),A,D);s.put(D,TEMP);s.call("number",NUMBER_RETURN);
+        s.text(":");s.get(D,DISK_BANK);s.put(D,TEMP);s.call("number",NUMBER_RETURN);
+        s.get(A,CWD);s.store(0,B);s.eq(A,B,"prompt.end");
+        s.text(":");s.get(A,CWD);s.store(1,B);s.emit(SUB,A,B,A);s.put(A,SLOT);s.set(INDEX,1);
+        s.label("prompt.folder");s.get(C,INDEX);s.diskReadAt(C,D);s.store(0,A);s.eq(D,A,"prompt.end");
+        s.put(D,CH);s.call("print",PRINT_RETURN);s.get(A,INDEX);s.emit(INCREMENT_REGISTER,A);s.put(A,INDEX);s.store(13,B);s.ne(A,B,"prompt.folder");
+        s.label("prompt.end");s.text("> ");
         s.get(A,X);
         s.put(A,BASE_X);
         s.get(A,Y);
@@ -308,42 +319,25 @@ public final class JvDosImage {
         s.get(A,COUNT);
         s.store(0,B);
         s.eq(A,B,"shell");
-        for(String command:COMMANDS) {
-            String next=s.unique("command");
-            if(!java.util.Set.of("PRINT","ECHO","CLS","CLEAR","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","REM","END","STOP","JCTRL").contains(command)) {
-                s.get(A,SCRIPT_ACTIVE);
-                s.store(1,B);
-                s.eq(A,B,next);
-            }
-            for(int i=0;i<command.length();i++) {
-                s.read(LINE,64+i,D);
-                s.store(command.charAt(i),A);
-                s.ne(D,A,next);
-            }
-            s.read(LINE,64+command.length(),D);
-            s.store(0,A); String empty=s.unique("empty.argument");
-            s.eq(D,A,empty);
-            s.store(32,A);
-            s.ne(D,A,next);
-            s.set(ARG,command.length()+1);
-            s.jump("cmd."+command);
-            s.label(empty);
-            s.set(ARG,command.length());
-            s.jump("cmd."+command);
-            s.label(next);
-        }
+        s.set(CMD_INPUT_BANK,0);s.set(CMD_INPUT_PAGE,LINE);s.set(CMD_INPUT_OFFSET,64);
+        s.call("command.find",CMD_FIND_RETURN);
+        s.get(A,CMD_INDEX);s.store(COMMANDS.length,B);s.eq(A,B,"command.unknown");
+        s.get(A,SCRIPT_ACTIVE);s.store(1,B);s.ne(A,B,"command.execute");
+        s.get(A,CMD_FLAGS);s.eq(A,B,"command.execute");s.store(3,B);s.ne(A,B,"script.error");
+        s.label("command.execute");s.get(A,CMD_PAGE);s.get(B,CMD_OFFSET);s.emit(CHANGE_PAGE_JUMP,A,B);
+        s.label("command.unknown");
         s.get(A,SCRIPT_ACTIVE);
         s.store(1,B);
         s.eq(A,B,"script.error");
-        s.text("BAD COMMAND - CODEHELP\n");
+        s.jump("command.external");
+        s.label("command.bad");
+        s.text("BAD COMMAND - TYPE HELP\n");
         s.jump("shell");
 
         s.label("cmd.HELP");
-        s.text("BROWSE HOST[:PORT]/PATH - HTTP\n");
-        s.text("MKDIR NAME  CD NAME  CD ..\nCD /  RMDIR NAME\nMOVE FILE FOLDER OR NEWNAME\nMOVE FILE .. OR /\nDELETE = DEL; RENAME = REN\n");
-        s.text("DIR  TYPE FILE  DEL FILE\nWRITE FILE TEXT\nAPPEND FILE TEXT\nEDIT FILE - ESC SAVES\nCOPY FILE NEW  REN FILE NEW\nRUN FILE.COM  ECHO TEXT\nSAVE FILE HEX BYTE PAIRS\nCLS VER MEM REBOOT EXIT\nBACKSPACE EDITS INPUT\n");
-        s.text("DRIVE N - SELECT DISK 0-255\nDRIVE SHOWS CURRENT DISK\nJCTRL - OPEN BUNDLED DESKTOP\n");
-        s.text("UP DOWN HISTORY  TAB COMPLETE\nBANK + / BANK -\nBANK SHOWS CURRENT BANK\nCODEHELP FOR SOURCE PROGRAMS\nSOUND ON OR SOUND OFF\nVIEW FILE  IMAGE FILE  PLAY FILE\n");
+        s.text("FILES: DIR TYPE VIEW EDIT\n       COPY REN MOVE DEL\nWRITE FILE TEXT / APPEND FILE TEXT\nMD NAME / CD NAME / CD .. / RD NAME\nRUN FILE / IMAGE FILE / PLAY FILE\n");
+        s.text("DISK: DRIVE N / BANK + / BANK -\nSYSTEM: CLS VER MEM SOUND REBOOT EXIT\nECHO TEXT / SAVE FILE HEX\nJCTRL - DESKTOP\nBROWSE HOST[:PORT]/PATH - HTTP\nCODEHELP - JVS LANGUAGE\n");
+        s.text("UP/DOWN HISTORY  TAB COMPLETE\nEDIT: ESC SAVES AND EXITS\n");
         s.jump("shell");
         s.label("cmd.CLEAR");
         s.label("cmd.CLS");
@@ -352,10 +346,10 @@ public final class JvDosImage {
         s.set(Y,4);
         s.jump("shell");
         s.label("cmd.VER");
-        s.text("JV-DOS 1.4\nGUEST BYTECODE KERNEL\n");
+        s.text("JV-DOS 1.5\n");
         s.jump("shell");
         s.label("cmd.MEM");
-        s.text("131072 BYTES RAM\n256 BYTE TRANSIENT AREA\n254 BANKS X 255 FILES\nUP TO 61200 BYTES PER FILE\n");
+        s.text("128K RAM\n254 FILE BANKS, 255 BLOCKS EACH\n61200 BYTES MAXIMUM FILE SIZE\nJCTRL PROGRAM WORKSPACE: 8K\n");
         s.jump("shell");
         s.label("cmd.REBOOT");
         s.jump("boot");
@@ -1022,14 +1016,15 @@ public final class JvDosImage {
         s.ret(PRINT_RETURN);
 
         emitBrowser(s); emitEditor(s); emitSourceLanguage(s); emitMedia(s); emitKeyboard(s); emitFontRenderer(s);
-        emitFileSystem(s); emitShellNavigation(s);emitMove(s);
+        emitFileSystem(s); emitShellNavigation(s);emitMove(s);emitCommands(s);
         return s.finish();
     }
 
     private static void emitKeyboard(Asm s) {
         s.label("keyboard.translate");
-        for(int c='A';c<='Z';c++) { s.store(c,A);
-            s.eq(D,A,"keyboard.letter"); }
+        s.store('A',A);s.emit(COMPARE_UNSIGNED,D,A,C);s.store(1,B);s.eq(C,B,"keyboard.symbol");
+        s.store('Z',A);s.emit(COMPARE_UNSIGNED,D,A,C);s.store(2,B);s.ne(C,B,"keyboard.letter");
+        s.label("keyboard.symbol");
         int[][] mapping={{32,32,32},{44,44,60},{45,45,95},{46,46,62},{47,47,63},
             {48,48,41},{49,49,33},{50,50,64},{51,51,35},{52,52,36},{53,53,37},
             {54,54,94},{55,55,38},{56,56,42},{57,57,40},{59,59,58},{61,61,43},
@@ -1489,8 +1484,8 @@ public final class JvDosImage {
         s.get(A,HILITE);
         s.store(1,B);
         s.eq(A,B,"highlight.keyword");
-        s.get(D,CH); for(int c='0';c<='9';c++) { s.store(c,A);
-            s.eq(D,A,"highlight.number"); }
+        s.get(D,CH);s.store('0',A);s.emit(COMPARE_UNSIGNED,D,A,C);s.store(1,B);s.eq(C,B,"highlight.normal");
+        s.store('9',A);s.emit(COMPARE_UNSIGNED,D,A,C);s.store(2,B);s.ne(C,B,"highlight.number");
         s.jump("highlight.normal");
         s.label("highlight.space");
         s.get(A,HILITE);
@@ -2149,6 +2144,54 @@ public final class JvDosImage {
         s.jump("poll");
     }
 
+    /** One dictionary serves command dispatch and both forms of Tab completion.
+     * Entries are 16 bytes: length, flags, handler page/offset, and a padded name.
+     * Only the assembler runs on the host; lookup and matching run on the guest.
+     */
+    private static void emitCommands(Asm s) {
+        final int M=16,N=17,O=18,P=19;
+        // DOS-style launch: exact filename, then .COM and .JVS in the current folder.
+        // No command tail ABI is advertised; commands with extra arguments remain errors.
+        s.label("command.external");s.set(ARG,0);s.call("parse.name",SEARCH_RETURN);
+        s.get(A,ARG);s.get(B,COUNT);s.ne(A,B,"command.bad");s.get(A,INDEX);s.put(A,LAUNCH_LENGTH);
+        s.call("search",SEARCH_RETURN);s.get(A,FOUND);s.store(255,B);s.ne(A,B,"command.external.found");
+        s.get(A,LAUNCH_LENGTH);s.store(9,B);s.emit(COMPARE_UNSIGNED,A,B,C);s.store(1,D);s.ne(C,D,"command.bad");
+        s.set(INDEX,0);
+        s.label("command.external.extension");s.get(A,INDEX);s.get(B,LAUNCH_LENGTH);s.eq(A,B,"command.external.suffix");
+        s.store(64,B);s.emit(ADD,A,B,C);s.readAt(NAME,C,D);s.store('.',A);s.eq(D,A,"command.bad");
+        s.get(A,INDEX);s.emit(INCREMENT_REGISTER,A);s.put(A,INDEX);s.jump("command.external.extension");
+        s.label("command.external.suffix");
+        for(String suffix:new String[]{".COM",".JVS"}) {
+            s.get(A,LAUNCH_LENGTH);s.store(64,B);s.emit(ADD,A,B,C);s.store(NAME,E);
+            for(char ch:(suffix+"\0").toCharArray()){s.store(ch,D);s.emit(STORE_MEM_ON_PAGE,D,E,C);s.emit(INCREMENT_REGISTER,C);}
+            s.call("search",SEARCH_RETURN);s.get(A,FOUND);s.store(255,B);s.ne(A,B,"command.external.found");
+        }
+        s.jump("command.bad");
+        s.label("command.external.found");s.put(A,SLOT);s.diskRead(13,D);s.store(2,A);s.emit(COMPARE_UNSIGNED,D,A,C);s.store(1,B);s.ne(C,B,"command.bad");
+        s.call("file.load",FILE_RETURN);s.jump("do.RUN");
+
+        // Return I=bank, J=name page, K=name offset, L=length, M=flags, N/O=handler.
+        s.label("command.entry");s.get(A,CMD_INDEX);s.ref("commands.table",true,J);
+        s.label("command.entry.page");s.store(16,B);s.emit(COMPARE_UNSIGNED,A,B,C);s.store(1,D);s.eq(C,D,"command.entry.read");
+        s.emit(SUB,A,B,A);s.emit(INCREMENT_REGISTER,J);s.jump("command.entry.page");
+        s.label("command.entry.read");s.store(16,B);s.emit(MULTIPLY,A,B,K);s.store(0,I);
+        for(int dest:new int[]{L,M,N,O}) {s.emit(LOAD_MEM_ON_BANK,I,J,K,dest);s.emit(INCREMENT_REGISTER,K);}
+        s.ret(CMD_ENTRY_RETURN);
+
+        s.label("command.find");s.set(CMD_INDEX,0);
+        s.label("command.find.next");s.get(A,CMD_INDEX);s.store(COMMANDS.length,B);s.eq(A,B,"command.find.done");
+        s.call("command.entry",CMD_ENTRY_RETURN);s.store(0,P);
+        s.label("command.find.char");s.eq(P,L,"command.find.boundary");
+        s.emit(LOAD_MEM_ON_BANK,I,J,K,D);
+        s.get(A,CMD_INPUT_BANK);s.get(B,CMD_INPUT_PAGE);s.get(C,CMD_INPUT_OFFSET);s.emit(ADD,C,P,C);s.emit(LOAD_MEM_ON_BANK,A,B,C,A);
+        s.ne(D,A,"command.find.miss");s.emit(INCREMENT_REGISTER,P);s.emit(INCREMENT_REGISTER,K);s.jump("command.find.char");
+        s.label("command.find.boundary");s.get(A,CMD_INPUT_BANK);s.get(B,CMD_INPUT_PAGE);s.get(C,CMD_INPUT_OFFSET);s.emit(ADD,C,P,C);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);
+        s.store(0,A);s.eq(D,A,"command.find.found");s.store(32,A);s.ne(D,A,"command.find.miss");s.emit(INCREMENT_REGISTER,P);
+        s.label("command.find.found");s.put(P,ARG);s.put(M,CMD_FLAGS);s.put(N,CMD_PAGE);s.put(O,CMD_OFFSET);s.jump("command.find.done");
+        s.label("command.find.miss");s.get(A,CMD_INDEX);s.emit(INCREMENT_REGISTER,A);s.put(A,CMD_INDEX);s.jump("command.find.next");
+        s.label("command.find.done");s.ret(CMD_FIND_RETURN);
+    }
+
     /** Interactive shell input, executed entirely by guest instructions. */
     private static void emitShellNavigation(Asm s) {
         s.label("history.address");
@@ -2432,18 +2475,12 @@ public final class JvDosImage {
         s.get(A,C_START);
         s.store(0,B);
         s.eq(A,B,"complete.scan");
-        for(String command:new String[]{"CD","CHDIR","RMDIR","RD","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","DELETE","ERASE","WRITE","EDIT","APPEND","COPY","REN","RENAME","MOVE","RUN","SAVE"}) {
-            String next=s.unique("complete.context");
-            for(int i=0;i<command.length();i++){s.emit(LOAD_MEM_ABSOLUTE,1,249,16+i,D);
-                s.store(command.charAt(i),A);
-                s.ne(D,A,next);}
-            s.emit(LOAD_MEM_ABSOLUTE,1,249,16+command.length(),D);
-            s.store(32,A);
-            s.ne(D,A,next);
-            s.set(C_TYPE,1);
-            s.jump("complete.scan");
-            s.label(next);
-        }
+        s.set(CMD_INPUT_BANK,1);s.set(CMD_INPUT_PAGE,249);s.set(CMD_INPUT_OFFSET,16);
+        s.call("command.find",CMD_FIND_RETURN);
+        s.get(A,CMD_INDEX);s.store(COMMANDS.length,B);s.eq(A,B,"complete.no.context");
+        s.get(A,CMD_FLAGS);s.store(2,B);s.emit(COMPARE_UNSIGNED,A,B,C);s.store(1,D);s.eq(C,D,"complete.no.context");
+        s.set(C_TYPE,1);s.jump("complete.scan");
+        s.label("complete.no.context");
         s.set(C_ACTIVE,0);
         s.jump("poll");
         s.label("complete.scan");
@@ -2455,17 +2492,9 @@ public final class JvDosImage {
         s.emit(COMPARE_UNSIGNED,A,B,C);
         s.store(1,D);
         s.ne(C,D,"complete.wrap");
-        for(int i=0;i<COMMANDS.length;i++){s.store(i,B);
-            s.eq(A,B,"complete.command."+i);}
-        s.jump("complete.wrap");
-        for(int i=0;i<COMMANDS.length;i++) {
-            s.label("complete.command."+i);
-            s.set(C_MATCH,COMMANDS[i].length());
-            s.set(C_BANK,0);
-            s.stringPointer(COMMANDS[i],C_PAGE,C_OFFSET);
-            s.set(C_NEXT,i+1);
-            s.jump("complete.test");
-        }
+        s.put(A,CMD_INDEX);s.emit(INCREMENT_REGISTER,A);s.put(A,C_NEXT);
+        s.call("command.entry",CMD_ENTRY_RETURN);
+        s.put(L,C_MATCH);s.set(C_BANK,0);s.put(J,C_PAGE);s.put(K,C_OFFSET);s.jump("complete.test");
         s.label("complete.files");
         s.get(A,C_NEXT);
         s.store(255,B);
@@ -3263,6 +3292,16 @@ public final class JvDosImage {
         void diskWriteAt(int offset,int value) { get(B,SLOT); get(A,DISK_BANK); emit(WRITE_BYTE_TO_STORAGE,A,B,offset,value); }
         void diskLiteral(int slot,int offset,int value) { store(2,A); store(slot,B); store(offset,C); store(value,D); emit(WRITE_BYTE_TO_STORAGE,A,B,C,D); }
         byte[][] finish() {
+            // Page-aligned fixed-size records permit cheap unsigned indexing on the guest.
+            page++;pos=0;pages.add(new byte[256]);label("commands.table");
+            for(String command:COMMANDS) {
+                if(command.length()>11)throw new IllegalStateException("Command name too long: "+command);
+                if(pos==256){page++;pos=0;pages.add(new byte[256]);}
+                raw(command.length(),(SCRIPT_COMMANDS.contains(command)?1:0)|(FILE_COMMANDS.contains(command)?2:0));
+                fixes.add(new Fix(page,pos,"cmd."+command,true));raw(0);
+                fixes.add(new Fix(page,pos,"cmd."+command,false));raw(0);
+                for(int i=0;i<12;i++)raw(i<command.length()?command.charAt(i):0);
+            }
             boolean firstMessage=true;
             for(Map.Entry<String,String> message:messages.entrySet()) {
                 if(message.getKey().length()>222) throw new IllegalStateException("Message too long");
