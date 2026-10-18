@@ -126,3 +126,19 @@ On exit it clears the screen, resets the shell's text position, and uses `CHANGE
 Run `gradlew.bat desktopImage` to regenerate `examples/dos/JCTRL.COM` and `tools/disk-workshop/desktop.js`. `storageRegression` checks actual guest filesystem operations, large files/directories, corruption, full-disk recovery, package ownership, glyph rendering, cursor restoration and Pong. `browserRegression` checks WEB with a local HTTP fixture. Disposable images and previews live under `build/`.
 
 The assembler performs branch relaxation before writing the executable: same-page unconditional and equality branches use `JMP` (2 bytes) and `COND_JUMP` (4 bytes). Cross-page targets retain `CHANGE_PAGE_JUMP` and `CHANGE_PAGE_COND_JUMP` sequences. It recomputes labels and page layout after each change; any shortened branch that crosses a page boundary in a later pass is pinned to its far form. This also relocates string pointers, return addresses, and the self-modifying input operand. The build prints baseline/optimized byte counts and selected branch counts. The assembler also checks that executable instructions remain below page 128 and relocates overflow literal pages into their reserved guest RAM area.
+
+
+## Shared services for applications
+
+The desktop now shares block text, packed-literal text, keyboard decoding and
+JVFS-backed page history with COM applications through virtual `0:249:42`.
+WEB.COM uses these services instead of carrying its own keyboard decoder or
+printing every page character through the interpreter. Text requests render up
+to 256 characters before returning to the event loop, so window movement and
+cancellation remain cooperative. Existing COM programs keep their original ABI.
+
+The generated JCTRL image is 32,768 bytes; WEB.COM is 6,912 bytes and still uses
+the existing 8 KiB workspace. Completed WEB documents are saved under
+`WEB.CACHE` in the selected directory. Update both manual executables when
+installing this version. See [the application ABI](COM-programming.md#shared-jctrl-application-services)
+and [browser controls](../../examples/jctrl/README.md#jctrl-web-reader).

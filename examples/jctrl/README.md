@@ -38,58 +38,68 @@ and desktop repainting.
 
 ## JCTRL web reader
 
-`WEB.COM` is an HTTP text browser that runs inside JCTRL's existing application
-window. Import `examples/jctrl/WEB.COM` through Workshop as **Binary / COM**, then
-click it in JCTRL Files. Replace the imported file after rebuilding. Direct
-fullscreen `RUN WEB.COM` returns to DOS; launch it through JCTRL.
+`WEB.COM` is an HTTP text browser for JCTRL. This version requires the rebuilt
+JCTRL with application services v1. Normal startup updates the managed desktop;
+replace manual copies of both `examples/dos/JCTRL.COM` and
+`examples/jctrl/WEB.COM` through Workshop as **Binary / COM**. Direct fullscreen
+`RUN WEB.COM` returns to DOS; launch WEB from JCTRL Files.
 
-Rebuild and test with:
+Rebuild and test:
 
 ```powershell
-.\gradlew.bat browserExample
-.\gradlew.bat browserRegression
+.\gradlew.bat desktopImage browserExample
+.\gradlew.bat browserRegression desktopServicesRegression
 ```
 
 Enter `host[:port]/path` or `http://host/path`, then press **Enter**. Letters
-normally use lowercase; hold **Shift** for uppercase path letters and URL
-punctuation such as `:`, `?`, `&`, and `#`. **Backspace** removes a character;
-**Home** clears the address. Addresses hold up to 120 characters. Request paths
-keep their case and query; fragments (`#section`) stay out of the HTTP request.
-Ports are checked for the range 1–65535.
+normally use lowercase; hold **Shift** for uppercase and punctuation such as
+`:`, `?`, `&`, and `#`. The shared decoder also supports numpad input.
+**Backspace** removes a character; **Home** clears the address. Addresses hold
+120 characters; request paths retain case/query and omit fragments. Ports must
+be in 1-65535.
 
 | Input | Action |
 | --- | --- |
-| N / Space / Page Down / Down | Next page; continue downloading when the cache is exhausted |
-| P / Page Up / Up / Backspace | Previous page in the current cache |
-| H / Home | First page in the current cache |
-| R | Reload the document from its beginning |
-| U | Edit the retained address; cancel any pending connection |
-| Esc / window X | Stop the browser and close its connection |
+| N / Space / Page Down / Down | Next screen; resume a response paused at the RAM limit |
+| P / Page Up / Up / Backspace | Previous screen |
+| H / Home | Beginning of the saved document |
+| R | Download the document again |
+| U | Edit the retained address and cancel any unfinished download |
+| Esc / window X | Stop WEB and close its connection/file handle |
 
-The reader lays out headings, paragraphs, lists and table rows on separate text
-rows. It suppresses `head`, `script`, and `style` content and decodes `&amp;`,
-`&lt;`, `&gt;`, `&quot;`, `&apos;`, `&nbsp;`, and printable ASCII decimal references
-such as `&#39;`. Quoted `>` characters in tag attributes do not end a tag.
-`Content-Type: text/plain` preserves literal markup characters and line breaks.
-The page header shows the HTTP status code, including error responses.
+While downloading, WEB keeps a 768-byte window in RAM and pauses at each refill.
+The first screen uses up to 512 characters. Previous/Home stay within that
+window until the response completes. After completion they can seek throughout
+the entire saved document, without another HTTP request.
 
-Documents can exceed the application RAM: WEB reads into a **768-byte cache**,
-pauses when full, and resumes the same response as you request more pages. The
-first screen uses up to 512 characters; the rest of the cache is another screen.
-Previous/Home stay within that cache; use Reload to revisit earlier content
-after a refill. No disk cache, scratch files, or storage writes are used.
+Completed rendered text is saved as a new `WEB0000.TXT`, `WEB0001.TXT`, etc. in
+`WEB.CACHE` under the folder selected when the browser launched. Existing files
+are never replaced. Cache files are normal JVFS text files: open them with Files,
+`TYPE`, or `VIEW`, and delete old ones when no longer needed. WEB searches up to
+256 names. An unavailable cache directory, allocation failure, or exhausted name
+range switches the reader to RAM-only operation. Uncommitted downloads are
+aborted on address changes, cancellation, or application close; completed files
+remain available.
 
-The executable, tables, URL and state fit JCTRL's unchanged 8 KiB workspace.
-Fixed messages and lookup tables replace repeated print/keyboard/tag code.
-Receive pointers live in guest registers, and network input is polled in batches
-of 64 bytes instead of yielding after every byte. Idle screens do not repaint.
-The regression measures receive work through the real guest interpreter and
-checks a response larger than RAM, cache boundaries, previous/next/reload,
-HTML/plain-text rendering, URL keyboard mapping, invalid ports, and preservation
-of every disk byte. It uses only a local HTTP server.
+Headings, paragraphs, lists and table rows start new text rows. The reader hides
+`head`, `script`, and `style` contents, handles quoted tag attributes, and decodes
+common named entities and printable ASCII decimal references. `text/plain`
+retains markup characters and line breaks. The header shows the HTTP status.
 
-This remains a small HTTP reader: no TLS/HTTPS, clickable links, redirects,
-JavaScript execution, CSS layout, images, compressed bodies or chunked transfer
-decoding. Unknown/non-ASCII entities display `?`; long words wrap at the window
-edge. It is intended for simple HTTP pages and local servers, not modern web
-applications. `Storage.java`, networking, the CPU and JCTRL are unchanged.
+WEB uses the desktop's shared block-text, packed-literal, keyboard and JVFS spool
+services. A block renders in guest code before the desktop repaints, instead of
+interpreting and repainting each character separately. The independent service
+regression rendered 256 glyphs in about 3.46 million machine instructions versus
+113.9 million for individual print calls (about 33x less work). Idle views do not
+repaint. The 8 KiB application workspace and VM instruction set are unchanged.
+
+Regression checks cover response bytes across RAM refills, disk history and
+cluster seeks, filename collisions, RAM fallback, cancellation, user-file
+preservation, register/span bounds and keyboard decoding. They use local HTTP
+fixtures and independent guest COM clients.
+
+This remains a small HTTP text reader: no TLS/HTTPS, clickable links, automatic
+redirects, JavaScript execution, CSS layout, images, compressed bodies or chunked
+transfer decoding. Unknown/non-ASCII entities display `?`; long words wrap at the
+window edge. See [the reusable application ABI](../../docs/wiki/COM-programming.md#shared-jctrl-application-services)
+for using the same routines in other COM applications.

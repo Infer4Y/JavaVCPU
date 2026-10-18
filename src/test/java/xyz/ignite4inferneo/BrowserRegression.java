@@ -39,7 +39,7 @@ public final class BrowserRegression {
     }
     private static void press(int key)throws Exception {invoke(PRESS,(Object)new int[]{key});}
     private static byte[][] ram(){try{return (byte[][])RAM.get(vm);}catch(Exception e){throw new RuntimeException(e);}}
-    private static int state(int n){return ram()[STATE][n]&255;}
+    private static int state(int n){return ram()[STATE][n+64]&255;}
     private static int pointer(int n){return state(n)+(state(n+1)<<8);}
     private static long metric(Field f)throws Exception{return f.getLong(vm);}
     private static void frames(int count)throws Exception {for(int i=0;i<count;i++)press(0);}
@@ -61,7 +61,7 @@ public final class BrowserRegression {
     private static void address(String text)throws Exception {key('U');frames(160);key(36);type(text);check(state(0)==text.length(),"address length");}
     private static void rendered()throws Exception {until(()->state(23)==0&&state(26)==1&&pointer(10)==Math.min(pointer(27)+512,pointer(8)),"page renders");frames(4);}
     private static void navigate(int key)throws Exception {key(key);rendered();}
-    private static void open(String text)throws Exception {address(text);press(10);until(()->state(26)==1||state(23)==3,"load completes");check(state(23)!=3,"HTTP succeeds");rendered();}
+    private static void open(String text)throws Exception {address(text);int serial=state(93);press(10);until(()->state(93)!=serial,"new request begins");until(()->state(26)==1||state(23)==3,"load completes");check(state(23)!=3,"HTTP succeeds");rendered();}
 
     private static final class Fixture implements AutoCloseable {
         final ServerSocket server=new ServerSocket(0,8,InetAddress.getLoopbackAddress());
@@ -99,23 +99,28 @@ public final class BrowserRegression {
         Storage.load(disk);JvFileSystem.device(0).format();DiskInstaller.installIfMissing();vm=invoke(method("terminal"));
         byte[] program=Files.readAllBytes(Path.of("examples/jctrl/WEB.COM"));
         check(program.length<=BUFFER*256,"program leaves explicit cache/state workspace");
-        JvFileSystem.device(0).put(JvFileSystem.ROOT,"WEB.COM",program,0);
+        var volume=JvFileSystem.device(0);
+        volume.put(JvFileSystem.ROOT,"WEB.COM",program,0);
+        byte[] sentinel="USER FILE - DO NOT REPLACE".getBytes(StandardCharsets.US_ASCII);
+        var existingCache=volume.mkdir(JvFileSystem.ROOT,"WEB.CACHE");
+        volume.put(existingCache.first(),"WEB0000.TXT",sentinel,1);
+        volume.put(JvFileSystem.ROOT,"KEEP.TXT",sentinel,1);
         invoke(COMMAND,"RUN WEB.COM");check(((int[])field("r").get(vm))[11]==0,"fullscreen guard returns to DOS");
         invoke(COMMAND,"JCTRL");int row=0;var entries=JvFileSystem.device(0).list(JvFileSystem.ROOT);while(!entries.get(row).name().equals("WEB.COM"))row++;invoke(CLICK,20,53+row*6);frames(200);
-        check(state(23)==1,"browser opens address prompt");byte[] before=Storage.readRange(0,Storage.STORAGE_SIZE);
+        check(state(23)==1,"browser opens address prompt");
         try(Fixture fixture=new Fixture()){
             open(fixture.url("/Case?x=1#section"));String request=fixture.request();
             check(request.startsWith("GET /Case?x=1 HTTP/1.0\r\n"),"path case/query and fragment removal");
             check(request.contains("Host: 127.0.0.1:"+fixture.server.getLocalPort()+"\r\n"),"Host includes custom port");
             check(request.contains("Accept-Encoding: identity"),"no compressed response requested");
-            String rendered=cache();invoke(method("snapshot",String.class),"web-browser");
+            check(state(92)==2,"completed HTML uses JVFS cache");String rendered=cache();invoke(method("snapshot",String.class),"web-browser");
             check(rendered.startsWith("Heading"+" ".repeat(25)),"headings start a new text row");
             check(rendered.contains("Hello & <world> \"ok\" 'x' end"),"named entity decoding and quote-aware tags");
             check(!rendered.contains("secret")&&rendered.contains("Last line"),"head/script/style suppression, including script less-than");
             check(new String(new byte[]{(byte)state(52),(byte)state(53),(byte)state(54)},StandardCharsets.US_ASCII).equals("200"),"status code");
             open(fixture.url("/plain"));fixture.request();check(cache().startsWith("one < two & three"),"plain text preserves markup characters");check(cache().contains("Next line"),"plain text newline");
 
-            address(fixture.url("/large"));long displays=metric(DISPLAY),instructions=metric(INSTRUCTIONS);press(10);
+            address(fixture.url("/large"));long displays=metric(DISPLAY),instructions=metric(INSTRUCTIONS);int serial=state(93);press(10);until(()->state(93)!=serial,"new request begins");
             until(()->state(26)==1,"first streamed cache");long firstDisplays=metric(DISPLAY)-displays,firstInstructions=metric(INSTRUCTIONS)-instructions;rendered();fixture.request();
             check(pointer(8)==END*256&&state(25)==1,"full cache pauses the response instead of truncating");
             System.out.println("First "+cache().length()+" text bytes: "+firstDisplays+" display operations while receiving, "+firstInstructions+" host-emulated instructions");
@@ -130,15 +135,39 @@ public final class BrowserRegression {
             }
             check(consumed==fixture.large.length(),"entire response larger than RAM is readable");
             System.out.println("PASS: streamed "+consumed+" bytes through "+((END-BUFFER)*256)+" bytes of guest cache");
+            check(state(92)==2,"large page commits its disk history");
+            var diskCache=JvFileSystem.device(0).find(JvFileSystem.ROOT,"WEB.CACHE");
+            check(diskCache!=null&&diskCache.type()==4,"cache folder exists");
+            var saved=JvFileSystem.device(0).list(diskCache.first());
+            check(saved.stream().anyMatch(e->Arrays.equals(JvFileSystem.device(0).read(e),fixture.large.getBytes(StandardCharsets.US_ASCII))),"full rendered document is saved as ordinary JVFS text");
+            navigate('H');check(cache().startsWith(fixture.large.substring(0,512)),"Home reloads the beginning beyond the RAM cache");
+            navigate('N');check(cache().startsWith(fixture.large.substring(512,1024)),"disk Next");
+            navigate('N');check(cache().startsWith(fixture.large.substring(1024,1536)),"disk seek across cluster");
+            navigate('P');check(cache().startsWith(fixture.large.substring(512,1024)),"disk Previous crosses old cache boundaries");
             key('R');rendered();check(fixture.request().startsWith("GET /large "),"reload keeps address");
             for(String bad:new String[]{"127.0.0.1:","127.0.0.1:0/","127.0.0.1:65536/","127.0.0.1:999999/","/missing-host","https://example.test/"}){
                 address(bad);press(10);until(()->state(23)==3,"invalid URL rejected");frames(120);check(Network.read(0)==0,"invalid URL leaves no connection");
             }
             address("abc");key(8);check(state(0)==2,"backspace");key(36);check(state(0)==0,"Home clears address");
             long idlePixels=metric(PIXELS);frames(200);check(metric(PIXELS)==idlePixels,"idle address prompt does not repaint");
-            check(Arrays.equals(before,Storage.readRange(0,Storage.STORAGE_SIZE)),"browser and navigation preserve every disk byte");
+            check(Arrays.equals(program,JvFileSystem.device(0).read(JvFileSystem.device(0).find(JvFileSystem.ROOT,"WEB.COM"))),"browser preserves the executable");
+            check(Arrays.equals(sentinel,volume.read(volume.find(existingCache.first(),"WEB0000.TXT"))),"cache never replaces an existing filename");
+            check(Arrays.equals(sentinel,volume.read(volume.find(JvFileSystem.ROOT,"KEEP.TXT"))),"cache preserves unrelated user files");
+            check(volume.list(existingCache.first()).stream().allMatch(e->e.length()>0),"cancel removes the uncommitted cache file");
             press(27);frames(100);check(Network.read(0)==0,"close cancels network");
-            System.out.println("PASS: WEB rendering, keyboard, HTTP URL/port validation, navigation, idle redraw and disk preservation");
+
+            var noCache=volume.mkdir(JvFileSystem.ROOT,"NOCACHE");
+            volume.put(noCache.first(),"WEB.COM",program,0);
+            volume.put(noCache.first(),"WEB.CACHE",sentinel,1);
+            vm=invoke(method("terminal"));invoke(COMMAND,"CD NOCACHE");invoke(COMMAND,"JCTRL");
+            int fallbackRow=0;var fallbackEntries=volume.list(noCache.first());while(!fallbackEntries.get(fallbackRow).name().equals("WEB.COM"))fallbackRow++;
+            invoke(CLICK,20,53+fallbackRow*6);frames(200);
+            byte[] fallbackBefore=Storage.readRange(0,Storage.STORAGE_SIZE);
+            open(fixture.url("/plain"));fixture.request();check(state(92)==0,"unavailable cache uses RAM mode");
+            check(cache().startsWith("one < two & three"),"RAM fallback still renders the response");
+            check(Arrays.equals(fallbackBefore,Storage.readRange(0,Storage.STORAGE_SIZE)),"a cache-path collision preserves every disk byte");
+            press(27);frames(100);
+            System.out.println("PASS: WEB rendering, keyboard, URL validation, persistent history, cache collision/fallback, cancellation and user-file preservation");
         }finally{Network.close();}
     }
 }

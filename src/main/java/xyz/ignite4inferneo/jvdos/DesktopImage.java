@@ -276,7 +276,7 @@ public final class DesktopImage {
         s.label("vm.large");s.store(1,D);s.vwriteLiteral(11,D);s.jump("paint");
         s.label("vm.small");s.store(248,D);s.vwriteLiteral(9,D);s.jump("paint");
         s.label("app.error");s.call("app.stop",RET_STEP);s.set(APP,6);s.jump("paint");
-        s.label("app.stop");s.fset(FileSystemAbi.HANDLE,2);s.fs(FileSystemAbi.CLOSE);s.get(A,APP);s.notEqual(A,5,"app.stop.ready");for(int h=0;h<2;h++){s.fset(FileSystemAbi.HANDLE,h);s.fs(FileSystemAbi.ABORT);}s.label("app.stop.ready");s.fset(FileSystemAbi.HANDLE,3);s.fs(FileSystemAbi.ABORT);s.set(DIRTY,1);s.set(RUN,0);s.store(0,A);s.store(3,D);s.emit(WRITE_NETWORK,A,D);s.store(0,B);s.store(0,C);
+        s.label("app.stop");s.fset(FileSystemAbi.HANDLE,2);s.fs(FileSystemAbi.CLOSE);s.get(A,APP);s.notEqual(A,5,"app.stop.ready");for(int h=0;h<2;h++){s.fset(FileSystemAbi.HANDLE,h);s.fs(FileSystemAbi.ABORT);}s.label("app.stop.ready");s.fset(FileSystemAbi.HANDLE,3);s.fs(FileSystemAbi.ABORT);s.set(DesktopPageCache.MODE,0);s.set(DIRTY,1);s.set(RUN,0);s.store(0,A);s.store(3,D);s.emit(WRITE_NETWORK,A,D);s.store(0,B);s.store(0,C);
         for(int voice=0;voice<8;voice++){s.store(voice,A);s.emit(OUTPUT_AUDIO,A,B,C);}s.ret(RET_STEP);
         s.label("app.draw");s.relative(6,16);s.get(A,APP);s.equal(A,5,"shell.draw.header");s.relative(24,16);s.text("HOME            NEXT             RUN / OPEN");s.jump("app.draw.frame");s.label("shell.draw.header");s.text("REAL DOS - CLICK WINDOW TO TYPE");s.label("app.draw.frame");
         s.call("frame.draw",RET_FRAME);s.get(A,APP);s.equal(A,5,"app.draw.done");s.relative(6,158);s.get(A,APP);s.equal(A,6,"app.draw.error");
@@ -291,7 +291,7 @@ public final class DesktopImage {
         s.label("program.load.more");s.call("view.read",RETURN_READ);s.get(A,ERROR);s.notEqual(A,0,"program.load.done");
         s.get(D,CHAR);s.get(B,LOAD_HI);s.store(128,A);s.emit(ADD,A,B,B);s.get(C,LOAD_LO);s.store(1,A);s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.inc16(LOAD_LO,LOAD_HI);s.jump("program.load.byte");
         s.label("program.load.done");s.ret(RET_LOAD);
-        emitFrame(s);emitGuestPrint(s);emitGuestMedia(s);emitVirtualCpu(s);
+        emitFrame(s);emitGuestPrint(s);emitGuestMedia(s);emitVirtualCpu(s);DesktopAppServices.emit(s);
     }
     private static void emitFrame(Asm s) {
         s.label("frame.clear");s.set(DIRTY,1);s.set(FRAME_PAGE,160);s.set(FRAME_OFFSET,0);
@@ -373,7 +373,7 @@ public final class DesktopImage {
         s.label("app.finished");s.jump("app.stop");
         s.label("app.tick.error");s.set(APP,6);s.jump("app.stop");
         s.label("vm.step");s.vreadLiteral(11,A);s.put(A,VBANK);s.vreadLiteral(9,A);s.put(A,PAGE);s.vreadLiteral(8,A);s.put(A,ADDRESS);
-        s.get(A,VBANK);s.notEqual(A,0,"vm.service.checked");s.get(A,PAGE);s.notEqual(A,249,"vm.service.checked");s.get(A,ADDRESS);s.equal(A,FileSystemAbi.ENTRY,"vm.filesystem");s.label("vm.service.checked");
+        s.get(A,VBANK);s.notEqual(A,0,"vm.service.checked");s.get(A,PAGE);s.notEqual(A,249,"vm.service.checked");s.get(A,ADDRESS);s.equal(A,FileSystemAbi.ENTRY,"vm.filesystem");s.equal(A,DesktopServices.ENTRY,"vm.app.service");s.label("vm.service.checked");
         s.get(A,APP);s.equal(A,5,"vm.fetch.start");s.get(A,VBANK);s.notEqual(A,0,"vm.fetch.start");s.get(A,PAGE);s.notEqual(A,249,"vm.fetch.start");s.get(A,ADDRESS);s.equal(A,9,"app.finished");s.notEqual(A,0,"app.tick.error");
         s.vreadLiteral(3,A);s.put(A,PRINT_CHAR);s.call("app.print",RET_PRINT);s.vreadLiteral(0,A);s.vreadLiteral(1,B);s.vwriteLiteral(9,A);s.vwriteLiteral(8,B);s.jump("vm.done");
         s.label("vm.fetch.start");s.set(FETCH_COUNT,0);s.call("vm.fetch",RET_FETCH);s.get(A,VALUE);s.put(A,OPC);

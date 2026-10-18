@@ -75,3 +75,11 @@ tasks.register('browserRegression', JavaExec) {
     mainClass = 'xyz.ignite4inferneo.BrowserRegression'
 }
 check.dependsOn browserRegression
+
+// Independent COM clients exercise the shared desktop ABI and rendering cost.
+tasks.register('desktopServicesRegression', JavaExec) {
+    dependsOn compileStorageRegression
+    classpath = files(regressionClasses)
+    mainClass = 'xyz.ignite4inferneo.jvdos.DesktopServicesRegression'
+}
+check.dependsOn desktopServicesRegression

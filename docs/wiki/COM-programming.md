@@ -61,3 +61,60 @@ Control register 10 selects the storage medium for opcodes 18/19; preserve the c
 ## JCTRL guest program runner
 
 JCTRL can interpret small COM programs inside its application window without changes to the Java CPU or ISA. It supplies an 8 KiB virtual code/data workspace and a 128?128 RAM-backed pixel buffer. Small programs retain virtual 0:248 placement; larger ones start at virtual 1:0. Guest-handled DOS entries 0:249:0 and 0:249:9 provide character output and completion. STOP finishes the interpreted application while the real VM's STOP behavior remains unchanged. See [the desktop guide](Experimental-desktop.md) for supported JVS commands, memory limits, graphics scaling, and media playback.
+
+
+## Shared JCTRL application services
+
+JCTRL application ABI v1 exposes **virtual** `0:249:42` to interpreted COM clients.
+It is implemented by ordinary desktop guest bytecode; it is not a CPU opcode,
+host callback, or a fullscreen DOS trampoline. Rebuild/update JCTRL before using
+it. Existing character-print, completion and filesystem entries remain valid.
+`DesktopServices.java` defines operation/status constants, and
+`DesktopServicesRegression.java` contains independent assembled clients.
+
+Set **A** to the operation and **N/O/P** to the return bank/page/offset, then use
+`CHANGE_BANK_PAGE_JUMP` to virtual bank 0, page 249, offset 42. A returns status
+(`OK=0`, `BAD_ARGUMENT=1`, `END=2`). Other virtual registers are preserved except
+outputs listed below and the return registers supplied by the caller. Each text
+request is bounded and yields to the desktop after returning.
+
+| Operation | Inputs | Outputs |
+| --- | --- | --- |
+| QUERY (0) | None | D = version (1) |
+| TEXT (1) | B/C = virtual bank-one page/offset; D = count, 0 means 256 | Status in A |
+| PACKED_TEXT (2) | B/C = `DesktopImage.Asm` packed literal pointer | Status in A |
+| KEYBOARD (3) | B = VK code; C = shift flag 0/1 | C = updated shift flag; D = ASCII, or 0 for no printable character |
+| CONTEXT (4) | None | B/C = selected directory, low/high byte |
+| CACHE_BEGIN (5) | B = first buffer page; C = exclusive end page | D = cache mode |
+| CACHE_FLUSH (6) | B/C = exclusive end page/offset of new text in the buffer | D = cache mode |
+| CACHE_FINISH (7) | None | D = cache mode |
+| CACHE_NAVIGATE (8) | B = 0 Home, 1 Previous, 2 Next; C = current screen's first RAM page | B/C = loaded text's exclusive end page/offset; D = mode; A = END when Next has no further text |
+| CACHE_ABORT (9) | None | D = 0 |
+
+TEXT validates its entire span before drawing; it may cross pages but cannot
+leave virtual bank-one pages 0-31. PACKED_TEXT reads the assembler's three-byte
+literal groups, skips their two instruction bytes, and stops at NUL or 80
+characters. Both reuse JCTRL's existing framebuffer/font renderer. KEYBOARD only
+decodes supplied events; clients still read their focused input through the
+normal keyboard port. It handles Shift press/release and numpad punctuation.
+
+The spool reserves **bytes 0-63 of virtual page 31** as its JVFS mailbox and
+**filesystem handle 3** until ABORT/close. Give it at least two buffer pages;
+the exclusive end must be at most 31, so neither reads nor writes touch the
+mailbox or resident desktop. Cache modes are 0 (RAM fallback), 1 (writing), and
+2 (committed and open for readback). BEGIN creates a new text file under
+`WEB.CACHE` in the selected directory, searches 256 candidate filenames without
+replacing existing ones, and uses the app's storage-device register. FLUSH
+appends only the newly filled buffer, and tracks the write position independently
+of the size committed on CLOSE. FINISH commits and reopens the file for reads.
+NAVIGATE loads up to 512 bytes through the resident seek/block routines, including
+across cluster boundaries. It is available in mode 2; before commit the client
+can still page through its RAM window.
+
+Storage errors abort an unfinished spool and return mode 0. ABORT discards an
+uncommitted new file; it closes a committed read handle without deleting the
+file. JCTRL also aborts the handle when an application stops. Clients should not
+use filesystem handle 3 or modify the mailbox while the spool owns them. Cache
+policy lives in `DesktopPageCache`, block/keyboard services in
+`DesktopAppServices`, and filesystem mechanics remain in the resident JVFS
+driver shared with DOS. No extra RAM bank or storage format is introduced.
