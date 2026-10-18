@@ -2,12 +2,14 @@
 
 The storage device is exactly 16,777,216 bytes. Its address is `(x << 16) | (y << 8) | z`. Firmware and user-file areas are distinct. DOS can now store 64,770 files with up to 15,544,800 content bytes across its banks. A file can use up to 61,200 bytes when all 255 blocks in a bank are available. Large files consume blocks that would otherwise hold additional small files. The CPU address remains 24 bits; this change makes use of the existing disk capacity.
 
+The hardware addresses a flat sequence of bytes and imposes the 16 MiB per-device capacity. Banks, linked blocks, filenames and the maximum file size below are JV-DOS filesystem choices, shared by JCTRL and Workshop. Another guest filesystem could span these boundaries without changing the CPU's storage instructions. Up to 256 device IDs select independent media; storage banks are unrelated to the two RAM banks.
+
 ## Boot image
 
 | Offset | Contents |
 | --- | --- |
 | 0-4 | ASCII `JVCPM` magic |
-| 5 | System image revision 10 |
+| 5 | System image revision 22 |
 | 6 | Nonzero number of 256-byte image pages |
 | 7 | BIOS entry metadata, currently 1 |
 | 512 onward | Flattened system pages |
@@ -16,18 +18,20 @@ The bootstrap reads the page count at byte 6, loads pages beginning at offset 51
 
 ## Directory
 
-Banks 2 through 255 each provide 255 slots. Slot n (0-254) in bank b starts at `(b << 16) + n*256`. Bank 2 retains all existing file offsets. Slot 255 is reserved in every bank; banks 0 and 1 remain outside the DOS filesystem. Files use linked 240-byte content blocks; folders are not supported. Use `BANK` to show the current bank, `BANK +` to advance, and `BANK -` to go back. Reboot selects bank 2. File names are local to a bank; COPY and REN operate within the current bank.
+Banks 2 through 255 each provide 255 slots. Slot n (0-254) in bank b starts at `(b << 16) + n*256`. Bank 2 retains all existing file offsets. Slot 255 is reserved in every bank; banks 0 and 1 remain outside the DOS filesystem. Files use linked 240-byte content blocks; each folder consumes one slot. Use `BANK` to show the current bank, `BANK +` to advance, and `BANK -` to go back. Reboot selects bank 2. Names are unique within each folder; COPY and REN operate within the current folder on the selected bank and device.
 
 | Slot byte | Contents |
 | --- | --- |
 | 0 | Low byte of the total file length |
 | 1-12 | ASCII filename, NUL-padded when shorter than 12 bytes |
-| 13 | Type: 0 binary, 1 text, 2 image, 3 music |
+| 13 | Type: 0 binary, 1 text, 2 image, 3 music, 4 folder |
 | 14 | High byte of the total file length |
 | 15 | Next block slot (1-254), or 0 for end of chain |
 | 16-255 | First 240 content bytes |
 
 Continuation blocks store `0xFF` in byte 1 and are hidden from directory listings. They hold another 240 bytes at offsets 16-255 and a next-block link at byte 15. The head stores the total length as `byte0 | (byte14 << 8)`; continuation length/type/name bytes are not interpreted. Slot 0 can be a head but cannot be linked as a continuation because 0 terminates the chain. Empty files still use one head block.
+
+Folders have zero length and no continuation. Reserved slot 255 holds parent IDs at offsets 1-255, indexed by head slot plus one. Parent ID 0 means root; another ID identifies a directory head slot plus one. Offset 0 retains the bank's initialization marker. Existing flat files with zero parent metadata therefore remain at the root without conversion.
 
 Existing files with zero reserved bytes keep exactly the same offsets and require no data migration. JV-DOS 1.3/system revision 7 is required to use extended files. The guest validates lengths, cycles, continuation markers and shared ownership before modifying files, plans capacity before writing, and frees unused tail blocks on overwrite/delete.
 

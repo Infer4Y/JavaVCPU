@@ -15,7 +15,7 @@ Install **JDK 26** and run these commands from the project root:
 
 On macOS/Linux, use `./gradlew` instead. You can also launch `xyz.ignite4inferneo.Main` from IntelliJ IDEA with JDK 26 selected.
 
-Click the display window before typing. Enter `HELP` for shell commands or `CODEHELP` for programming help. Keyboard clicks are off by default; `SOUND ON` enables them.
+Click the display window before typing. Enter `HELP` for everyday commands; the [JVS guide](docs/wiki/JVS-programming.md) contains programming syntax. Keyboard clicks are off by default; `SOUND ON` enables them.
 
 The VM uses `storage.img` in its working directory. On first launch, the installer writes the BIOS and DOS image; later launches update the system image as needed while preserving user files. The bootstrap reads the installed image through the storage device and transfers execution to the BIOS.
 

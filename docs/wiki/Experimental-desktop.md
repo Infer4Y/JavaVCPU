@@ -66,7 +66,7 @@ Music (`JM`, type 3) supports versions 1 and 2, eight voices, and the existing f
 
 `DISPLAY` uses a monotonic 33 ms target interval. Guest execution consumes that budget, so presentation waits only for the remaining time. Overruns rebase the next deadline without catch-up bursts. Sustained-note regression checks require fewer than 1,000 guest instructions per idle playback tick and zero pixel writes. They also verify note durations and zero-duration event grouping. Window dragging and other expensive UI operations can still delay playback; music still counts display intervals rather than reading an independent clock.
 
-Ordinary pointer motion saves and restores the two pixels beneath the cursor, using four pixel writes per move instead of repainting the desktop. Window dragging and changed application surfaces still repaint normally. Regression checks cover overlapping cursor positions and wrapping at screen edges.
+Ordinary pointer motion saves and restores the two pixels beneath the cursor, using four pixel writes per move instead of repainting the desktop. Window dragging and changed application surfaces still repaint normally. Palette reads round to the nearest encoded color so repeated background restoration preserves every color exactly. Regression checks use the real RGB framebuffer and buffer swaps, covering all 128 palette colors, repeated motion over window/desktop colors, overlapping cursor positions, wrapping at screen edges and window redraws.
 
 JCTRL occupies 109 of a bank's 255 blocks. Use **BANK- / BANK+** to browse another bank for large media files; this is important for images that cannot share a bank with the desktop executable. Switching banks stops the current application and starts at that bank's root folder. No swap file or hidden cache is used.
 
@@ -90,7 +90,7 @@ Drag a title bar to move its window; click any visible part of a window to bring
 
 ## Resident DOS services
 
-System image revision 21 includes the compact shell and desktop. JCTRL requires graphics ABI v1, introduced in revision 17. Normal VM startup upgrades the system image and its managed desktop copy together. If the graphics signature is missing or incompatible, JCTRL returns to DOS before initializing the desktop.
+System image revision 22 includes the trimmed shell help. JCTRL requires graphics ABI v1, introduced in revision 17. Normal VM startup upgrades the system image and its managed desktop copy together. If the graphics signature is missing or incompatible, JCTRL returns to DOS before initializing the desktop. The framebuffer color correction is in the emulator, so restart the updated Java application to pick it up.
 
 DOS and JCTRL now share one resident glyph renderer through bank-zero service `249:18`. Both use the existing font table; DOS requests opaque 4x6 character cells and JCTRL requests transparent 3x5 glyphs. The renderer keeps its scratch values in registers and writes no RAM, so desktop drawing cannot corrupt a paused DOS-window operation. The existing print and shell service addresses remain unchanged. See [COM programming](COM-programming.md) for the service contract.
 

@@ -7,7 +7,7 @@ Use JDK 26. The source uses recent Java features, including module imports and `
 java -cp build/classes/java/main xyz.ignite4inferneo.Main
 ```
 
-On macOS/Linux use `./gradlew build`. There is no Gradle `run` task. IntelliJ can run `xyz.ignite4inferneo.Main` directly. Click the display window to focus it, then enter `HELP` or `CODEHELP`.
+On macOS/Linux use `./gradlew build`. Launch with `./gradlew run`, or run `xyz.ignite4inferneo.Main` directly in IntelliJ. Click the display window to focus it, then enter `HELP`. See the [JVS guide](JVS-programming.md) for programming syntax.
 
 The normal launch initializes display, audio, input, and storage. A missing disk becomes a blank 16 MiB image. `DiskInstaller` installs the system if its header is absent or outdated, preserving the distant user-file bank. A bytecode bootstrap at RAM page 255 copies system pages from disk offset 512, then jumps to BIOS page 0. BIOS hands off to JV-DOS. The guest seeds `HELLO.COM` on an uninitialized directory.
 

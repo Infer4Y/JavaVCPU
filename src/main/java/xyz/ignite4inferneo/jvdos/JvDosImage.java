@@ -31,7 +31,7 @@ public final class JvDosImage {
             L=Registers.L.address();
     private static final int SOURCE_REGISTER_COUNT = 16;
     private static final int SOURCE_REGISTER_BASE = 224;
-    private static final String[] COMMANDS={"BROWSE","MKDIR","MD","CD","CHDIR","RMDIR","RD","HELP","CODEHELP","DRIVE","BANK","DIR","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","ERASE","WRITE","EDIT","APPEND","COPY","REN","RENAME","MOVE","DELETE","ECHO","PRINT","CLS","CLEAR","VER","MEM","RUN","SAVE","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","SOUND","JCTRL","REM","END","STOP","REBOOT","EXIT"};
+    private static final String[] COMMANDS={"BROWSE","MKDIR","MD","CD","CHDIR","RMDIR","RD","HELP","DRIVE","BANK","DIR","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","ERASE","WRITE","EDIT","APPEND","COPY","REN","RENAME","MOVE","DELETE","ECHO","PRINT","CLS","CLEAR","VER","MEM","RUN","SAVE","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","SOUND","JCTRL","REM","END","STOP","REBOOT","EXIT"};
     private static final java.util.Set<String> SCRIPT_COMMANDS=java.util.Set.of("PRINT","ECHO","CLS","CLEAR","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","REM","END","STOP","JCTRL");
     private static final java.util.Set<String> FILE_COMMANDS=java.util.Set.of("CD","CHDIR","RMDIR","RD","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","DELETE","ERASE","WRITE","EDIT","APPEND","COPY","REN","RENAME","MOVE","RUN","SAVE");
     private static final int NAME=250, LINE=251, STATE=252, TPA=248;
@@ -73,7 +73,7 @@ public final class JvDosImage {
     public static void main(String[] args) throws java.io.IOException {
         if(args.length!=1) throw new IllegalArgumentException("Supply an output image path");
         byte[][] pages=Programs.bootImage(); byte[] image=new byte[65536];
-        byte[] header={'J','V','C','P','M',21,(byte)pages.length,1};
+        byte[] header={'J','V','C','P','M',22,(byte)pages.length,1};
         System.arraycopy(header,0,image,0,header.length);
         for(int page=0;page<pages.length;page++) System.arraycopy(pages[page],0,image,512+page*256,pages[page].length);
         java.nio.file.Files.write(java.nio.file.Path.of(args[0]),image);
@@ -335,9 +335,7 @@ public final class JvDosImage {
         s.jump("shell");
 
         s.label("cmd.HELP");
-        s.text("FILES: DIR TYPE VIEW EDIT\n       COPY REN MOVE DEL\nWRITE FILE TEXT / APPEND FILE TEXT\nMD NAME / CD NAME / CD .. / RD NAME\nRUN FILE / IMAGE FILE / PLAY FILE\n");
-        s.text("DISK: DRIVE N / BANK + / BANK -\nSYSTEM: CLS VER MEM SOUND REBOOT EXIT\nECHO TEXT / SAVE FILE HEX\nJCTRL - DESKTOP\nBROWSE HOST[:PORT]/PATH - HTTP\nCODEHELP - JVS LANGUAGE\n");
-        s.text("UP/DOWN HISTORY  TAB COMPLETE\nEDIT: ESC SAVES AND EXITS\n");
+        s.text("DIR TYPE VIEW EDIT COPY REN MOVE DEL\nMD CD RD RUN IMAGE PLAY JCTRL\nDRIVE BANK CLS VER MEM REBOOT EXIT\nUP/DOWN HISTORY  TAB COMPLETE\nEDIT: ESC SAVES AND EXITS\n");
         s.jump("shell");
         s.label("cmd.CLEAR");
         s.label("cmd.CLS");
@@ -1546,10 +1544,6 @@ public final class JvDosImage {
 
     /** The text language uses the existing shell dispatcher and bytecode arithmetic instructions. */
     private static void emitSourceLanguage(Asm s) {
-        s.label("cmd.CODEHELP");
-        s.text("EDIT DEMO.JVS THEN RUN DEMO.JVS\nPRINT TEXT  BEEP  CLEAR\nSTORE 42 A  OUTPUT A\nADD A B C  SUB A B C\nMULTIPLY A B C  INC A\nEND OR STOP RETURNS TO DOS\nREM TEXT OR ; COMMENT\n");
-        s.text("ONE STATEMENT PER LINE\nREGISTERS A TO P WRAP AT 256\nGOTO LINE  IF A VALUE LINE\nLINE NUMBERS START AT 1\nESC ABORTS A RUNNING PROGRAM\nARROWS EDIT  ESC SAVES\nSOUND ON OR SOUND OFF\n");
-        s.jump("shell");
         s.label("cmd.BEEP");
         s.tone();
         s.jump("shell");
@@ -1659,7 +1653,7 @@ public final class JvDosImage {
         s.call("number16",NUMBER16_RETURN);
         s.text("\n");
         s.label(cliError);
-        s.text("CHECK SYNTAX WITH CODEHELP\n");
+        s.text("SYNTAX ERROR\n");
         s.jump("shell");
 
         s.label("cmd.STORE");
@@ -2097,7 +2091,7 @@ public final class JvDosImage {
         s.store(12,B);
         s.ne(A,B,"editor.title");
         s.label("editor.title.end");
-        s.text("\nARROWS MOVE  TAB INDENT\nESC SAVE  CODEHELP IN DOS\n");
+        s.text("\nARROWS MOVE  TAB INDENT\nESC SAVE AND EXIT\n");
         s.label("redraw.begin");
         s.editSize();
         s.set(RENDERING,1);

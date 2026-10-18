@@ -12,7 +12,7 @@ These captures show the current JavaVCPU display and Disk Workshop using a separ
 | Shell help | Programming help |
 | --- | --- |
 | ![HELP showing shell commands](images/dos-help.png) | ![CODEHELP showing JVS syntax and opcodes](images/dos-codehelp.png) |
-| `HELP` lists file, media and system commands. | `CODEHELP` explains source statements and bytecode instructions. |
+| `HELP` lists everyday commands; these captures show an earlier version. | Historical `CODEHELP` screen; revision 22 moves programming reference to the [JVS guide](JVS-programming.md). |
 
 | File directory | Source editor |
 | --- | --- |

@@ -12,7 +12,7 @@ public final class DosStorageRegression {
     private int note60Updates;
     private long instructions, pixelWrites, displayFrames, noteOnFrame, noteOffFrame, zeroDurationFrame;
     private final int[] voiceControls=new int[8];
-    private boolean browserNetwork;
+    private boolean browserNetwork, realGraphics;
     private int mouseX,mouseY,mouseButtons,mouseWheel;
     private final int[][] pixels = new int[256][256];
     private final ArrayDeque<Integer> keys = new ArrayDeque<>();
@@ -79,6 +79,28 @@ public final class DosStorageRegression {
         Path output=Path.of("build",name+".png");Files.createDirectories(output.getParent());
         javax.imageio.ImageIO.write(image,"png",output.toFile());
     }
+    private static void desktopCursorChecks() throws Exception {
+        DosStorageRegression vm=terminal();
+        chain(33,0,"JCTRL.COM",xyz.ignite4inferneo.jvdos.DesktopImage.program(),0);
+        vm.ram[252][220]=33;vm.realGraphics=true;vm.command("RUN JCTRL.COM");
+        int[][] frame=java.util.Arrays.stream(vm.pixels).map(int[]::clone).toArray(int[][]::new);
+        long writes=vm.pixelWrites;
+        // Exercise the real palette conversion and buffer swaps, including colors
+        // in window bodies/title bars, the desktop, the toolbar and the footer.
+        int[][] path={{40,80},{41,81},{40,80},{20,28},{80,5},{240,200},{20,245},{255,255},{0,0}};
+        for(int pass=0;pass<16;pass++)for(int[] point:path)vm.mouse(point[0],point[1],0);
+        check(vm.pixelWrites-writes==16L*path.length*4,"real framebuffer pointer motion stays incremental");
+        check(java.util.Arrays.deepEquals(frame,vm.pixels),"real framebuffer cursor leaves no trails across colors, overlaps and buffer swaps");
+        vm.mouse(20,28,0);vm.mouse(20,28,1);vm.mouse(40,48,1);vm.mouse(40,48,0);
+        frame=java.util.Arrays.stream(vm.pixels).map(int[]::clone).toArray(int[][]::new);
+        vm.mouse(250,220,0);vm.mouse(40,48,0);
+        check(java.util.Arrays.deepEquals(frame,vm.pixels),"full window repaint refreshes the saved cursor background");
+        for(int y=0;y<256;y++)for(int x=0;x<256;x++)
+            check((Monitor.fetchMemory((byte)x,(byte)y)&255)==vm.pixels[y][x],"native framebuffer matches guest pixel writes");
+        vm.snapshot("desktop-cursor-clean");
+        System.out.println("PASS: actual framebuffer cursor save/restore, repeated movement, overlaps, edges and window redraws without trails");
+    }
+
     private static void desktopChecks() throws Exception {
         DosStorageRegression vm=terminal();
         byte[] program=xyz.ignite4inferneo.jvdos.DesktopImage.program();
@@ -413,7 +435,7 @@ public final class DosStorageRegression {
         file(2,254,"LAST.TXT","END");
         Storage.writeRange(0x2ff00, new byte[]{0x4a});
         DiskInstaller.installIfMissing();
-        check(Storage.readRange(0,8)[5] == 21, "system revision");
+        check(Storage.readRange(0,8)[5] == 22, "system revision");
         check(Storage.readRange(0x20010,3)[0] == 'O', "installation preserves files");
         DosStorageRegression vm = new DosStorageRegression();
         byte[][] pages = Programs.bootImage();
@@ -567,6 +589,7 @@ public final class DosStorageRegression {
         folderChecks(vm);
         moveChecks();
         desktopChecks();
+        desktopCursorChecks();
         desktopApplicationChecks();
         pongChecks();
         desktopSourceChecks();
@@ -617,7 +640,8 @@ public final class DosStorageRegression {
         DosStorageRegression vm=terminal();vm.snapshot("dos-boot-refined");vm.ram[252][220]=32;
         check(vm.ram[252][183]==0,"keyboard clicks default to off");
         vm.command("SOUND ON");check(vm.ram[252][183]==1,"keyboard clicks can be enabled");vm.command("SOUND OFF");
-        vm.command("CLS");vm.command("HELP");check((vm.ram[252][130]&255)<200,"compact command help fits on one full screen");vm.snapshot("dos-help-refined");
+        vm.command("CLS");vm.command("HELP");check((vm.ram[252][130]&255)<80,"everyday command help stays short");vm.snapshot("dos-help-refined");
+        vm.type("CODEH");vm.press(9);check(vm.line().equals("CODEH"),"removed programming help is absent from command completion");vm.press(27);
         check((vm.ram[252][167]&255)==4+"0:32> ".length()*4,"prompt identifies selected drive and bank");
         byte[] executable={2,99,3,28,3,0,(byte)253,100,2,0,0,2,(byte)249,1,2,9,2,23,0,1,2};
         chain(32,0,"PROG.COM",executable,0);
@@ -806,9 +830,9 @@ public final class DosStorageRegression {
                 case 3 -> r[8]=a;
                 case 4 -> throw new AssertionError("Unexpected HALT");
                 case 5 -> { }
-                case 14 -> displayFrames++;
-                case 12 -> {pixelWrites++;pixels[r[b]][r[a]]=r[c];}
-                case 13 -> {for(int[] row:pixels)java.util.Arrays.fill(row,0);}
+                case 14 -> {displayFrames++;if(realGraphics)Monitor.swapBuffers();}
+                case 12 -> {pixelWrites++;pixels[r[b]][r[a]]=r[c];if(realGraphics)Monitor.pushMemory((byte)r[a],(byte)r[b],(byte)r[c]);}
+                case 13 -> {for(int[] row:pixels)java.util.Arrays.fill(row,0);if(realGraphics)Monitor.clear();}
                 case 17 -> { if(r[a]==6&&r[c]!=0)zeroDurationFrame=displayFrames; if(r[a]==7){if(r[c]!=0)noteOnFrame=displayFrames;else noteOffFrame=displayFrames;} if(r[b]==60)note60Updates++;if(r[a]<8)voiceControls[r[a]]=r[c]; }
                 case 6 -> { if(r[a]==r[b])r[8]=c; }
                 case 7 -> r[a]=m[b]&255;
@@ -816,7 +840,7 @@ public final class DosStorageRegression {
                 case 9 -> r[9]=r[a];
                 case 10 -> { r[9]=r[a]; r[8]=r[b]; }
                 case 11 -> { if(r[b]==r[c]) {r[9]=r[a];r[8]=d;} }
-                case 15 -> r[c]=pixels[r[b]][r[a]];
+                case 15 -> r[c]=realGraphics?Monitor.fetchMemory((byte)r[a],(byte)r[b])&255:pixels[r[b]][r[a]];
                 case 16 -> {
                     if(a==0&&keys.isEmpty()&&(ram[252][176]==0||(r[11]==1&&r[9]<128))&&(!browserNetwork || Network.read(0)==0)) {r[8]=pc;return;}
                     r[b]=switch(a) {

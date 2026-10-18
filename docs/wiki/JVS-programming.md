@@ -6,7 +6,7 @@ JVS is a text interpreter built into the DOS shell. Store one statement per phys
 | --- | --- |
 | ![Highlighted arithmetic source in the DOS editor](images/dos-editor.png) | ![JVS arithmetic producing 42 and returning to DOS](images/dos-jvs-run.png) |
 
-This captured source multiplies 6 by 7 and outputs 42. The [screenshot gallery](Screenshots) also includes the `CODEHELP` reference screen.
+This captured source multiplies 6 by 7 and outputs 42. This guide is the language reference; programming help is kept outside the resident kernel.
 
 | Syntax | Meaning |
 | --- | --- |
@@ -54,8 +54,8 @@ END
 
 This prints 0 through 4, then DONE. Line 4 jumps to line 6 when A reaches 5; otherwise line 5 returns to line 2. Do not add a leading comment or blank line without adjusting the targets. This file is `examples/dos/COUNT.JVS`.
 
-Create a source file with `EDIT NAME.JVS` and save with Esc, or import it through Workshop. Run with `RUN NAME.JVS`. Keep the entire file within 61,200 bytes and each statement within 100 characters. Tabs imported through Workshop become four spaces. Esc aborts between statements. Errors report the source line and return to DOS; `CODEHELP` shows the supported syntax. Nested `RUN` from a running script is rejected.
+Create a source file with `EDIT NAME.JVS` and save with Esc, or import it through Workshop. Run with `RUN NAME.JVS`. Keep the entire file within 61,200 bytes and each statement within 100 characters. Tabs imported through Workshop become four spaces. Esc aborts between statements. Errors report the source line and return to DOS; use the syntax table above for reference. Nested `RUN` from a running script is rejected.
 
-The interpreter shares the shell dispatcher, so shell commands can appear in scripts too; they can modify files or halt the system. Prefer the language commands above for portable small examples.
+The interpreter shares the shell dispatcher but accepts only the language commands above and `JCTRL` to launch the desktop. Filesystem commands and system shutdown commands are unavailable inside source programs.
 
 JV-DOS 1.3 supports bank selection with `BANK +` and `BANK -` before running a program. `BANK` shows the current bank. File lookup and RUN use that bank; bank selection commands are unavailable inside JVS programs. Each bank has 255 shared file blocks. JVS can read linked sources up to 61,200 bytes. Statements still have a 100-character limit; numeric operands remain bytes, so GOTO/IF targets still use the original 1-255 line-number convention.

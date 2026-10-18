@@ -2,7 +2,7 @@
 
 JV-DOS runs as guest bytecode. It provides a shell, persistent named files, an editor, JVS interpretation, COM loading and small media viewers. Commands and filenames should be uppercase. Click the VM window before typing.
 
-Startup uses a short banner and silent keyboard input. `SOUND ON` enables clicks. The prompt shows the selected device and bank, plus the current folder's name when inside a folder: `0:2>` or `0:2:DOCS>`. The folder label is the current folder, not a full ancestry path. `HELP` fits on one fullscreen display; `CODEHELP` describes the source language separately.
+Startup uses a short banner and silent keyboard input. `SOUND ON` enables clicks. The prompt shows the selected device and bank, plus the current folder's name when inside a folder: `0:2>` or `0:2:DOCS>`. The folder label is the current folder, not a full ancestry path. `HELP` lists everyday commands in five lines. Programming syntax lives in the [JVS guide](JVS-programming.md); the resident `CODEHELP` command was removed in system revision 22. The advanced commands below remain available even when omitted from `HELP`.
 
 Programs can launch directly: enter `HI.COM`, `DEMO.JVS`, or a bare name such as `HI`. DOS first checks built-in commands, then searches the current folder for the exact filename, then a `.COM` suffix, then `.JVS`. Only executable/source file types launch this way; directories and media require their usual commands. Direct launches accept no arguments and do not extend the COM ABI. JVS source retains its existing restricted statement set.
 
@@ -12,7 +12,7 @@ Programs can launch directly: enter `HI.COM`, `DEMO.JVS`, or a bare name such as
 
 | Command | Purpose / example |
 | --- | --- |
-| `HELP`, `CODEHELP` | Shell or programming help |
+| `HELP` | Everyday shell commands |
 | `DRIVE`, `DRIVE N` | Show/select a mounted storage device (0-255); resets to bank 2 root |
 | `DIR` | List the current folder; folders show `<DIR>` |
 | `MKDIR NAME`, `MD NAME` | Create a folder |
@@ -86,9 +86,9 @@ Tab completes the word at the cursor. Repeated Tab cycles matching command names
 
 A-D hold working values, E/F support existing addressing sequences, and G/H implement far branches and the COM entry stubs. I/J handle indirect RAM reads without overwriting A-H. K/L hold glyph pixel coordinates, avoiding temporary RAM writes during rendering. M-P are available for future routines. Helpers can overwrite their documented scratch registers; guest JVS variables A-P live separately at bank 0, page 252, offsets 224-239.
 
-The register parser converts letters A-P directly into variable indices. `RUN` clears all sixteen JVS variables. Existing COM entry points and disk file layouts are unchanged. System-image revision 21 triggers installation of the updated kernel on next startup while preserving user files.
+The register parser converts letters A-P directly into variable indices. `RUN` clears all sixteen JVS variables. Existing COM entry points and disk file layouts are unchanged. System-image revision 22 triggers installation of the updated kernel on next startup while preserving user files.
 
-One compact guest command dictionary supplies dispatch, command completion, and filename-completion eligibility. It replaces separate generated comparisons and command-selection branches. Including the BIOS and resident code/data below the reserved service pages, the used span drops from 245 to 187 pages (62,720 to 47,872 bytes). This leaves more unused bank-zero space; the machine still has 128 KiB RAM and the boot image retains its fixed service/state addresses and page count. Disk images remain 16 MiB with the existing file layout.
+One compact guest command dictionary supplies dispatch, command completion, and filename-completion eligibility. It replaces separate generated comparisons and command-selection branches. Including the BIOS and resident code/data below the reserved service pages, the used span drops from 245 to 182 pages (62,720 to 46,592 bytes). Removing resident programming help and shortening command help saved another 1,280 bytes after the initial reduction to 47,872 bytes. This leaves more unused bank-zero space; the machine still has 128 KiB RAM and the boot image retains its fixed service/state addresses and page count. Disk images remain 16 MiB with the existing file layout.
 
 ## Folder storage
 

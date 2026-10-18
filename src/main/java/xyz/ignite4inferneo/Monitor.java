@@ -175,9 +175,11 @@ public class Monitor {
         int green = (rgb >> 8) & 0xFF;
         int blue = rgb & 0xFF;
 
-        int packedRed = red * 3 / 255;       // 0–3
-        int packedGreen = green * 7 / 255;   // 0–7
-        int packedBlue = blue * 3 / 255;     // 0–3
+        // getRGB truncates channel expansion. Round to the nearest palette level
+        // when reading it back so save/restore cannot progressively darken pixels.
+        int packedRed = (red * 3 + 127) / 255;
+        int packedGreen = (green * 7 + 127) / 255;
+        int packedBlue = (blue * 3 + 127) / 255;
 
         return (byte) ((packedRed << 5) | (packedGreen << 2) | packedBlue);
     }

@@ -21,7 +21,17 @@ final class MonitorRegression {
         Monitor.clear();
         check(pixel(field,3,4) == 0xffffff, "clear remains unpublished");
         Monitor.swapBuffers();check(pixel(field,3,4) == 0, "clear published at swap");
-        System.out.println("PASS: framebuffer swaps isolate drawing, preserve incremental pixels and publish clears");
+        for(int color=0;color<128;color++) {
+            Monitor.pushMemory((byte)0,(byte)0,(byte)color);
+            check((Monitor.fetchMemory((byte)0,(byte)0)&255)==color,"palette read preserves color "+color);
+            Monitor.swapBuffers();
+            for(int pass=0;pass<8;pass++) {
+                byte saved=Monitor.fetchMemory((byte)0,(byte)0);
+                Monitor.pushMemory((byte)0,(byte)0,saved);Monitor.swapBuffers();
+            }
+            check((Monitor.fetchMemory((byte)0,(byte)0)&255)==color,"repeated save/restore preserves color "+color);
+        }
+        System.out.println("PASS: framebuffer swaps, published clears and lossless save/restore of all 128 palette colors");
     }
     private static int pixel(java.lang.reflect.Field field,int x,int y) throws Exception {
         return ((BufferedImage)field.get(null)).getRGB(x,y)&0xffffff;

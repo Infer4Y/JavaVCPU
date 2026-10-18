@@ -4,6 +4,8 @@ The CPU accesses RAM, storage and networking through separate address spaces. Da
 
 ## Multiple storage devices
 
+The hardware exposes each device as a flat 24-bit byte address space: 16 MiB per device, with 256 possible device IDs. JV-DOS imposes the filesystem's 254 file banks, 255 blocks per bank, 12-character names and 61,200-byte maximum file size. Those are guest software limits; another filesystem could use the same hardware with different allocation units and larger files spanning those boundaries. The RAM banks/pages are a separate address space.
+
 Device 0 boots from `storage.img`. To add media, set IntelliJ's **Program arguments**, for example:
 
 ```text
