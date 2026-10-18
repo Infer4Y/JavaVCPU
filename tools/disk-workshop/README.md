@@ -1,48 +1,20 @@
-# JV-DOS 1.4 Disk Workshop
+# Disk Workshop
 
-Open `index.html` locally. Select your project's `storage.img`, import or edit files, and download `storage-updated.img`. Stop the VM, replace its `storage.img` with the downloaded image, and restart. The tool never contacts a server or changes your original file automatically.
+Open `tools/disk-workshop/index.html` locally in a modern browser. Keep `disk.js` and `desktop.js` beside it. No server or uploads are needed; edits stay in the browser until a disk download.
 
-![Disk Workshop with a sample directory and JVS source editor](../../docs/wiki/images/workshop-text.png)
+1. Run the updated VM once to create a JVFS disk, then stop it. Older experimental disk formats are reformatted on startup.
+2. Open the 16 MiB `storage.img` in Workshop.
+3. Browse folders, import files, or create text, images and tunes. Apply editor changes to the working copy.
+4. Download the updated disk and replace `storage.img` while the VM is stopped, then restart.
 
-The [screenshot gallery](../../docs/wiki/Screenshots.md#disk-workshop) also shows the palette image preview and expanded tune composer.
+JVFS uses one volume per disk with 1 KiB clusters, 24-bit file lengths and growing directories. Files are no longer split between banks. Workshop preserves reserved firmware bytes, validates chains and directory ownership, and stages replacements before freeing the original data. Failed import batches leave the working disk unchanged. Replacement needs temporary free space for the entire new file.
 
-DOS commands:
+Names have up to 12 uppercase ASCII characters; imports normalize names to an eight-character base and three-character extension. The same name may appear in different folders. Duplicate imports can replace an existing file. Click a folder to enter it and Parent folder to return.
 
-- `VIEW NAME.TXT` / `MORE NAME.TXT`: read-only document pager. Up/Down, Page Up/Page Down, Space/Enter and Home navigate; Esc closes.
-- `IMAGE NAME.IMG` / `SHOW NAME.IMG`: palette image display. Esc, Enter or Q closes.
-- `PLAY NAME.JMT`: eight synthesized voices using MIDI note numbers. Esc stops and silences every voice.
-- `RUN`: opens imported images/music automatically, executes JVS text source, or loads COM bytecode.
+Text/JVS supports ASCII and LF newlines; tabs become four spaces. Binary files use raw bytes. PNG/JPEG and other browser-supported images become JI palette images up to 240x240 pixels. Standard MIDI format 0/1 with PPQN timing becomes eight-voice JM note events, preserving tempo changes and running status. Extended tunes can exceed 64 KiB; available disk space sets the limit. The composer accepts `MIDI_NOTE FRAME_DURATION` per line.
 
-Imports automatically move to an empty bank when a new file cannot fit in the current bank. The folder path is recreated there, and the import message lists the bank for each file. Select that bank in Workshop or use `BANK +` / `BANK -` in DOS to access it. Existing files are updated in place; an oversized replacement fails without moving or changing the original. A batch import is committed only after every file succeeds. Partly occupied banks (including the managed desktop bank) are left alone during overflow allocation.
+The disk file limit differs from available program RAM: EDIT and fullscreen COM/JVS loading remain bounded to 61,200 bytes; windowed programs use 8 KiB. TYPE/VIEW, COPY/APPEND and music use streaming filesystem services.
 
-The capacity display reports free bytes and total block use across **all folders in the selected bank**. Folders share capacity; they do not each have their own block allowance. The 254 file banks provide about 14.8 MiB of content capacity in total, before folder and file metadata overhead.
+Add sample files creates WELCOME.TXT, SMILE.IMG and THEME.JMT. Add JCTRL desktop installs a manual copy in the current folder; the normal VM installer already manages JCTRL.COM in the system root. Manual copies are not automatically updated.
 
-Each selected bank holds 255 shared blocks with linked files up to 61,200 bytes, with names up to 12 characters. Oversized imports are rejected. Text is ASCII; CRLF is normalized to LF, and tabs become four spaces. The VM displays lowercase imported text as well as punctuation; its keyboard remains uppercase DOS-style with shifted punctuation and keypad support.
-
-## On-disk formats
-
-The disk is 16 MiB. The tool preserves the firmware/kernel and modifies only the selected bank's directory slots and initialization marker. Directory slot `n` begins at `(bank << 16) + n*256`: byte 0 is the length low byte, bytes 1–12 are the NUL-terminated name, byte 13 is type (0 binary, 1 text, 2 image, 3 music), byte 14 is the length high byte and byte 15 links the next block, and bytes 16–255 are content. Bank 2 slot 255 byte 0 is the initialization marker `0x4a`.
-
-Images have `JI`, width, height, then one `RRGGGBB` palette byte per pixel. Width and height are 1-240; all colors are 0-127. The largest image is 57,604 bytes. Imported browser images are resized proportionally to fit 240 by 240 pixels and quantized, including alpha composited over black. DOS reads pixels across linked blocks. Images with both dimensions at most 15 retain 8 by 8 display blocks; larger images render one screen pixel per image pixel below the title.
-
-Tunes have `JM`, version 1, event count, then four-byte events: frame duration, voice, MIDI note, control. Duration 0 changes voices without waiting; 1–255 waits that many 33 ms frames. Voice is 0–3, note is 0–127, and control is 0 (off) or 128–131 (square, triangle, saw, noise). Version 1 stores up to 255 events in a 1,024-byte file. Version 2 uses header bytes `JM, 2, 0` and derives its event count from the file length, supporting up to 15,299 events in 61,200 bytes. The importer writes version 2 for longer tunes; playback requires the updated DOS image.
-
-Standard MIDI format 0/1 files with PPQN timing are converted to this note stream. Running status, tempo changes, note-on/off and eight-note polyphony are supported. Instrument/program changes and controller effects are not retained; percussion becomes noise. When more than eight notes overlap, each new note replaces the oldest sounding note. Files with more than 15,299 converted events must be shortened before import. You can also compose a tune directly in the page using MIDI note numbers and frame durations.
-
-The keyboard decoder uses existing make/break events and keyboard-state ports. Quotes and backtick have Java key codes above 127, whose make/release bytes collide in this device protocol; those keys are checked against held-key state. Hold them long enough for the VM to poll (about one frame). No VM/input opcodes were changed.
-
-### JV-DOS 1.2 banks
-
-Use the Disk bank selector (2-255) to edit another bank. Each bank contains 255 slots; slot 255 is reserved. In DOS, `BANK +` and `BANK -` select the corresponding bank, and `BANK` reports the current bank. Existing images with system revisions 4 through 20 can be opened; the VM updates their system image to revision 20 while preserving user files. Files use 240-byte content chunks; a continuation has byte 1 set to 255 and byte 15 as its next slot. Large-file writes require JV-DOS 1.3. Capacity is checked before any file changes are committed. Cloning/importing preserves the selected bank and all other disk bytes.
-
-JV-DOS 1.4 folders appear as DIR entries. Click a folder to enter it and use Parent folder to go back. Imports, samples, edits and filename checks apply to the current folder. The parent table in reserved slot 255 is preserved; nonempty folders cannot be deleted or overwritten.
-
-## Experimental desktop
-
-The VM now installs and updates a managed desktop automatically; enter `JCTRL` in DOS to launch it. Workshop imports are optional manual copies, preserved separately from the managed package.
-
-For a manual copy, open your disk, choose the bank/folder where the desktop should live, and click **Add JCTRL desktop**. Download the updated disk and replace `storage.img` while the VM is stopped. In that DOS folder, run `RUN JCTRL.COM`. You can also import `examples/dos/JCTRL.COM` normally. Adding the desktop requires 121 free blocks and never replaces an existing `JCTRL.COM`.
-
-The separate guest application offers overlapping, draggable windows for read-only `DIR`, `VIEW`/`TYPE`, `VER`, `MEM`, and `HELP` functionality. Click text files or folders in Files; use Up, Next, Home, and the mouse wheel to navigate. F1 opens Help, F2 opens Files, F3 opens system information, and Esc or the DOS toolbar button returns to the shell. Close windows with X. The desktop keeps the selected DOS disk/bank/folder and does not edit files. COM, image, and music files open directly. For JVS source, click Run / Open or press F5 to execute it in the DOS window using the resident interpreter. The guest-only runner provides 8 KiB of program/data RAM and a 128?128 framebuffer; larger programs or unsupported memory accesses show an error. Images and music stream through existing device instructions. BANK- / BANK+ browses other banks for large media. Esc or X stops playback/programs. The Java VM, ISA, RAM capacity, and device behavior are unchanged.
-
-Rebuild both bundled desktop assets with `gradlew.bat desktopImage`. Source and the memory layout are documented in [DesktopImage.java](../../src/main/java/xyz/ignite4inferneo/jvdos/DesktopImage.java) and [the desktop guide](../../docs/wiki/Experimental-desktop.md).
+Open `test.html` beside the tool to run browser-only checks for large files, growing directories, moves, cycles, full-disk preservation and media converters. The disk layout and guest ABI are documented in `docs/wiki/Disk-and-media-formats.md`.

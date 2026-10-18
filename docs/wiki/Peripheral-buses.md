@@ -4,7 +4,7 @@ The CPU accesses RAM, storage and networking through separate address spaces. Da
 
 ## Multiple storage devices
 
-The hardware exposes each device as a flat 24-bit byte address space: 16 MiB per device, with 256 possible device IDs. JV-DOS imposes the filesystem's 254 file banks, 255 blocks per bank, 12-character names and 61,200-byte maximum file size. Those are guest software limits; another filesystem could use the same hardware with different allocation units and larger files spanning those boundaries. The RAM banks/pages are a separate address space.
+Each device is a flat 24-bit byte address space: 16 MiB, with up to 256 device IDs. JV-DOS 2.0 uses one JVFS volume per device, allowing files and directories to span storage banks. RAM banks are separate.
 
 Device 0 boots from `storage.img`. To add media, set IntelliJ's **Program arguments**, for example:
 
@@ -25,7 +25,7 @@ DRIVE 0
 DIR
 ```
 
-`DRIVE` shows the selected device. `DRIVE N` validates that it is mounted, then selects bank 2 and its root directory. Invalid or absent IDs preserve the current selection. Each medium has its own banks, files and folder metadata. COPY/REN operate within the current folder on the current drive; cross-drive copying is not implemented. Boot and DOS REBOOT select device 0.
+`DRIVE` shows the selected device. `DRIVE N` validates that it is mounted, then selects the volume root. Invalid or absent IDs preserve the current selection. Each medium has its own filesystem. COPY/REN operate within the current folder on the current drive; cross-drive copying is not implemented. Boot and DOS REBOOT select device 0.
 
 For bytecode, control register 10 (`STORAGE_PAGE`, retained for compatibility) supplies the unsigned device ID for opcodes 18/19. Their x/y/z registers still form the 24-bit byte address; no RAM address is involved. `READ_INPUT 0x40 out` returns 1 if the currently selected storage device is mounted, otherwise 0. Direct reads/writes to an absent device raise an emulator error; check presence first. Host `Storage.readData`/`writeData` overloads accept a device ID, while the original signatures and installer range APIs always address device 0. Programs must restore their caller's selector before returning unless intentionally switching DOS's current device.
 

@@ -41,9 +41,9 @@ Keyboard codes are Java `KeyEvent` codes. Press events contain the code; release
 
 Each mounted storage device has 16 MiB, addressed as `(x << 16) | (y << 8) | z`, where x/y/z come from registers. Register 10 selects the device independently of its 24-bit address. Byte writes update that device?s mapped disk image; shutdown flushes all mounted images. Device 0 uses `storage.img` relative to the working directory. Additional images are mounted with program arguments such as `--disk=1=secondary.img`. Stop the VM before exchanging disk files. See [Disk and media formats](Disk-and-media-formats).
 
-JV-DOS 1.3 uses bank-zero pages 253/254 for extended filesystem state and allocation validation. File lengths and cursor/source positions use 16-bit counters. `COMPARE_UNSIGNED` supports the guest arithmetic for these counters without signed-byte ambiguity.
+JV-DOS 2.0 uses a resident guest filesystem driver: bank-zero page 244 is its cache, 245 the DOS mailbox, 253 DOS extended state and 254 private driver state/handles. Files use 24-bit lengths and positions; the editor and executable buffers retain 16-bit offsets. `COMPARE_UNSIGNED` supports carry and bounds checks.
 
-The shell reserves RAM bank-one pages 240-247 for sixteen 128-byte history records, page 248 for the draft line, and pages 249-250 for completion scratch. These pages sit above the maximum 61,200-byte file buffer. Programs must preserve this region to retain shell history. History is cleared at guest reboot.
+The shell reserves RAM bank-one pages 240-247 for sixteen 128-byte history records, page 248 for the draft line, and pages 249-250 for completion scratch. These pages sit above the maximum 61,200-byte file buffer. Pages 251, 252 and 253 hold the DOS path, block-copy buffer and document-page history. Programs must preserve this region to retain shell history. History is cleared at guest reboot.
 
 ## Separate device buses
 

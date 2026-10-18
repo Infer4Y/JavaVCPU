@@ -1,56 +1,20 @@
-# Tooling and Disk Workshop
+# Disk Workshop
 
-Disk Workshop is the browser-local tool at `tools/disk-workshop/index.html`. Open that file directly after cloning the project; keep `disk.js` beside it. It requires no web server and uploads nothing. The selected disk is copied into browser memory; edits do not replace the host file automatically.
+Open `tools/disk-workshop/index.html` locally in a modern browser. Keep `disk.js` and `desktop.js` beside it. No server or uploads are needed; edits stay in the browser until a disk download.
 
-![Disk Workshop directory and text source editor](images/workshop-text.png)
+1. Run the updated VM once to create a JVFS disk, then stop it. Older experimental disk formats are reformatted on startup.
+2. Open the 16 MiB `storage.img` in Workshop.
+3. Browse folders, import files, or create text, images and tunes. Apply editor changes to the working copy.
+4. Download the updated disk and replace `storage.img` while the VM is stopped, then restart.
 
-## Import and install files
+JVFS uses one volume per disk with 1 KiB clusters, 24-bit file lengths and growing directories. Files are no longer split between banks. Workshop preserves reserved firmware bytes, validates chains and directory ownership, and stages replacements before freeing the original data. Failed import batches leave the working disk unchanged. Replacement needs temporary free space for the entire new file.
 
-1. Run normal JavaVCPU at least once to install the system and initialize the directory, then stop the VM.
-2. Back up `storage.img` and open Workshop's `index.html` in a modern browser.
-3. Choose **Open storage.img** and select the project's 16 MiB disk.
-4. Choose **Import files**, or **New text file**. For editor changes, choose **Apply to disk**.
-5. Choose **Download updated disk**. The browser downloads `storage-updated.img`.
-6. While the VM is stopped, replace the project's `storage.img` with the downloaded image using that exact name.
-7. Restart JavaVCPU. Use `DIR`, then `RUN`, `VIEW`, `IMAGE` or `PLAY` for the imported file.
+Names have up to 12 uppercase ASCII characters; imports normalize names to an eight-character base and three-character extension. The same name may appear in different folders. Duplicate imports can replace an existing file. Click a folder to enter it and Parent folder to return.
 
-Each selected bank has 255 shared blocks. Files can use linked blocks up to 61,200 bytes, subject to free space. The tool preserves bytes outside its directory and initialization marker, including the BIOS/kernel. An import batch uses a working clone so a failed import does not partially apply the batch.
+Text/JVS supports ASCII and LF newlines; tabs become four spaces. Binary files use raw bytes. PNG/JPEG and other browser-supported images become JI palette images up to 240x240 pixels. Standard MIDI format 0/1 with PPQN timing becomes eight-voice JM note events, preserving tempo changes and running status. Extended tunes can exceed 64 KiB; available disk space sets the limit. The composer accepts `MIDI_NOTE FRAME_DURATION` per line.
 
-## Editor and conversions
+The disk file limit differs from available program RAM: EDIT and fullscreen COM/JVS loading remain bounded to 61,200 bytes; windowed programs use 8 KiB. TYPE/VIEW, COPY/APPEND and music use streaming filesystem services.
 
-Select a directory row to inspect a file. Text / JVS uses ASCII text. Binary / COM, images and tunes use two-digit hex bytes separated by whitespace in the content editor. Choose the correct format when creating a new file. Renaming in the editor requires **Apply to disk**. **Download file** exports only the selected file. **Delete file** edits the browser copy; a disk download is still required.
+Add sample files creates WELCOME.TXT, SMILE.IMG and THEME.JMT. Add JCTRL desktop installs a manual copy in the current folder; the normal VM installer already manages JCTRL.COM in the system root. Manual copies are not automatically updated.
 
-Imported names are normalized to an eight-character base plus a three-character extension, uppercase; unsupported base characters become underscores. The underlying format supports up to 12 name bytes. Duplicate normalized names can replace an existing file, so check the directory after imports.
-
-| Import | Conversion / use |
-| --- | --- |
-| TXT, JVS, BAT, ASM, MD | UTF-8 decoded, then restricted to ASCII; CRLF becomes LF, tabs become four spaces |
-| COM / other binary | Raw bytes; COM must use VM opcodes |
-| PNG, JPEG, GIF, WebP, BMP | Proportional resize to at most 15 by 15, alpha composited on black, palette quantization |
-| MID, MIDI | Standard MIDI format 0/1 with PPQN timing converted to JM events |
-| IMG beginning `JI` | Existing guest image format |
-| JMT | Existing guest music format |
-
-MIDI supports running status, tempo changes, note-on/off and four-note polyphony. Program changes and controller effects are not preserved; percussion becomes noise. More than four simultaneous notes or more than 255 output events requires shortening the input. The tune composer takes `MIDI_NOTE FRAME_DURATION` per line, up to 127 notes; e.g. `60 6`, `64 6`, `67 12` produces `THEME.JMT`.
-
-**Add sample files** adds `WELCOME.TXT`, `SMILE.IMG` and `THEME.JMT`. Use `VIEW WELCOME.TXT`, `IMAGE SMILE.IMG` and `PLAY THEME.JMT` after downloading/installing the disk.
-
-| Palette preview | Short-tune composer |
-| --- | --- |
-| ![Disk Workshop displaying palette image data and preview](images/workshop-image.png) | ![Disk Workshop with the tune composer expanded](images/workshop-tune.png) |
-
-See [Screenshots](Screenshots) for the corresponding guest document, image and playback views.
-
-## Troubleshooting
-
-| Symptom | Check |
-| --- | --- |
-| No supported BIOS header | Start the current VM normally first; a blank or older-format image is rejected |
-| File too large | 61,200 bytes includes media headers and every source newline |
-| Imported file absent in DOS | Apply edits, download disk, stop VM, replace correct working-directory disk, restart |
-| Wrong execution behavior | Inspect file type; text is interpreted, binary is bytecode |
-| Can't type | Focus the display window; hold quotes/backtick long enough for polling |
-| Source error | Uppercase keywords, spaces between arguments, correct physical jump lines |
-| Invalid executable | Import generated COM bytes, not text/hex or host executable bytes |
-
-The converter checks can be run by opening `tools/disk-workshop/test.html`. It exercises the format code in a browser. See [Disk and media formats](Disk-and-media-formats) for byte layouts.
+Open `test.html` beside the tool to run browser-only checks for large files, growing directories, moves, cycles, full-disk preservation and media converters. The disk layout and guest ABI are documented in `docs/wiki/Disk-and-media-formats.md`.

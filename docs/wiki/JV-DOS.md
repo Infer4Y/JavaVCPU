@@ -1,8 +1,8 @@
-# JV-DOS 1.5
+# JV-DOS 2.0
 
 JV-DOS runs as guest bytecode. It provides a shell, persistent named files, an editor, JVS interpretation, COM loading and small media viewers. Commands and filenames should be uppercase. Click the VM window before typing.
 
-Startup uses a short banner and silent keyboard input. `SOUND ON` enables clicks. The prompt shows the selected device and bank, plus the current folder's name when inside a folder: `0:2>` or `0:2:DOCS>`. The folder label is the current folder, not a full ancestry path. `HELP` lists everyday commands in five lines. Programming syntax lives in the [JVS guide](JVS-programming.md); the resident `CODEHELP` command was removed in system revision 22. The advanced commands below remain available even when omitted from `HELP`.
+Startup uses a short banner and silent keyboard input. `SOUND ON` enables clicks. The prompt shows the drive and directory (`0:\DOCS\>`). `HELP` lists everyday commands; programming syntax lives in the [JVS guide](JVS-programming.md). CODEHELP and bank selection have been removed from the shell.
 
 Programs can launch directly: enter `HI.COM`, `DEMO.JVS`, or a bare name such as `HI`. DOS first checks built-in commands, then searches the current folder for the exact filename, then a `.COM` suffix, then `.JVS`. Only executable/source file types launch this way; directories and media require their usual commands. Direct launches accept no arguments and do not extend the COM ABI. JVS source retains its existing restricted statement set.
 
@@ -13,11 +13,11 @@ Programs can launch directly: enter `HI.COM`, `DEMO.JVS`, or a bare name such as
 | Command | Purpose / example |
 | --- | --- |
 | `HELP` | Everyday shell commands |
-| `DRIVE`, `DRIVE N` | Show/select a mounted storage device (0-255); resets to bank 2 root |
+| `DRIVE`, `DRIVE N` | Show/select a mounted storage device (0-255); resets to the volume root |
 | `DIR` | List the current folder; folders show `<DIR>` |
 | `MKDIR NAME`, `MD NAME` | Create a folder |
 | `CD NAME`, `CHDIR NAME` | Enter a child folder |
-| `CD ..`, `CD /`, `CD \` | Go to the parent or bank root |
+| `CD ..`, `CD /`, `CD \` | Go to the parent or volume root |
 | `RMDIR NAME`, `RD NAME` | Remove an empty child folder |
 | `TYPE NAME`, `CAT NAME` | Print file contents directly |
 | `VIEW NAME`, `MORE NAME` | Read a document with navigation |
@@ -27,7 +27,7 @@ Programs can launch directly: enter `HI.COM`, `DEMO.JVS`, or a bare name such as
 | `COPY OLD NEW` | Copy to a new name |
 | `REN OLD NEW`, `RENAME OLD NEW` | Rename a file to an unused name |
 | `MOVE NAME DEST` | Move a file/folder into a sibling folder, or rename it to an unused name |
-| `MOVE NAME ..`, `MOVE NAME /` | Move a file/folder to its parent or bank root |
+| `MOVE NAME ..`, `MOVE NAME /` | Move a file/folder to its parent or volume root |
 | `DEL NAME`, `ERASE NAME`, `DELETE NAME` | Delete a file |
 | `SAVE NAME HEX` | Create binary content from uppercase hex byte pairs |
 | `JCTRL` | Launch the bundled desktop on system disk 0 |
@@ -42,13 +42,15 @@ Programs can launch directly: enter `HI.COM`, `DEMO.JVS`, or a bare name such as
 | `REBOOT` | Restart the resident guest boot routine |
 | `EXIT` | Halt the CPU |
 
-Each disk bank provides 255 shared blocks. Names have up to 12 characters. Files use one or more linked blocks and can hold up to 61,200 bytes, subject to available bank space. Folders can nest and share the bank?s block pool; each folder consumes one block. Names are unique within a folder, so different folders can contain files with the same name. File commands accept a single name in the current folder; navigate with `CD` instead of supplying a multi-component path. `MOVE` accepts folders as well as files. `DEL` and the ordinary content commands reject folders; use `RMDIR` after removing their contents. The CLI and source reader have a 100-character line limit; use Workshop to import longer documents or binary files. `COPY`/`REN` report `DESTINATION EXISTS` if the target name is taken. `MOVE` also rejects collisions and directory cycles; it changes only names or parent metadata, leaving linked file data untouched. Its source and destination must be on the same bank/device; multi-component paths are not accepted. Moving metadata does not need the file buffer, so large files can also be moved from the desktop DOS window. These commands use the same resident parser in both shells.
+Each drive has one JVFS volume. Names use up to 12 uppercase letters, digits, dots, underscores or hyphens; names cannot begin with a dot. Directories grow across 1 KiB clusters and can contain more than 255 entries. Files have 24-bit lengths and share the full disk. TYPE/VIEW, COPY/APPEND and PLAY stream files rather than loading them entirely into RAM. COPY needs a new name; replacement writes and APPEND need enough temporary space for the replacement chain.
+
+Commands accept a single name in the current folder. Navigate with CD rather than multi-component paths. `CD .` stays put; `CD ..` goes to the parent; `CD /` selects root. MOVE accepts a sibling folder, parent/root, or an unused new name, and rejects cycles and collisions. DEL rejects folders; RD removes empty folders. CLI and JVS source lines remain limited to 100 characters.
 
 ## Editor and viewers
 
 `EDIT DEMO.JVS` opens the guest source editor. Arrow keys move; Home/End navigate the line; Backspace and Delete remove characters; Enter inserts a newline; Tab indents. Esc **saves and leaves**. It is not a cancel operation. The editor highlights source text.
 
-The document pager uses Up/Down, Page Up/Page Down, Space/Enter and Home; Esc closes it. Image viewing closes with Esc, Enter or Q. Esc stops music and silences its voices. A running JVS program checks for Esc between statements.
+The document pager uses Down, Page Down or Space/Enter for the next page, Up/Page Up for the previous page, and Home for the beginning; Esc closes it. It retains the last 85 page starts. Image viewing closes with Esc, Enter or Q. Esc stops music and silences its voices. A running JVS program checks for Esc between statements.
 
 | Source editor | Document pager |
 | --- | --- |
@@ -64,21 +66,19 @@ The [screenshot gallery](Screenshots) also shows startup, programming help and p
 
 See [JVS programming](JVS-programming), [COM programming](COM-programming), and [Tooling and Disk Workshop](Tooling-and-Disk-Workshop).
 
-`JCTRL` launches the desktop bundled with DOS, from its managed bank on system disk 0. Startup installs it into an empty bank and updates unchanged managed copies automatically. Manual and modified copies are preserved. See [the desktop guide](Experimental-desktop.md).
+`JCTRL` launches the managed desktop from the root of system disk 0. Startup installs and updates an unchanged managed copy. Manual and modified copies are preserved. See [the desktop guide](Experimental-desktop.md).
 
-## Disk banks (JV-DOS 1.3)
+## Storage and RAM limits
 
-The disk has 254 file banks, numbered 2-255, with 255 blocks shared by all files in each bank. `BANK` shows the selected bank. `BANK +` and `BANK -` move one bank at a time and stop at the boundaries. Reboot returns to bank 2. Existing files remain in bank 2; no disk conversion is required. All file commands use the selected bank and current folder, and COPY/REN stay within that folder. Changing banks resets the current folder to root. Reboot also resets the folder to root while preserving folders and files. Larger files consume multiple blocks; small files retain their existing layout.
+JVFS replaces the old per-bank format. System revision 23 reformats old experimental test disks on startup; no migration is included. The CPU and storage instructions are unchanged. See [the byte format and service ABI](Disk-and-media-formats.md).
 
-The backing hard drive remains 16 MiB because the CPU uses a three-byte disk address. DOS now uses most of that space through linked file blocks. The Java DOS image assembler lives in `xyz.ignite4inferneo.jvdos`; CPU and device code remain in `xyz.ignite4inferneo`.
-
-The editor buffers files in RAM bank 1, supports 16-bit cursor positions, and commits on Esc. When the bank is full, the existing disk file stays unchanged and the editor retains its buffer for shortening and retrying. TYPE/VIEW, COPY, APPEND, REN, DEL, JVS RUN and COM RUN support linked files.
+EDIT and fullscreen executable/source loading still use a bounded 61,200-byte RAM buffer. Inside JCTRL the application buffer remains 8 KiB. Oversized loads report an error. A failed editor save keeps the old disk file and retains the buffer for shortening and retrying. These RAM limits do not restrict streaming commands or file moves.
 
 ## Shell history and completion
 
 At the DOS prompt, Up recalls older commands and Down moves toward newer commands. The last 16 submitted, nonempty interactive lines are kept until reboot. Moving Down past the newest entry restores the line you were drafting, including its cursor position. Recalled commands can be edited and submitted again. JVS statements and editor text are not added to history.
 
-Tab completes the word at the cursor. Repeated Tab cycles matching command names, or names in the current folder of the selected disk bank for file-command arguments (including both COPY/REN filenames). The rest of the input line is preserved. A completed final word receives a trailing space. Unmatched prefixes and replacements that exceed the 100-character line limit leave the line unchanged. Typing or moving the cursor starts a new completion search. In EDIT, Up/Down still navigate the document and Tab inserts four spaces.
+Tab completes the word at the cursor. Repeated Tab cycles matching command names, or names in the current folder of the selected drive for file-command arguments (including both COPY/REN filenames). The rest of the input line is preserved. A completed final word receives a trailing space. Unmatched prefixes and replacements that exceed the 100-character line limit leave the line unchanged. Typing or moving the cursor starts a new completion search. In EDIT, Up/Down still navigate the document and Tab inserts four spaces.
 
 ## Reading the kernel source
 
@@ -86,29 +86,7 @@ Tab completes the word at the cursor. Repeated Tab cycles matching command names
 
 A-D hold working values, E/F support existing addressing sequences, and G/H implement far branches and the COM entry stubs. I/J handle indirect RAM reads without overwriting A-H. K/L hold glyph pixel coordinates, avoiding temporary RAM writes during rendering. M-P are available for future routines. Helpers can overwrite their documented scratch registers; guest JVS variables A-P live separately at bank 0, page 252, offsets 224-239.
 
-The register parser converts letters A-P directly into variable indices. `RUN` clears all sixteen JVS variables. Existing COM entry points and disk file layouts are unchanged. System-image revision 22 triggers installation of the updated kernel on next startup while preserving user files.
-
-One compact guest command dictionary supplies dispatch, command completion, and filename-completion eligibility. It replaces separate generated comparisons and command-selection branches. Including the BIOS and resident code/data below the reserved service pages, the used span drops from 245 to 182 pages (62,720 to 46,592 bytes). Removing resident programming help and shortening command help saved another 1,280 bytes after the initial reduction to 47,872 bytes. This leaves more unused bank-zero space; the machine still has 128 KiB RAM and the boot image retains its fixed service/state addresses and page count. Disk images remain 16 MiB with the existing file layout.
-
-## Folder storage
-
-The existing file headers and linked data blocks retain their layout. Directory headers use type 4, zero length and no continuation. The reserved page 255 in each file bank stores parent IDs at offsets 1-255, indexed by head slot plus one. ID 0 means root; other IDs identify a directory slot plus one. Offset 0 retains the existing initialization marker. Existing flat images have zero parent metadata and open as root files without conversion. Directory entries and file data share the 255 allocatable blocks; continuation ownership validation still covers the entire bank.
-
-For example:
-
-```text
-MKDIR DOCS
-CD DOCS
-WRITE NOTES.TXT HELLO
-MKDIR DRAFTS
-CD DRAFTS
-WRITE NOTES.TXT DRAFT
-CD ..
-DIR
-CD /
-```
-
-Additional disks are mounted with program arguments such as `--disk=1=secondary.img`. Each has independent banks and folders. The guest TCP network controller and sample program are described in [Peripheral buses](Peripheral-buses).
+The kernel emits ordinary VCPU instructions. `GuestFileSystem.java` provides the shared driver; `DosFileSystem.java` and `DesktopFileSystem.java` are guest clients. Installation and Workshop implement the same disk format independently. The compact command dictionary, trimmed HELP and resident glyph renderer remain shared.
 
 ## Experimental desktop
 
@@ -116,6 +94,6 @@ Run `RUN JCTRL.COM` after adding it through Disk Workshop. The [desktop guide](E
 
 ## Startup script
 
-After DOS initializes, it runs `AUTOEXEC.JVS` from the root of bank 2 on system disk 0, if present. This also runs on `REBOOT`. Create it with `EDIT AUTOEXEC.JVS` while in that bank and folder; Esc saves. It uses the normal JVS language and returns to the prompt when finished. Esc between statements stops it. Delete or rename the file to disable it.
+After DOS initializes, it runs `AUTOEXEC.JVS` from the volume root on system disk 0, if present. This also runs on `REBOOT`. Create it with `EDIT AUTOEXEC.JVS` while in the system root; Esc saves. It uses the normal JVS language and returns to the prompt when finished. Esc between statements stops it. Delete or rename the file to disable it.
 
 For an automatic desktop launch, use `WRITE AUTOEXEC.JVS JCTRL`. `JCTRL` ends the current script and launches the bundled desktop; closing the desktop returns to DOS.

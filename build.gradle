@@ -30,7 +30,7 @@ tasks.register('compileStorageRegression', JavaCompile) {
 tasks.register('storageRegression', JavaExec) {
     dependsOn compileStorageRegression
     classpath = files(regressionClasses)
-    mainClass = 'xyz.ignite4inferneo.DosStorageRegression'
+    mainClass = 'xyz.ignite4inferneo.JvFsRegression'
     args layout.buildDirectory.file('storage-regression.img').get().asFile.absolutePath
 }
 check.dependsOn storageRegression

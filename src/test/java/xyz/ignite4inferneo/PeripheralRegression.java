@@ -15,13 +15,14 @@ public final class PeripheralRegression {
         Files.deleteIfExists(second); Storage.mount(1,second);
         byte[] saved=Main.REGISTERS.clone();
         try {
+            byte bootLast=Storage.readData((byte)255,(byte)255,(byte)255);
             Arrays.fill(Main.REGISTERS,(byte)0);
             Main.REGISTERS[10]=1; Main.REGISTERS[0]=(byte)255;
             Main.REGISTERS[1]=(byte)255; Main.REGISTERS[2]=(byte)255; Main.REGISTERS[3]=42;
             Main.writeStorage((byte)0,(byte)1,(byte)2,(byte)3);
             Main.readStorage((byte)0,(byte)1,(byte)2,(byte)10);
             check(Main.REGISTERS[10]==42,"CPU storage selector alias");
-            check(Storage.readData((byte)255,(byte)255,(byte)255)==123,"boot disk isolated");
+            check(Storage.readData((byte)255,(byte)255,(byte)255)==bootLast,"boot disk isolated");
             Storage.save(); Storage.mount(1,second);
             check(Storage.readData(1,(byte)255,(byte)255,(byte)255)==42,"second disk persistence");
             Main.REGISTERS[10]=1; Main.readInput((byte)0x40,(byte)4);

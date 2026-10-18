@@ -14,7 +14,7 @@ public final class DiskInstaller {
     private static final byte BOOTSTRAP_PAGE = (byte) 255;
     // Bump this when the resident opcode image changes so an earlier boot image is replaced.
     // User files live well beyond IMAGE_OFFSET and are therefore preserved during that update.
-    private static final byte[] MAGIC = new byte[] {'J', 'V', 'C', 'P', 'M', 22};
+    private static final byte[] MAGIC = new byte[] {'J', 'V', 'C', 'P', 'M', 23};
 
     private DiskInstaller() {
     }
@@ -22,6 +22,17 @@ public final class DiskInstaller {
     /** Updates firmware, the resident OS and its managed desktop before guest execution. */
     public static void installIfMissing() throws IOException {
         boolean changed=false;
+        // Old experimental bank images are deliberately reformatted. The boot
+        // reservation stays outside the JVFS allocation pool.
+        for(int device=0;device<256;device++)if(Storage.isMounted(device)) {
+            var volume=xyz.ignite4inferneo.jvdos.JvFileSystem.device(device);
+            if(!volume.formatted()) {
+                volume.format();changed=true;
+                if(device==0)volume.put(xyz.ignite4inferneo.jvdos.JvFileSystem.ROOT,"HELLO.COM",
+                        xyz.ignite4inferneo.jvdos.JvDosImage.helloProgram(),0);
+                IO.println("Formatted JVFS 1 on device "+device);
+            }
+        }
         if (!isInstalled()) {
             byte[][] pages=Programs.bootImage();
             if(pages.length>255)throw new IllegalStateException("Boot image exceeds the available page count");

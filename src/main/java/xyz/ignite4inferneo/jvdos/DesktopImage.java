@@ -2,6 +2,7 @@ package xyz.ignite4inferneo.jvdos;
 
 import xyz.ignite4inferneo.OPCode;
 import static xyz.ignite4inferneo.OPCode.*;
+import static xyz.ignite4inferneo.jvdos.DesktopFileSystem.*;
 import java.util.*;
 import java.nio.file.*;
 
@@ -11,9 +12,9 @@ import java.nio.file.*;
  */
 public final class DesktopImage {
     private DesktopImage() { }
-    private static final int A=0,B=1,C=2,D=3,E=4,F=5,G=6,H=7,I=12,J=13,K=14,L=15,M=16,N=17,O=18,P=19;
-    private static final int STATE=224, MAP=227, SEEN=226;
-    private static final int MX=0,MY=1,OLDX=2,OLDY=3,BUTTON=4,OLD_BUTTON=5,DRAG=6,DX=7,DY=8,
+    static final int A=0,B=1,C=2,D=3,E=4,F=5,G=6,H=7,I=12,J=13,K=14,L=15,M=16,N=17,O=18,P=19;
+    static final int STATE=224, MAP=227, SEEN=226;
+    static final int MX=0,MY=1,OLDX=2,OLDY=3,BUTTON=4,OLD_BUTTON=5,DRAG=6,DX=7,DY=8,
         ACTIVE=9,Z0=10,Z1=11,Z2=12,KEY=13,WHEEL=14,BANK=15,CWD=16,INFO=17,
         RX=18,RY=19,RW=20,RH=21,COLOR=22,ROW=23,COL=24,TX=25,TY=26,INK=27,CHAR=28,
         STRING_PAGE=29,STRING_OFFSET=30,GLYPH_PAGE=31,GLYPH_OFFSET=32,GLYPH_ROW=33,STRING_COUNT=34,BITS=35,
@@ -24,7 +25,7 @@ public final class DesktopImage {
         RETURN_FILES=72,RETURN_VIEW=74,RETURN_READ=76;
     // Guest-only application state. Program RAM: bank one 128..159 (8 KiB).
     // Application pixels: 160..223 (128x128 bytes). Virtual registers: 228.
-    private static final int RUN=256,APP=257,FILE_LO=258,FILE_HI=259,LOAD_LO=260,LOAD_HI=261,
+    static final int RUN=256,APP=257,FILE_LO=258,FILE_HI=259,LOAD_LO=260,LOAD_HI=261,
         OPC=262,OA=263,OB=264,OC=265,OD=266,AV=267,BV=268,CV=269,DV=270,ILEN=271,
         ADDRESS=272,PAGE=273,VBANK=274,VALUE=275,PX=276,PY=277,PCOLOR=278,
         FRAME_PAGE=279,FRAME_OFFSET=280,BUDGET=281,APP_KEY=282,APP_WHEEL=283,
@@ -34,8 +35,8 @@ public final class DesktopImage {
         FRAMES=301,VOICE=302,NOTE=303,CONTROL=304,VERSION=305,EVENTS=306,MAPPED=307,FETCH_COUNT=308,DIRTY=317,
         RET_INIT=320,RET_LOAD=322,RET_STEP=324,RET_FETCH=326,RET_MEMORY=328,
         RET_PIXEL=330,RET_FRAME=332,RET_CLEAR=334,RET_PRINT=336,RET_IMAGE=338,RET_NUMBER=340,RET_HEX=354,SELECTED=356,HDEPTH=357,MBANK=358,QHEAD=359,QTAIL=360,SLICE=361,FSOURCE=362,FDOWN=363,FDRAG=364,FTARGET=365,FCOUNT=366,FNAME=367,FSX=368,FSY=369,FCAND=370,DRAFT=371,SWAIT=372,SHELLDRIVE=373,SHELLUSED=374;
-    private static final int WIDTH=216,HEIGHT=168;
-    private static final int CURSOR_INK=375,CURSOR_SHADOW=376;
+    static final int WIDTH=216,HEIGHT=168;
+    static final int CURSOR_INK=375,CURSOR_SHADOW=376;
     record Compilation(byte[] bytes,int baselineBytes,int passes,int localJumps,int localConditionals,int farBranches) { }
     private static final Compilation COMPILED=assembleOptimized(DesktopImage::emitProgram);
     private static final byte[] IMAGE=COMPILED.bytes();
@@ -78,6 +79,7 @@ public final class DesktopImage {
         s.label("entry");
         // Require the stable resident graphics ABI before calling any shared code.
         for(int i=0;i<3;i++){s.emit(LOAD_MEM_ABSOLUTE,0,JvDosServices.PAGE,JvDosServices.GRAPHICS_SIGNATURE+i,A);s.notEqual(A,new int[]{'J','G',JvDosServices.GRAPHICS_VERSION}[i],"incompatible");}
+        for(int i=0;i<3;i++){s.emit(LOAD_MEM_ABSOLUTE,0,249,39+i,A);s.notEqual(A,new int[]{'J','F',1}[i],"incompatible");}
         s.jump("compatible");s.label("incompatible");s.store(0,A);s.store(249,B);s.store(9,C);s.emit(CHANGE_BANK_PAGE_JUMP,A,B,C);s.label("compatible");
         // Copy only literal pages actually loaded above 127. Compact images skip this entirely.
         s.store(1,A);s.store(128,B);s.imagePages(F);s.store(234,E);s.store(0,C);
@@ -94,7 +96,7 @@ public final class DesktopImage {
         s.store(0,A);s.emit(ADD,10,A,A);s.put(A,DRIVE);
         // Copy the shell bank and folder for the explorer.
         s.emit(LOAD_MEM_ABSOLUTE,0,252,220,A);s.put(A,BANK);
-        s.emit(LOAD_MEM_ABSOLUTE,0,253,70,A);s.put(A,CWD);
+        s.emit(LOAD_MEM_ABSOLUTE,0,253,70,A);s.put(A,CWD);s.emit(LOAD_MEM_ABSOLUTE,0,253,97,A);s.put(A,CWD_H);
         for(int w=0;w<3;w++) {s.set(160+w*8,8+w*12);s.set(161+w*8,24+w*12);s.set(162+w*8,w==0?1:0);}
         s.set(Z0,1);s.set(Z1,2);s.set(Z2,0);s.set(ACTIVE,0);s.set(DRAG,255);
         s.set(OLD_BUTTON,1);s.set(FILE_START,0);s.set(INFO,0);s.set(TARGET,0);s.set(TARGET_H,0);
@@ -157,49 +159,11 @@ public final class DesktopImage {
         s.label("about");s.set(INFO,0);
         s.label("info.open");s.set(ACTIVE,2);s.store(1,A);s.windowPut(2,A);s.raise();s.jump("paint");
         s.label("files.open");s.set(FDOWN,0);s.set(ACTIVE,0);s.store(1,A);s.windowPut(2,A);s.raise();s.jump("paint");
-        s.label("files.home");s.set(HDEPTH,0);s.set(SELECTED,0);s.set(FILE_START,0);s.jump("paint");
-        s.label("files.next");s.get(A,NEXT_SLOT);s.equal(A,255,"mouse");s.get(C,HDEPTH);s.equal(C,255,"paint");s.get(D,FILE_START);s.store(1,A);s.store(229,B);s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.emit(INCREMENT_REGISTER,C);s.put(C,HDEPTH);s.get(A,NEXT_SLOT);s.put(A,FILE_START);s.set(SELECTED,0);s.jump("paint");
-        s.label("files.previous");s.get(C,HDEPTH);s.equal(C,0,"paint");s.store(1,B);s.emit(SUB,C,B,C);s.put(C,HDEPTH);s.store(1,A);s.store(229,B);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.put(D,FILE_START);s.set(SELECTED,0);s.jump("paint");
-        s.label("files.select.up");s.get(A,SELECTED);s.equal(A,0,"paint");s.store(1,B);s.emit(SUB,A,B,A);s.put(A,SELECTED);s.jump("paint");
-        s.label("files.select.down");s.get(A,SELECTED);s.emit(INCREMENT_REGISTER,A);s.get(B,FILE_ROW);s.emit(COMPARE_UNSIGNED,A,B,C);s.notEqual(C,1,"paint");s.put(A,SELECTED);s.jump("paint");
-        s.label("files.select.open");s.get(C,SELECTED);s.jump("files.map");
-        s.label("files.up");s.set(HDEPTH,0);s.set(SELECTED,0);s.get(C,CWD);s.equal(C,0,"paint");s.get(A,BANK);s.store(255,B);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.put(D,CWD);s.set(FILE_START,0);s.jump("paint");
-        s.label("files.click");s.get(A,HITY);s.less(A,26,"files.buttons");
-        s.store(28,B);s.emit(COMPARE_UNSIGNED,A,B,C);s.equal(C,1,"paint");s.emit(SUB,A,B,A);s.set(TEMP,0);
-        s.label("files.rowhit");s.less(A,6,"files.rowfound");s.store(6,B);s.emit(SUB,A,B,A);s.get(B,TEMP);s.emit(INCREMENT_REGISTER,B);s.put(B,TEMP);s.jump("files.rowhit");
-        s.label("files.rowfound");s.get(C,TEMP);s.less(C,22,"files.map");s.jump("paint");
-        s.label("files.map");s.put(C,SELECTED);s.store(1,A);s.store(MAP,B);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.equal(D,255,"paint");s.put(D,SLOT);s.get(A,BUTTON);s.equal(A,1,"files.press");
-        s.label("files.open.selected");s.diskRead(13,D);s.put(D,TYPE);s.equal(D,4,"files.enter");s.call("app.stop",RET_STEP);s.set(APP,0);s.set(ACTIVE,1);s.store(1,A);s.windowPut(2,A);s.raise();
-        s.get(A,SLOT);s.put(A,VIEW_HEAD);s.set(TARGET,0);s.set(TARGET_H,0);
-        s.get(A,TYPE);s.notEqual(A,1,"app.open");s.jump("paint");
-        for(int action=1;action<=4;action++) {s.label(new String[]{"files.rename","files.mkdir","files.copy","files.delete"}[action-1]);s.set(DRAFT,action);s.jump("files.operation");}
-        s.label("files.operation");s.get(A,APP);s.notEqual(A,5,"files.operation.ready");s.get(A,RUN);s.equal(A,0,"files.operation.ready");s.get(A,SWAIT);s.notEqual(A,1,"files.operation.cancel");s.emit(LOAD_MEM_ABSOLUTE,0,252,139,A);s.notEqual(A,0,"files.operation.cancel");s.emit(LOAD_MEM_ABSOLUTE,0,252,176,A);s.notEqual(A,0,"files.operation.cancel");s.vreadLiteral(11,A);s.notEqual(A,0,"files.operation.cancel");s.vreadLiteral(9,A);s.equal(A,248,"files.operation.cancel");s.label("files.operation.ready");s.get(A,DRAFT);s.equal(A,2,"shell.open");s.get(C,SELECTED);s.store(1,A);s.store(MAP,B);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.equal(D,255,"files.operation.cancel");s.put(D,FSOURCE);s.jump("shell.open");s.label("files.operation.cancel");s.set(DRAFT,0);s.jump("paint");
-        s.label("files.press");s.get(A,SLOT);s.put(A,FSOURCE);s.get(A,MX);s.put(A,FSX);s.get(A,MY);s.put(A,FSY);s.set(FDOWN,1);s.set(FDRAG,0);s.jump("paint");
-        s.label("files.drag.poll");s.get(A,BUTTON);s.notEqual(A,1,"files.drop");s.get(A,MX);s.get(B,FSX);s.ne(A,B,"files.drag.moved");s.get(A,MY);s.get(B,FSY);s.eq(A,B,"mouse.cursor");s.label("files.drag.moved");s.set(FDRAG,1);s.jump("mouse.cursor");
-        s.label("files.drop");s.set(FDOWN,0);s.set(OLD_BUTTON,0);s.get(A,FSOURCE);s.put(A,SLOT);s.get(A,FDRAG);s.equal(A,0,"files.open.selected");
-        // Drop coordinates are relative to Files, independent of the application window.
-        s.get(A,MX);s.get(B,160);s.emit(COMPARE_UNSIGNED,A,B,C);s.equal(C,1,"paint");s.emit(SUB,A,B,A);s.less(A,WIDTH,"files.drop.x");s.jump("paint");
-        s.label("files.drop.x");s.get(A,MY);s.get(B,161);s.emit(COMPARE_UNSIGNED,A,B,C);s.equal(C,1,"paint");s.emit(SUB,A,B,A);s.less(A,28,"paint");s.less(A,160,"files.drop.y");s.jump("paint");
-        s.label("files.drop.y");s.store(28,B);s.emit(SUB,A,B,A);s.store(0,C);
-        s.label("files.drop.row");s.less(A,6,"files.drop.map");s.store(6,B);s.emit(SUB,A,B,A);s.emit(INCREMENT_REGISTER,C);s.jump("files.drop.row");
-        s.label("files.drop.map");s.store(1,A);s.store(MAP,B);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.equal(D,255,"paint");s.get(A,FSOURCE);s.eq(A,D,"paint");s.put(D,SLOT);s.diskRead(13,D);s.notEqual(D,4,"paint");s.get(A,SLOT);s.emit(INCREMENT_REGISTER,A);s.put(A,FTARGET);
-        // Reject cycles, including corrupt existing ancestry, before changing a directory parent.
-        s.put(A,FCOUNT);s.set(FCAND,0);
-        s.label("files.drop.ancestor");s.get(C,FCOUNT);s.equal(C,0,"files.drop.names");s.get(A,FSOURCE);s.emit(INCREMENT_REGISTER,A);s.eq(A,C,"paint");s.get(A,BANK);s.store(255,B);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.put(D,FCOUNT);s.get(A,FCAND);s.emit(INCREMENT_REGISTER,A);s.put(A,FCAND);s.equal(A,255,"paint");s.jump("files.drop.ancestor");
-        s.label("files.drop.names");s.set(FCAND,0);
-        s.label("files.drop.scan");s.get(A,FCAND);s.equal(A,255,"files.drop.commit");s.put(A,SLOT);s.diskRead(1,D);s.equal(D,0,"files.drop.next");s.equal(D,255,"files.drop.next");s.get(C,FCAND);s.emit(INCREMENT_REGISTER,C);s.get(A,BANK);s.store(255,B);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.get(A,FTARGET);s.ne(A,D,"files.drop.next");s.set(FNAME,1);
-        s.label("files.drop.compare");s.get(C,FNAME);s.get(A,BANK);s.get(B,FSOURCE);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.put(D,FCOUNT);s.get(B,FCAND);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.get(A,FCOUNT);s.ne(A,D,"files.drop.next");s.equal(A,0,"paint");s.get(A,FNAME);s.emit(INCREMENT_REGISTER,A);s.put(A,FNAME);s.notEqual(A,13,"files.drop.compare");s.jump("paint");
-        s.label("files.drop.next");s.get(A,FCAND);s.emit(INCREMENT_REGISTER,A);s.put(A,FCAND);s.jump("files.drop.scan");
-        s.label("files.drop.commit");s.get(C,FSOURCE);s.emit(INCREMENT_REGISTER,C);s.get(A,BANK);s.store(255,B);s.get(D,FTARGET);s.emit(WRITE_BYTE_TO_STORAGE,A,B,C,D);s.jump("files.home");
-        s.label("files.enter");s.set(HDEPTH,0);s.set(SELECTED,0);s.get(A,SLOT);s.emit(INCREMENT_REGISTER,A);s.put(A,CWD);s.set(FILE_START,0);s.jump("paint");
-        s.label("files.buttons");s.get(A,HITX);s.less(A,32,"files.up");s.less(A,72,"files.next");s.less(A,112,"files.home");s.less(A,154,"files.bank.minus");s.jump("files.bank.plus");
-        s.label("files.bank.minus");s.get(A,BANK);s.equal(A,2,"paint");s.store(255,B);s.jump("files.bank.change");
-        s.label("files.bank.plus");s.get(A,BANK);s.equal(A,255,"paint");s.store(1,B);
-        s.label("files.bank.change");s.emit(ADD,A,B,A);s.put(A,BANK);s.set(HDEPTH,0);s.set(SELECTED,0);s.get(A,BANK);s.put(A,BANK);s.set(CWD,0);s.set(FILE_START,0);s.set(170,0);s.set(APP,0);s.call("app.stop",RET_STEP);s.jump("paint");
+        DesktopFileSystem.navigation(s);
         s.label("viewer.click");s.get(A,APP);s.equal(A,5,"paint");s.get(A,HITY);s.less(A,26,"viewer.buttons");s.jump("paint");
         s.label("viewer.buttons");s.get(A,HITX);s.less(A,64,"viewer.home");s.less(A,132,"viewer.next");s.jump("app.open");
-        s.label("viewer.home");s.set(TARGET,0);s.set(TARGET_H,0);s.jump("paint");
-        s.label("viewer.next");s.get(A,NEXT);s.put(A,TARGET);s.get(A,NEXT_H);s.put(A,TARGET_H);s.jump("paint");
+        s.label("viewer.home");s.set(TARGET,0);s.set(TARGET_H,0);s.set(TARGET_TOP,0);s.jump("paint");
+        s.label("viewer.next");s.get(A,NEXT);s.put(A,TARGET);s.get(A,NEXT_H);s.put(A,TARGET_H);s.get(A,NEXT_TOP);s.put(A,TARGET_TOP);s.jump("paint");
         s.label("paint");s.set(DIRTY,0);s.emit(CLEAR_GRA);
         s.rect(0,0,0,0,9);s.rect(0,0,0,16,5);s.rect(0,240,0,16,1);
         s.at(20,5);s.text("FILES           ABOUT           HELP          EXIT DOS");
@@ -224,18 +188,18 @@ public final class DesktopImage {
 
         s.relative(5,3);s.get(A,ACTIVE);s.equal(A,0,"window.files");s.equal(A,1,"window.view");
         s.text("SYSTEM / HELP");s.jump("window.title.done");
-        s.label("window.files");s.text("FILES");s.relative(124,3);s.text("BANK 0X");s.get(A,BANK);s.store(0,B);
+        s.label("window.files");s.text("FILES");s.relative(124,3);s.text("DRIVE 0X");s.get(A,DRIVE);s.store(0,B);
         s.label("files.bank.digit");s.less(A,16,"files.bank.hex");s.store(16,C);s.emit(SUB,A,C,A);s.emit(INCREMENT_REGISTER,B);s.jump("files.bank.digit");
         s.label("files.bank.hex");s.put(A,TEMP);s.put(B,OFFSET);s.get(A,OFFSET);s.put(A,CHAR);s.call("files.hex",RET_HEX);s.get(A,TEMP);s.put(A,CHAR);s.call("files.hex",RET_HEX);s.jump("window.title.done");
         s.label("window.view");s.get(A,APP);s.equal(A,5,"window.shell.title");s.text("APPLICATION");s.jump("window.title.done");s.label("window.shell.title");s.text("DOS CONSOLE");
         s.label("window.title.done");s.relative(WIDTH-9,3);s.text("X");
         s.get(A,ACTIVE);s.equal(A,0,"window.dir");s.equal(A,1,"window.reader");
         s.get(A,INFO);s.equal(A,1,"window.help");
-        s.relative(6,22);s.text("JV-DOS 1.5 / JCTRL");s.relative(6,34);s.text("128K RAM / 8K PROGRAM WORKSPACE");
+        s.relative(6,22);s.text("JV-DOS 2.0 / JCTRL");s.relative(6,34);s.text("128K RAM / 8K PROGRAM WORKSPACE");
         s.relative(6,46);s.text("F2 FILES / F4 DOS / ESC RETURN");
         s.jump("window.done");
         s.label("window.help");
-        String[] help={"DRAG TITLE; DROP FILE ON FOLDER","F4: REAL DOS; CLICK TO FOCUS","F6 REN; F7 MKDIR; F8 COPY; DEL","BANK- / BANK+: CHANGE FILE BANK"};
+        String[] help={"DRAG TITLE; DROP FILE ON FOLDER","F4: REAL DOS; CLICK TO FOCUS","F6 REN; F7 MKDIR; F8 COPY; DEL","DRIVE- / DRIVE+: SELECT DISK"};
         for(int line=0;line<help.length;line++){s.relative(6,20+line*12);s.text(help[line]);}
         s.jump("window.done");
         s.label("window.dir");s.call("files.draw",RETURN_FILES);s.jump("window.done");
@@ -246,41 +210,13 @@ public final class DesktopImage {
         s.store(0,A);s.store(249,B);s.store(9,C);s.emit(CHANGE_BANK_PAGE_JUMP,A,B,C);
     }
 
-    private static void emitFiles(Asm s) {
-        s.label("files.hex");s.get(A,CHAR);String digit=s.unique("hex.digit"),print=s.unique("hex.print");s.less(A,10,digit);s.store(55,B);s.jump(print);s.label(digit);s.store('0',B);s.label(print);s.emit(ADD,A,B,A);s.put(A,CHAR);s.call("glyph",RETURN_GLYPH);s.ret(RET_HEX);
-        s.label("files.draw");
-        s.relative(12,16);s.text("UP     NEXT      HOME      BANK-       BANK+");
-        s.set(LOOP,0);
-        s.label("files.clear");s.get(C,LOOP);s.store(255,D);s.store(1,A);s.store(MAP,B);s.emit(STORE_MEM_ON_BANK,D,A,B,C);
-        s.get(A,LOOP);s.emit(INCREMENT_REGISTER,A);s.put(A,LOOP);s.notEqual(A,22,"files.clear");
-        s.get(A,FILE_START);s.put(A,SLOT);s.set(FILE_ROW,0);s.set(NEXT_SLOT,255);
-        s.label("files.scan");s.get(A,SLOT);s.equal(A,255,"files.done");s.diskRead(1,D);
-        s.equal(D,0,"files.advance");s.equal(D,255,"files.advance");
-        s.get(C,SLOT);s.emit(INCREMENT_REGISTER,C);s.get(A,BANK);s.store(255,B);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);
-        s.get(A,CWD);s.ne(D,A,"files.advance");
-        s.get(A,FILE_ROW);s.equal(A,22,"files.more");
-        s.get(D,SLOT);s.get(C,FILE_ROW);s.store(1,A);s.store(MAP,B);s.emit(STORE_MEM_ON_BANK,D,A,B,C);
-        s.windowGet(0,A);s.store(6,B);s.emit(ADD,A,B,A);s.put(A,TX);
-        s.get(A,FILE_ROW);s.store(6,B);s.emit(MULTIPLY,A,B,A);s.windowGet(1,B);s.emit(ADD,A,B,A);s.store(28,B);s.emit(ADD,A,B,A);s.put(A,TY);
-        s.set(INK,127);s.get(A,FILE_ROW);s.get(B,SELECTED);String unselected=s.unique("files.unselected");s.ne(A,B,unselected);s.set(INK,96);s.label(unselected);
-        s.set(OFFSET,1);
-        s.label("files.name");s.get(C,OFFSET);s.diskReadAt(C,D);s.equal(D,0,"files.type");s.put(D,CHAR);s.call("glyph",RETURN_GLYPH);
-        s.get(A,OFFSET);s.emit(INCREMENT_REGISTER,A);s.put(A,OFFSET);s.notEqual(A,13,"files.name");
-        s.label("files.type");s.windowGet(0,A);s.store(68,B);s.emit(ADD,A,B,A);s.put(A,TX);
-        s.diskRead(13,D);s.equal(D,4,"files.dir");s.equal(D,1,"files.txt");s.equal(D,2,"files.image");s.equal(D,3,"files.music");s.text("COM PROGRAM");s.jump("files.rowdone");
-        s.label("files.image");s.text("PALETTE IMAGE");s.jump("files.rowdone");s.label("files.music");s.text("MUSIC");s.jump("files.rowdone");s.label("files.dir");s.text("<DIR>");s.jump("files.rowdone");s.label("files.txt");s.text("TEXT");
-        s.label("files.rowdone");s.get(A,FILE_ROW);s.emit(INCREMENT_REGISTER,A);s.put(A,FILE_ROW);
-        s.label("files.advance");s.get(A,SLOT);s.emit(INCREMENT_REGISTER,A);s.put(A,SLOT);s.jump("files.scan");
-        s.label("files.more");s.get(A,SLOT);s.put(A,NEXT_SLOT);
-        s.label("files.done");s.ret(RETURN_FILES);
-    }
+    private static void emitFiles(Asm s) {DesktopFileSystem.files(s);DesktopFileSystem.path(s);}
     private static void emitViewer(Asm s) {
         s.label("view.draw");s.get(A,APP);s.notEqual(A,0,"app.draw");s.relative(24,16);s.text("HOME            NEXT             RUN / OPEN");
         s.get(A,TYPE);s.notEqual(A,1,"view.unsupported");
         s.call("stream.init",RET_INIT);s.get(A,ERROR);s.notEqual(A,0,"view.bad");
-        s.get(A,TARGET);s.put(A,SKIP);s.get(A,TARGET_H);s.put(A,SKIP_H);
-        s.label("view.skip");s.get(A,SKIP);s.get(B,SKIP_H);s.store(0,C);s.ne(A,C,"view.skipone");s.eq(B,C,"view.begin");
-        s.label("view.skipone");s.call("view.read",RETURN_READ);s.get(A,ERROR);s.notEqual(A,0,"view.finish");s.dec16(SKIP,SKIP_H);s.jump("view.skip");
+        s.get(A,TARGET);s.fput(A,FileSystemAbi.POSITION);s.put(A,USED);s.get(A,TARGET_H);s.fput(A,FileSystemAbi.POSITION+1);s.put(A,USED_H);s.get(A,TARGET_TOP);s.fput(A,FileSystemAbi.POSITION+2);s.put(A,USED_TOP);s.fset(FileSystemAbi.HANDLE,2);s.fs(FileSystemAbi.SEEK);s.fget(A,FileSystemAbi.STATUS);s.notEqual(A,0,"view.bad");
+        s.subtract24(new int[]{REMAIN,REMAIN_H,REMAIN_TOP},new int[]{TARGET,TARGET_H,TARGET_TOP});
         s.label("view.begin");s.set(LINES,0);s.set(CHARS,0);
         s.label("view.loop");s.call("view.read",RETURN_READ);s.get(A,ERROR);s.notEqual(A,0,"view.finish");
         s.get(A,CHAR);s.equal(A,13,"view.loop");s.equal(A,10,"view.newline");
@@ -290,33 +226,13 @@ public final class DesktopImage {
         s.get(A,LINES);s.store(6,B);s.emit(MULTIPLY,A,B,A);s.windowGet(1,B);s.emit(ADD,A,B,A);s.store(28,B);s.emit(ADD,A,B,A);s.put(A,TY);
         s.call("glyph",RETURN_GLYPH);s.get(A,CHARS);s.emit(INCREMENT_REGISTER,A);s.put(A,CHARS);s.notEqual(A,50,"view.loop");
         s.label("view.newline");s.set(CHARS,0);s.get(A,LINES);s.emit(INCREMENT_REGISTER,A);s.put(A,LINES);s.notEqual(A,22,"view.loop");
-        s.label("view.finish");s.get(A,USED);s.put(A,NEXT);s.get(A,USED_H);s.put(A,NEXT_H);
+        s.label("view.finish");s.get(A,USED);s.put(A,NEXT);s.get(A,USED_H);s.put(A,NEXT_H);s.get(A,USED_TOP);s.put(A,NEXT_TOP);
         s.get(A,ERROR);s.equal(A,2,"view.bad");
-        s.get(A,REMAIN);s.get(B,REMAIN_H);String more=s.unique("view.more");s.notEqual(A,0,more);s.notEqual(B,0,more);
-        s.get(A,TARGET);s.put(A,NEXT);s.get(A,TARGET_H);s.put(A,NEXT_H);s.label(more);s.ret(RETURN_VIEW);
+        s.get(A,REMAIN_TOP);s.notEqual(A,0,"view.has.more");s.get(A,REMAIN);s.get(B,REMAIN_H);String more=s.unique("view.more");s.notEqual(A,0,more);s.notEqual(B,0,more);
+        s.get(A,TARGET);s.put(A,NEXT);s.get(A,TARGET_H);s.put(A,NEXT_H);s.get(A,TARGET_TOP);s.put(A,NEXT_TOP);s.label(more);s.label("view.has.more");s.ret(RETURN_VIEW);
         s.label("view.unsupported");s.relative(6,34);s.text("OPEN TEXT / JVS FILES IN THIS WINDOW");s.relative(6,46);s.text("USE DOS FOR PROGRAMS AND MEDIA");s.set(NEXT,0);s.set(NEXT_H,0);s.ret(RETURN_VIEW);
         s.label("view.bad");s.relative(6,148);s.text("CORRUPT FILE - READ STOPPED");s.ret(RETURN_VIEW);
-        s.label("stream.init");
-        s.get(A,VIEW_HEAD);s.put(A,SLOT);s.put(A,VIEW_BLOCK);
-        s.diskRead(0,D);s.put(D,REMAIN);s.diskRead(14,D);s.put(D,REMAIN_H);
-        s.store(239,A);s.emit(COMPARE_UNSIGNED,D,A,C);s.equal(C,2,"stream.invalid");
-        s.set(VIEW_OFFSET,16);s.set(ERROR,0);s.set(USED,0);s.set(USED_H,0);s.set(LOOP,0);
-        s.label("view.clear");s.get(C,LOOP);s.store(0,D);s.store(1,A);s.store(SEEN,B);s.emit(STORE_MEM_ON_BANK,D,A,B,C);
-        s.get(A,LOOP);s.emit(INCREMENT_REGISTER,A);s.put(A,LOOP);s.notEqual(A,0,"view.clear");
-        s.get(C,VIEW_HEAD);s.store(1,D);s.store(1,A);s.store(SEEN,B);s.emit(STORE_MEM_ON_BANK,D,A,B,C);
-        s.ret(RET_INIT);
-        s.label("stream.invalid");s.set(ERROR,2);s.ret(RET_INIT);
-        s.label("view.read");s.get(A,REMAIN);s.get(B,REMAIN_H);s.store(0,C);s.ne(A,C,"view.read.byte");s.ne(B,C,"view.read.byte");
-        s.set(ERROR,1);s.ret(RETURN_READ);
-        s.label("view.read.byte");s.get(A,VIEW_OFFSET);s.notEqual(A,0,"view.read.ready");
-        s.get(A,BANK);s.get(B,VIEW_BLOCK);s.store(15,C);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);
-        s.equal(D,0,"view.read.bad");s.equal(D,255,"view.read.bad");s.put(D,VIEW_BLOCK);
-        s.store(1,A);s.store(SEEN,B);s.emit(LOAD_MEM_ON_BANK,A,B,D,C);s.notEqual(C,0,"view.read.bad");
-        s.store(1,C);s.emit(STORE_MEM_ON_BANK,C,A,B,D);
-        s.get(A,BANK);s.get(B,VIEW_BLOCK);s.store(1,C);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.notEqual(D,255,"view.read.bad");s.set(VIEW_OFFSET,16);
-        s.label("view.read.ready");s.get(A,BANK);s.get(B,VIEW_BLOCK);s.get(C,VIEW_OFFSET);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.put(D,CHAR);
-        s.get(A,VIEW_OFFSET);s.emit(INCREMENT_REGISTER,A);s.put(A,VIEW_OFFSET);s.dec16(REMAIN,REMAIN_H);s.inc16(USED,USED_H);s.ret(RETURN_READ);
-        s.label("view.read.bad");s.set(ERROR,2);s.ret(RETURN_READ);
+        DesktopFileSystem.streams(s);
     }
     /** All application buffers and execution state below are ordinary guest RAM. */
     private static void emitApplications(Asm s) {
@@ -324,17 +240,17 @@ public final class DesktopImage {
         s.label("shell.open");s.get(A,DRAFT);s.notEqual(A,0,"shell.initialize");s.get(A,APP);s.notEqual(A,5,"shell.initialize");s.get(A,RUN);s.equal(A,1,"shell.focus");s.label("shell.initialize");s.call("app.stop",RET_STEP);s.call("frame.clear",RET_CLEAR);
         s.set(LOOP,0);s.label("shell.reg.clear");s.get(C,LOOP);s.store(0,D);s.store(1,A);s.store(228,B);s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.get(A,LOOP);s.emit(INCREMENT_REGISTER,A);s.put(A,LOOP);s.notEqual(A,20,"shell.reg.clear");
         s.store(249,A);s.vwriteLiteral(9,A);s.store(9,A);s.vwriteLiteral(8,A);s.get(A,DRIVE);s.vwriteLiteral(10,A);
-        s.get(A,BANK);s.emit(STORE_MEM_ABSOLUTE,A,0,252,220);s.get(A,CWD);s.emit(STORE_MEM_ABSOLUTE,A,0,253,70);
+        s.get(A,BANK);s.emit(STORE_MEM_ABSOLUTE,A,0,252,220);s.get(A,CWD);s.emit(STORE_MEM_ABSOLUTE,A,0,253,70);s.get(A,CWD_H);s.emit(STORE_MEM_ABSOLUTE,A,0,253,97);s.store(0,A);s.emit(STORE_MEM_ABSOLUTE,A,0,253,114);s.call("files.path",RET_PATH);
         s.store(124,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,24);s.emit(STORE_MEM_ABSOLUTE,A,0,252,25);s.store(116,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,26);s.store(4,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,129);s.emit(STORE_MEM_ABSOLUTE,A,0,252,130);s.store(0,A);s.emit(STORE_MEM_ABSOLUTE,A,0,252,176);
         s.set(QHEAD,0);s.set(QTAIL,0);s.get(A,DRIVE);s.put(A,SHELLDRIVE);s.set(SHELLUSED,1);s.set(APP_KEY,0);s.set(APP,5);s.set(RUN,1);s.get(A,DRAFT);s.equal(A,0,"shell.focus");
         for(int action=1;action<=5;action++) {s.equal(A,action,"shell.draft."+action);}
         for(int action=1;action<=5;action++) {
-            s.label("shell.draft."+action);String prefix=new String[]{"REN ","MKDIR ","COPY ","DEL ","RUN "}[action-1];
+            s.label("shell.draft."+action);if(action==4){s.get(A,TYPE);s.notEqual(A,4,"shell.draft.file.delete");for(int c=0;c<3;c++){s.store("RD ".charAt(c),D);s.emit(STORE_MEM_ABSOLUTE,D,1,230,c);}s.set(QTAIL,3);s.jump("shell.draft.name");s.label("shell.draft.file.delete");}String prefix=new String[]{"REN ","MKDIR ","COPY ","DEL ","RUN "}[action-1];
             for(int c=0;c<prefix.length();c++){s.store(prefix.charAt(c),D);s.emit(STORE_MEM_ABSOLUTE,D,1,230,c);}
             s.set(QTAIL,prefix.length());if(action==2)s.jump("shell.draft.done");else s.jump("shell.draft.name");
         }
-        s.label("shell.draft.name");s.set(FNAME,1);
-        s.label("shell.draft.copy");s.get(C,FNAME);s.get(A,BANK);s.get(B,FSOURCE);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.equal(D,0,"shell.draft.space");s.get(C,QTAIL);s.store(1,A);s.store(230,B);s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.emit(INCREMENT_REGISTER,C);s.put(C,QTAIL);s.get(A,FNAME);s.emit(INCREMENT_REGISTER,A);s.put(A,FNAME);s.notEqual(A,13,"shell.draft.copy");
+        s.label("shell.draft.name");DesktopFileSystem.sourceAddress(s);s.fs(FileSystemAbi.STAT);s.set(FNAME,0);
+        s.label("shell.draft.copy");s.get(C,FNAME);s.store(FileSystemAbi.NAME,B);s.emit(ADD,C,B,C);s.store(1,A);s.store(FileSystemAbi.DESKTOP_PAGE,B);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.equal(D,0,"shell.draft.space");s.get(C,QTAIL);s.store(1,A);s.store(230,B);s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.emit(INCREMENT_REGISTER,C);s.put(C,QTAIL);s.get(A,FNAME);s.emit(INCREMENT_REGISTER,A);s.put(A,FNAME);s.notEqual(A,12,"shell.draft.copy");
         s.label("shell.draft.space");s.get(C,QTAIL);s.store(1,A);s.store(230,B);s.store(32,D);s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.emit(INCREMENT_REGISTER,C);s.put(C,QTAIL);
         s.label("shell.draft.done");s.get(A,DRAFT);s.notEqual(A,5,"shell.draft.ready");
         // Source runs through the actual resident DOS parser, loader and interpreter.
@@ -343,11 +259,12 @@ public final class DesktopImage {
         s.label("shell.focus");s.set(ACTIVE,1);s.store(1,A);s.windowPut(2,A);s.raise();s.jump("paint");
         s.label("app.escape");s.get(A,APP);s.equal(A,0,"exit");s.call("app.stop",RET_STEP);s.set(APP,0);s.jump("paint");
         s.label("app.open");s.call("app.stop",RET_STEP);s.set(ACTIVE,1);s.store(1,A);s.windowPut(2,A);s.raise();
-        s.get(A,TYPE);s.notEqual(A,1,"app.binary");s.get(A,VIEW_HEAD);s.put(A,FSOURCE);s.set(DRAFT,5);s.jump("shell.open");
+        s.get(A,TYPE);s.notEqual(A,1,"app.binary");s.get(A,VIEW_HEAD);s.put(A,FSOURCE);s.get(A,VIEW_BLOCK);s.put(A,SOURCE_Y);s.get(A,VIEW_OFFSET);s.put(A,SOURCE_Z);s.set(DRAFT,5);s.jump("shell.open");
         s.label("app.binary");s.call("frame.clear",RET_CLEAR);s.set(PRINT_COL,0);s.set(PRINT_ROW,0);
         s.call("stream.init",RET_INIT);s.get(A,ERROR);s.notEqual(A,0,"app.error");
         s.get(A,REMAIN);s.put(A,FILE_LO);s.get(A,REMAIN_H);s.put(A,FILE_HI);
         s.get(A,TYPE);s.equal(A,2,"image.open");s.equal(A,3,"music.open");
+        s.get(A,REMAIN_TOP);s.notEqual(A,0,"app.error");
         // Interpreted COM programs have an explicit 8 KiB code/data workspace.
         s.get(A,FILE_HI);s.less(A,32,"app.size.ok");s.notEqual(A,32,"app.error");s.get(A,FILE_LO);s.notEqual(A,0,"app.error");
         s.label("app.size.ok");s.call("program.load",RET_LOAD);s.get(A,ERROR);s.notEqual(A,0,"app.error");
@@ -359,7 +276,7 @@ public final class DesktopImage {
         s.label("vm.large");s.store(1,D);s.vwriteLiteral(11,D);s.jump("paint");
         s.label("vm.small");s.store(248,D);s.vwriteLiteral(9,D);s.jump("paint");
         s.label("app.error");s.call("app.stop",RET_STEP);s.set(APP,6);s.jump("paint");
-        s.label("app.stop");s.set(DIRTY,1);s.set(RUN,0);s.store(0,A);s.store(3,D);s.emit(WRITE_NETWORK,A,D);s.store(0,B);s.store(0,C);
+        s.label("app.stop");s.fset(FileSystemAbi.HANDLE,2);s.fs(FileSystemAbi.CLOSE);s.get(A,APP);s.notEqual(A,5,"app.stop.ready");for(int h=0;h<2;h++){s.fset(FileSystemAbi.HANDLE,h);s.fs(FileSystemAbi.ABORT);}s.label("app.stop.ready");s.fset(FileSystemAbi.HANDLE,3);s.fs(FileSystemAbi.ABORT);s.set(DIRTY,1);s.set(RUN,0);s.store(0,A);s.store(3,D);s.emit(WRITE_NETWORK,A,D);s.store(0,B);s.store(0,C);
         for(int voice=0;voice<8;voice++){s.store(voice,A);s.emit(OUTPUT_AUDIO,A,B,C);}s.ret(RET_STEP);
         s.label("app.draw");s.relative(6,16);s.get(A,APP);s.equal(A,5,"shell.draw.header");s.relative(24,16);s.text("HOME            NEXT             RUN / OPEN");s.jump("app.draw.frame");s.label("shell.draw.header");s.text("REAL DOS - CLICK WINDOW TO TYPE");s.label("app.draw.frame");
         s.call("frame.draw",RET_FRAME);s.get(A,APP);s.equal(A,5,"app.draw.done");s.relative(6,158);s.get(A,APP);s.equal(A,6,"app.draw.error");
@@ -422,7 +339,7 @@ public final class DesktopImage {
         s.set(PRINT_CHAR,10);s.call("app.print",RET_PRINT);s.ret(RET_NUMBER);
     }
     private static void emitGuestMedia(Asm s) {
-        s.label("image.open");s.set(APP,3);
+        s.label("image.open");s.get(A,REMAIN_TOP);s.notEqual(A,0,"app.error");s.set(APP,3);
         for(int ch:new int[]{74,73}){s.call("view.read",RETURN_READ);s.get(A,ERROR);s.notEqual(A,0,"app.error");s.get(A,CHAR);s.notEqual(A,ch,"app.error");}
         for(int size:new int[]{IW,IH}){s.call("view.read",RETURN_READ);s.get(A,CHAR);s.equal(A,0,"app.error");s.store(240,B);s.emit(COMPARE_UNSIGNED,A,B,C);s.equal(C,2,"app.error");s.put(A,size);}
         s.set(IY,0);s.set(ISCALE,1);s.get(A,IW);s.less(A,129,"image.width.small");s.set(ISCALE,2);s.label("image.width.small");s.get(A,IH);s.less(A,129,"image.height.small");s.set(ISCALE,2);s.label("image.height.small");
@@ -438,9 +355,9 @@ public final class DesktopImage {
         for(int ch:new int[]{74,77}){s.call("view.read",RETURN_READ);s.get(A,CHAR);s.notEqual(A,ch,"app.error");}
         s.call("view.read",RETURN_READ);s.get(A,CHAR);s.put(A,VERSION);s.equal(A,1,"music.version.ok");s.notEqual(A,2,"app.error");s.label("music.version.ok");s.call("view.read",RETURN_READ);s.get(A,CHAR);s.put(A,EVENTS);
         s.get(A,VERSION);s.equal(A,1,"music.v1");s.get(A,EVENTS);s.notEqual(A,0,"app.error");s.jump("music.header.done");s.label("music.v1");s.get(A,EVENTS);s.equal(A,0,"app.error");
-        s.label("music.header.done");s.get(A,REMAIN);s.get(B,REMAIN_H);String events=s.unique("music.has.events");s.notEqual(A,0,events);s.equal(B,0,"app.error");s.label(events);s.set(FRAMES,0);s.set(RUN,1);s.jump("paint");
+        s.label("music.header.done");s.get(A,REMAIN_TOP);s.notEqual(A,0,"music.header.nonempty");s.get(A,REMAIN);s.get(B,REMAIN_H);String events=s.unique("music.has.events");s.notEqual(A,0,events);s.equal(B,0,"app.error");s.label(events);s.label("music.header.nonempty");s.set(FRAMES,0);s.set(RUN,1);s.jump("paint");
         s.label("music.tick");s.get(A,FRAMES);s.equal(A,0,"music.event");s.store(1,B);s.emit(SUB,A,B,A);s.put(A,FRAMES);s.ret(RET_STEP);
-        s.label("music.event");s.get(A,REMAIN);s.get(B,REMAIN_H);s.store(0,C);s.ne(A,C,"music.more");s.ne(B,C,"music.more");s.get(A,VERSION);s.equal(A,2,"app.finished");s.get(A,EVENTS);s.notEqual(A,0,"app.tick.error");s.jump("app.finished");
+        s.label("music.event");s.get(A,REMAIN_TOP);s.notEqual(A,0,"music.more");s.get(A,REMAIN);s.get(B,REMAIN_H);s.store(0,C);s.ne(A,C,"music.more");s.ne(B,C,"music.more");s.get(A,VERSION);s.equal(A,2,"app.finished");s.get(A,EVENTS);s.notEqual(A,0,"app.tick.error");s.jump("app.finished");
         s.label("music.more");s.get(A,VERSION);s.equal(A,2,"music.event.read");s.get(A,EVENTS);s.equal(A,0,"app.tick.error");s.store(1,B);s.emit(SUB,A,B,A);s.put(A,EVENTS);
         s.label("music.event.read");
         for(int field:new int[]{FRAMES,VOICE,NOTE,CONTROL}){s.call("view.read",RETURN_READ);s.get(A,ERROR);s.notEqual(A,0,"app.tick.error");s.get(A,CHAR);s.put(A,field);}
@@ -456,6 +373,7 @@ public final class DesktopImage {
         s.label("app.finished");s.jump("app.stop");
         s.label("app.tick.error");s.set(APP,6);s.jump("app.stop");
         s.label("vm.step");s.vreadLiteral(11,A);s.put(A,VBANK);s.vreadLiteral(9,A);s.put(A,PAGE);s.vreadLiteral(8,A);s.put(A,ADDRESS);
+        s.get(A,VBANK);s.notEqual(A,0,"vm.service.checked");s.get(A,PAGE);s.notEqual(A,249,"vm.service.checked");s.get(A,ADDRESS);s.equal(A,FileSystemAbi.ENTRY,"vm.filesystem");s.label("vm.service.checked");
         s.get(A,APP);s.equal(A,5,"vm.fetch.start");s.get(A,VBANK);s.notEqual(A,0,"vm.fetch.start");s.get(A,PAGE);s.notEqual(A,249,"vm.fetch.start");s.get(A,ADDRESS);s.equal(A,9,"app.finished");s.notEqual(A,0,"app.tick.error");
         s.vreadLiteral(3,A);s.put(A,PRINT_CHAR);s.call("app.print",RET_PRINT);s.vreadLiteral(0,A);s.vreadLiteral(1,B);s.vwriteLiteral(9,A);s.vwriteLiteral(8,B);s.jump("vm.done");
         s.label("vm.fetch.start");s.set(FETCH_COUNT,0);s.call("vm.fetch",RET_FETCH);s.get(A,VALUE);s.put(A,OPC);
@@ -533,6 +451,11 @@ public final class DesktopImage {
         s.label("vm.advance");s.vreadLiteral(8,A);s.get(B,ILEN);s.emit(ADD,A,B,A);s.vwriteLiteral(8,A);
         s.label("vm.done");s.get(A,BUDGET);s.store(1,B);s.emit(SUB,A,B,A);s.put(A,BUDGET);s.equal(A,0,"app.tick.done");s.jump("vm.step");
         s.label("app.tick.done");s.get(A,APP);s.notEqual(A,5,"app.tick.return");s.get(A,SLICE);s.store(1,B);s.emit(SUB,A,B,A);s.put(A,SLICE);s.equal(A,0,"app.tick.return");s.set(BUDGET,255);s.jump("vm.step");s.label("app.tick.return");s.get(A,APP);s.notEqual(A,5,"app.tick.end");s.vreadLiteral(10,A);s.put(A,SHELLDRIVE);s.label("app.tick.end");s.ret(RET_STEP);
+        s.label("vm.filesystem");s.vreadLiteral(10,A);s.store(0,B);s.emit(ADD,A,B,10);s.get(A,APP);s.equal(A,5,"vm.filesystem.dos");
+        s.vreadLiteral(0,A);s.vreadLiteral(1,B);s.equal(A,1,"vm.filesystem.bank.one");s.notEqual(A,0,"app.tick.error");s.notEqual(B,248,"app.tick.error");s.store(1,A);s.store(128,B);s.jump("vm.filesystem.app.ready");
+        s.label("vm.filesystem.bank.one");s.less(B,32,"vm.filesystem.app.page");s.jump("app.tick.error");s.label("vm.filesystem.app.page");s.store(128,C);s.emit(ADD,B,C,B);s.label("vm.filesystem.app.ready");s.store(FileSystemAbi.HANDLE,C);s.store(3,D);s.emit(STORE_MEM_ON_BANK,D,A,B,C);DesktopFileSystem.mapBuffer(s);
+        s.label("vm.filesystem.dos");s.store(0,A);s.store(FileSystemAbi.DOS_PAGE,B);s.label("vm.filesystem.call");s.nativeFs();DesktopFileSystem.unmapBuffer(s);s.get(A,DRIVE);s.store(0,B);s.emit(ADD,A,B,10);
+        s.vreadLiteral(17,A);s.vwriteLiteral(11,A);s.vreadLiteral(18,A);s.vwriteLiteral(9,A);s.vreadLiteral(19,A);s.vwriteLiteral(8,A);s.jump("vm.done");
         s.label("vm.fetch");s.get(A,FETCH_COUNT);String first=s.unique("fetch.first");s.equal(A,0,first);s.get(A,ADDRESS);s.equal(A,0,"app.tick.error");s.label(first);
         s.call("vm.memory.map",RET_IMAGE);s.get(A,APP);s.equal(A,5,"vm.fetch.mapped");s.get(A,MAPPED);s.store(128,B);s.emit(SUB,A,B,A);s.get(B,FILE_HI);s.emit(COMPARE_UNSIGNED,A,B,C);s.equal(C,2,"app.tick.error");String inside=s.unique("fetch.inside");s.equal(C,1,inside);s.get(A,ADDRESS);s.get(B,FILE_LO);s.emit(COMPARE_UNSIGNED,A,B,C);s.notEqual(C,1,"app.tick.error");s.label(inside);s.label("vm.fetch.mapped");
         s.get(B,MAPPED);s.get(C,ADDRESS);s.get(A,MBANK);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.put(D,VALUE);s.get(A,ADDRESS);s.emit(INCREMENT_REGISTER,A);s.put(A,ADDRESS);s.get(A,FETCH_COUNT);s.emit(INCREMENT_REGISTER,A);s.put(A,FETCH_COUNT);s.ret(RET_FETCH);
@@ -584,6 +507,14 @@ public final class DesktopImage {
         void emit(OPCode op,int... operands){if(operands.length!=op.inputLength())throw new IllegalArgumentException(op.name());reserve(op.length());raw(op.code());raw(operands);}
         void label(String name){if(labels.put(name,page*256+pos)!=null)throw new IllegalStateException(name);}
         void store(int value,int register){emit(STORE,value,register);}
+        void fget(int r,int slot){emit(LOAD_MEM_ABSOLUTE,1,FileSystemAbi.DESKTOP_PAGE,slot,r);}
+        void fput(int r,int slot){emit(STORE_MEM_ABSOLUTE,r,1,FileSystemAbi.DESKTOP_PAGE,slot);}
+        void fset(int slot,int value){store(value,D);fput(D,slot);}
+        void nativeFs(){String back=unique("filesystem.return");store(1,N);ref(back,true,O);ref(back,false,P);store(0,C);store(249,D);store(FileSystemAbi.ENTRY,E);emit(CHANGE_BANK_PAGE_JUMP,C,D,E);label(back);}
+        void fs(int op){fset(FileSystemAbi.OP,op);store(1,A);store(FileSystemAbi.DESKTOP_PAGE,B);nativeFs();}
+        void inc24(int lo,int mid,int hi){get(A,lo);emit(INCREMENT_REGISTER,A);put(A,lo);String done=unique("inc24");notEqual(A,0,done);get(A,mid);emit(INCREMENT_REGISTER,A);put(A,mid);notEqual(A,0,done);get(A,hi);emit(INCREMENT_REGISTER,A);put(A,hi);label(done);}
+        void dec24(int lo,int mid,int hi){get(A,lo);String low=unique("dec24.low"),middle=unique("dec24.middle");notEqual(A,0,low);get(A,mid);notEqual(A,0,middle);get(A,hi);store(1,B);emit(SUB,A,B,A);put(A,hi);label(middle);get(A,mid);store(1,B);emit(SUB,A,B,A);put(A,mid);label(low);get(A,lo);store(1,B);emit(SUB,A,B,A);put(A,lo);}
+        void subtract24(int[] left,int[] right){for(int i=0;i<3;i++){get(A,left[i]);get(B,right[i]);emit(COMPARE_UNSIGNED,A,B,C);put(C,TEMP);emit(SUB,A,B,A);put(A,left[i]);if(i<2){String done=unique("subtract24.borrow");get(A,TEMP);notEqual(A,1,done);for(int j=i+1;j<3;j++){get(A,left[j]);store(1,B);emit(SUB,A,B,A);put(A,left[j]);notEqual(A,255,done);}label(done);}}}
         void imagePages(int register){reserve(3);raw(STORE.code(),0,register);imagePageFixes.add(page*256+pos-2);}
         void ref(String label,boolean high,int register){reserve(3);raw(STORE.code(),0,register);fixes.add(new Fix(page,pos-2,label,high));}
         void jump(String label){

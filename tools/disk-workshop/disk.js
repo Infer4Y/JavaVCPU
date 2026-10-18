@@ -1,6 +1,6 @@
-/* JV-DOS 1.3 disk format and converters. No network or host VM hooks. */
+/* JVFS 1 flat-volume filesystem and converters. No network or host VM hooks. */
 globalThis.DosDisk = (() => {
-  const SIZE=1<<24, BASE=2<<16, SLOTS=255, BLOCK=240, MAX=61200;
+  const SIZE=1<<24, BASE=2<<16, BLOCK=1024, MAX=(16384-162)*1024;
   const types=['Binary / COM','Text / JVS','Palette image','MIDI notes','Directory'];
   const fail=message=>{throw new Error(message);};
   const integer=(value,min,max,label)=>{if(!Number.isInteger(value)||value<min||value>max)fail(`${label} must be ${min}–${max}.`);return value;};
@@ -14,101 +14,66 @@ globalThis.DosDisk = (() => {
     const base=name.replace(/\.[^.]*$/,'').toUpperCase().replace(/[^A-Z0-9_-]/g,'_').slice(0,8)||'FILE';
     return base+'.'+extension.toUpperCase().slice(0,3);
   }
+  const SUPER=0x20000,FAT=0x20400,ROOT=161,CLUSTERS=16384,END=65535,RESERVED=65534;
+  const signature=Uint8Array.of(74,86,70,83,1,10,161,0);
+  const validName=name=>{name=name.toUpperCase();if(!/^[A-Z0-9_-][A-Z0-9_.-]{0,11}$/.test(name))fail('Names use 1-12 uppercase letters, digits, dots, underscores or hyphens.');return name;};
   class Disk {
-    constructor(bytes,bank=2) {
-      if(bytes.length!==SIZE)fail('Select a 16 MiB JavaVCPU storage.img.');
-      if(textOf(bytes.slice(0,5))!=='JVCPM'||![4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20].includes(bytes[5])||!bytes[6])fail('This image has no supported JVCPM BIOS header.');
-      this.cwd=0; this.bank=integer(bank,2,255,'Bank'); this.bytes=new Uint8Array(bytes); this.list();
+    constructor(bytes){
+      if(bytes.length!==SIZE)fail('Select a 16 MiB JavaVCPU disk.');
+      if(!signature.every((b,i)=>bytes[SUPER+i]===b))fail('This disk needs JVFS 1. Start the updated VM once to format an old test image.');
+      this.bytes=new Uint8Array(bytes);this.cwd=ROOT;this.validate();
     }
-    clone(){const copy=new Disk(this.bytes,this.bank);copy.cwd=this.cwd;return copy;}
-    all(){return this.list(true);}
-    list(all=false){
-      const files=[],used=new Set(),base=integer(this.bank,2,255,'Bank')<<16;
-      for(let slot=0;slot<SLOTS;slot++){
-        const p=base+slot*256;if(!this.bytes[p+1]||this.bytes[p+1]===255)continue;
-        let name='';for(let n=1;n<=12&&this.bytes[p+n];n++)name+=String.fromCharCode(this.bytes[p+n]);
-        const length=this.bytes[p]+this.bytes[p+14]*256;
-        if(length>MAX)fail('File '+name+' exceeds the '+MAX+'-byte limit.');
-        const data=new Uint8Array(length),blocks=[];let block=slot,position=0;
-        while(true){
-          if(used.has(block))fail('File '+name+' has a cyclic or shared block chain.');
-          used.add(block);blocks.push(block);const address=base+block*256;
-          if(block!==slot&&this.bytes[address+1]!==255)fail('File '+name+' links to a directory entry.');
-          const count=Math.min(BLOCK,length-position);data.set(this.bytes.slice(address+16,address+16+count),position);position+=count;
-          const next=this.bytes[address+15];
-          if(position===length){if(next)fail('File '+name+' has an unexpected tail block.');break;}
-          if(!next||next>=SLOTS)fail('File '+name+' has a truncated block chain.');block=next;
-        }
-        files.push({slot,name,type:this.bytes[p+13],parent:this.bytes[base+255*256+slot+1],data,blocks});
-      }
-      for(let slot=0;slot<SLOTS;slot++)if(this.bytes[base+slot*256+1]===255&&!used.has(slot))fail('Orphaned continuation block '+slot+'.');
-      return all?files:files.filter(f=>f.parent===this.cwd);
+    static format(bytes=new Uint8Array(SIZE)) {
+      if(bytes.length!==SIZE)fail('Expected a 16 MiB disk.');const out=new Uint8Array(bytes);
+      out.fill(0,SUPER,FAT+CLUSTERS*2);out.fill(0,ROOT*BLOCK,(ROOT+1)*BLOCK);out.fill(0,256,296);
+      const put=(p,v)=>{out[p]=v&255;out[p+1]=v>>>8;};
+      for(let c=0;c<ROOT;c++)put(FAT+c*2,RESERVED);put(FAT+ROOT*2,END);
+      for(const [n,name] of ['.','..'].entries()){const p=ROOT*BLOCK+n*32;out.set(textBytes(name),p);out[p+12]=4;put(p+14,ROOT);}
+      out.set(signature,SUPER);return new Disk(out);
     }
-    capacity(){
-      const used=this.all().reduce((n,file)=>n+file.blocks.length,0);
-      return {used,free:SLOTS-used,total:SLOTS,freeBytes:(SLOTS-used)*BLOCK};
-    }
-    // Imports may use a new empty bank, retaining the current folder path. Existing
-    // files stay in place; no disk-format extension or cross-bank links are needed.
-    importFile(name,data,type=0){
-      const capacity=this.capacity(),old=this.list().find(f=>f.name===name.toUpperCase());
-      const needed=Math.max(1,Math.ceil(data.length/BLOCK));
-      if(old||needed<=capacity.free){const slot=this.put(name,data,type);return {bank:this.bank,slot};}
-      if(data.length>MAX)this.put(name,data,type); // Preserve the ordinary size error.
-      const path=[];let parent=this.cwd;const entries=this.all(),seen=new Set();
-      while(parent){
-        if(seen.has(parent))fail('Cyclic folder path.');seen.add(parent);
-        const folder=entries.find(f=>f.slot+1===parent&&f.type===4);
-        if(!folder)fail('Invalid folder path.');path.unshift(folder.name);parent=folder.parent;
-      }
-      if(needed+path.length>SLOTS)fail('File and folder path cannot fit in one bank.');
-      const originalBank=this.bank;
-      // Leave partly occupied banks alone, including the managed desktop bank.
-      for(let bank=2;bank<=255;bank++){
-        if(bank===originalBank)continue;
-        const base=bank<<16;
-        if(Array.from({length:SLOTS},(_,slot)=>this.bytes[base+slot*256+1]).some(Boolean))continue;
-        // Stage the complete change so invalid media or folders cannot leave debris.
-        const staged=this.clone();staged.bank=bank;staged.cwd=0;
-        for(const folder of path){
-          const slot=staged.put(folder,new Uint8Array());
-          staged.bytes[base+slot*256+13]=4;staged.cwd=slot+1;
-        }
-        const slot=staged.put(name,data,type);
-        this.bytes=staged.bytes;this.bank=bank;this.cwd=staged.cwd;
-        return {bank,slot};
-      }
-      fail(`Bank ${originalBank} has ${capacity.freeBytes} free bytes; no empty storage bank is available. File unchanged.`);
-    }
+    clone(){const copy=new Disk(this.bytes);copy.cwd=this.cwd;return copy;}
+    word(p){return this.bytes[p]|this.bytes[p+1]<<8;}
+    wordPut(p,value){this.bytes[p]=value&255;this.bytes[p+1]=value>>>8;}
+    fat(c){integer(c,0,CLUSTERS-1,'Cluster');return this.word(FAT+c*2);}
+    fatPut(c,next){integer(c,ROOT,CLUSTERS-1,'Data cluster');this.wordPut(FAT+c*2,next);}
+    chain(first){const out=[],seen=new Set();for(let c=first;c!==0&&c!==END;c=this.fat(c)){if(c<ROOT||c>=CLUSTERS||seen.has(c))fail('Invalid or cyclic cluster chain.');seen.add(c);out.push(c);if([0,RESERVED].includes(this.fat(c)))fail('Unallocated cluster in a file.');}return out;}
+    entry(p){integer(p,ROOT*BLOCK,SIZE-32,'Entry address');if(p%32)fail('Unaligned entry.');let name='';for(let i=0;i<12&&this.bytes[p+i];i++)name+=String.fromCharCode(this.bytes[p+i]);return {slot:p,name,type:this.bytes[p+12],first:this.word(p+14),length:this.bytes[p+16]+this.bytes[p+17]*256+this.bytes[p+18]*65536};}
+    entries(directory=this.cwd){const out=[];for(const c of this.chain(directory))for(let n=0;n<32;n++){const p=c*BLOCK+n*32;if(this.bytes[p])out.push(this.entry(p));}return out.filter(f=>!['.','..'].includes(f.name));}
+    read(file){if(file.type===4)return new Uint8Array();const blocks=this.chain(file.first);if(blocks.length!==Math.ceil(file.length/BLOCK))fail('File length does not match its chain.');const out=new Uint8Array(file.length);let at=0;for(const c of blocks){const count=Math.min(BLOCK,out.length-at);out.set(this.bytes.subarray(c*BLOCK,c*BLOCK+count),at);at+=count;}return out;}
+    list(){return this.entries().map(f=>({...f,parent:this.cwd,data:this.read(f),blocks:this.chain(f.first)}));}
+    all(){const out=[],todo=[ROOT],seen=new Set();while(todo.length){const dir=todo.pop();if(seen.has(dir))fail('Cyclic directory.');seen.add(dir);for(const f of this.entries(dir)){out.push({...f,parent:dir,data:this.read(f),blocks:this.chain(f.first)});if(f.type===4)todo.push(f.first);}}return out;}
+    parent(directory=this.cwd){return this.word(directory*BLOCK+46);}
+    path(){const names=[],seen=new Set();for(let c=this.cwd;c!==ROOT;c=this.parent(c)){if(seen.has(c))fail('Cyclic directory.');seen.add(c);const p=this.parent(c),entry=this.entries(p).find(f=>f.type===4&&f.first===c);if(!entry)fail('Missing parent directory.');names.unshift(entry.name);}return '/'+names.join('/');}
+    capacity(){let free=0;for(let c=ROOT;c<CLUSTERS;c++)if(!this.fat(c))free++;return {used:CLUSTERS-ROOT-free,free,total:CLUSTERS-ROOT,freeBytes:free*BLOCK};}
+    free(count){const out=[];for(let c=ROOT+1;c<CLUSTERS&&out.length<count;c++)if(!this.fat(c))out.push(c);if(out.length!==count)fail('Disk full. File unchanged.');return out;}
+    slotPlan(directory){const blocks=this.chain(directory);for(const c of blocks)for(let n=0;n<32;n++){const p=c*BLOCK+n*32;if(!this.bytes[p])return {slot:p};}return {tail:blocks.at(-1)};}
+    grow(plan,c){this.fatPut(c,END);this.bytes.fill(0,c*BLOCK,(c+1)*BLOCK);this.fatPut(plan.tail,c);return c*BLOCK;}
+    writeEntry(p,name,type,first,length){this.bytes.fill(0,p,p+32);this.bytes.set(textBytes(name),p);this.bytes[p+12]=type;this.wordPut(p+14,first);for(let i=0;i<3;i++)this.bytes[p+16+i]=(length>>>(i*8))&255;}
     put(name,data,type=0){
-      name=name.toUpperCase();if(!/^[A-Z0-9_.-]{1,12}$/.test(name))fail('Names use 1–12 letters, digits, dots, underscores or hyphens.');
-      if(data.length>MAX)fail(name+': '+data.length+' bytes exceeds the '+MAX+'-byte limit.');
-      integer(type,0,3,'File type');if(type===2)decodeImage(data);if(type===3)decodeTune(data);
-      const files=this.list(),old=files.find(f=>f.name===name),base=this.bank<<16;
-      if(old?.type===4)fail('Cannot overwrite a directory.');
-      let slot=old?.slot;if(slot===undefined)slot=Array.from({length:SLOTS},(_,i)=>i).find(i=>!this.bytes[base+i*256+1]);
-      if(slot===undefined)fail('All directory blocks are occupied.');
-      const needed=Math.max(1,Math.ceil(data.length/BLOCK)),blocks=old?old.blocks.slice(0,needed):[slot];
-      // Preflight capacity: a failed import/overwrite cannot change the original file.
-      for(let candidate=1;blocks.length<needed&&candidate<SLOTS;candidate++)
-        if(candidate!==slot&&!this.bytes[base+candidate*256+1])blocks.push(candidate);
-      if(blocks.length<needed)fail(`Bank ${this.bank} needs ${needed} blocks for ${name}; only ${blocks.length} are available including its existing blocks. All folders share this bank. File unchanged.`);
-      for(const released of old?.blocks.slice(needed)||[])this.bytes.fill(0,base+released*256,base+(released+1)*256);
-      blocks.forEach((block,index)=>{
-        const p=base+block*256;this.bytes.fill(0,p,p+256);
-        if(index===0){this.bytes[p]=data.length&255;this.bytes[p+14]=data.length>>>8;this.bytes.set(textBytes(name),p+1);this.bytes[p+13]=type;}
-        else{this.bytes[p]=Math.min(BLOCK,data.length-index*BLOCK);this.bytes[p+1]=255;}
-        this.bytes[p+15]=blocks[index+1]||0;this.bytes.set(data.slice(index*BLOCK,(index+1)*BLOCK),p+16);
-      });
-      this.bytes[base+255*256+slot+1]=this.cwd;
-      this.bytes[BASE+255*256]=0x4a;return slot;
+      name=validName(name);integer(type,0,3,'File type');if(data.length>MAX)fail('File exceeds the disk capacity.');if(type===2)decodeImage(data);if(type===3)decodeTune(data);
+      const old=this.entries().find(f=>f.name===name);if(old?.type===4)fail('Cannot replace a directory.');
+      const oldBlocks=old?this.chain(old.first):[],plan=old?{slot:old.slot}:this.slotPlan(this.cwd),needed=Math.ceil(data.length/BLOCK),free=this.free(needed+(plan.slot===undefined?1:0));
+      const blocks=free.slice(0,needed);for(let i=0;i<blocks.length;i++)this.fatPut(blocks[i],blocks[i+1]??END);
+      const slot=plan.slot??this.grow(plan,free.at(-1));for(let i=0;i<blocks.length;i++){const p=blocks[i]*BLOCK;this.bytes.fill(0,p,p+BLOCK);this.bytes.set(data.subarray(i*BLOCK,(i+1)*BLOCK),p);}
+      this.writeEntry(slot,name,type,blocks[0]??0,data.length);for(const c of oldBlocks)this.fatPut(c,0);return slot;
     }
-    remove(slot){
-      integer(slot,0,254,'Slot');const file=this.list().find(f=>f.slot===slot);if(!file)fail('Select a file entry.');
-      if(file.type===4&&this.all().some(f=>f.parent===slot+1))fail('Directory is not empty.');
-      const base=this.bank<<16;this.bytes[base+255*256+slot+1]=0;for(const block of file.blocks)this.bytes.fill(0,base+block*256,base+(block+1)*256);
+    importFile(name,data,type=0){return {directory:this.cwd,slot:this.put(name,data,type)};}
+    mkdir(name){name=validName(name);if(this.entries().some(f=>f.name===name))fail('Destination exists.');const plan=this.slotPlan(this.cwd),free=this.free(1+(plan.slot===undefined?1:0)),c=free[0];this.fatPut(c,END);this.bytes.fill(0,c*BLOCK,(c+1)*BLOCK);this.writeEntry(c*BLOCK,'.',4,c,0);this.writeEntry(c*BLOCK+32,'..',4,this.cwd,0);const slot=plan.slot??this.grow(plan,free[1]);this.writeEntry(slot,name,4,c,0);return c;}
+    remove(slot){const f=this.entries().find(f=>f.slot===slot);if(!f)fail('Select a file in this folder.');if(f.type===4&&this.entries(f.first).length)fail('Directory is not empty.');const blocks=this.chain(f.first);this.bytes[slot]=0;for(const c of blocks)this.fatPut(c,0);}
+    move(slot,target,name){const f=this.entries().find(f=>f.slot===slot);if(!f)fail('Missing source.');name=validName(name??f.name);if(this.entries(target).some(e=>e.name===name))fail('Destination exists.');if(f.type===4){const seen=new Set();for(let c=target;;c=this.parent(c)){if(c===f.first||seen.has(c))fail('Directory cycle.');seen.add(c);if(c===ROOT)break;}}
+      const plan=target===this.cwd?{slot}:this.slotPlan(target),p=plan.slot??this.grow(plan,this.free(1)[0]);this.writeEntry(p,name,f.type,f.first,f.length);if(p!==slot)this.bytes[slot]=0;if(f.type===4)this.wordPut(f.first*BLOCK+46,target);
+    }
+    validate(){
+      for(let c=0;c<ROOT;c++)if(this.fat(c)!==RESERVED)fail('Invalid reserved cluster.');
+      const used=new Set(),dirs=[{id:ROOT,parent:ROOT}],seen=new Set();
+      const claim=blocks=>{for(const c of blocks){if(used.has(c))fail('Shared cluster chain.');used.add(c);}};
+      while(dirs.length){const {id,parent}=dirs.pop();if(seen.has(id))fail('Directory cycle.');seen.add(id);claim(this.chain(id));if(this.word(id*BLOCK+14)!==id||this.parent(id)!==parent)fail('Invalid directory parent.');const names=new Set();
+        for(const f of this.entries(id)){validName(f.name);integer(f.type,0,4,'Entry type');if(names.has(f.name))fail('Duplicate filename.');names.add(f.name);if(f.type===4){if(f.length)fail('Directory has a file length.');dirs.push({id:f.first,parent:id});}else{const blocks=this.chain(f.first);if(blocks.length!==Math.ceil(f.length/BLOCK))fail('File length/chain mismatch.');claim(blocks);}}
+      }
+      for(let c=ROOT;c<CLUSTERS;c++)if(this.fat(c)&&!used.has(c))fail('Orphaned allocated cluster.');return true;
     }
   }
+
   function image(width,height,rgba){integer(width,1,240,'Width');integer(height,1,240,'Height');
     if(rgba.length!==width*height*4)fail('Invalid RGBA pixel count.');
     const out=new Uint8Array(4+width*height);out.set([74,73,width,height]);
@@ -119,9 +84,9 @@ globalThis.DosDisk = (() => {
   function decodeImage(data){if(data[0]!==74||data[1]!==73)fail('Images need a JI header.');
     const width=integer(data[2],1,240,'Width'),height=integer(data[3],1,240,'Height');
     if(data.length!==4+width*height||data.slice(4).some(c=>c>127))fail('Invalid palette image pixels.');return {width,height,pixels:data.slice(4)};}
-  function tune(events){if(!events.length||events.length>15299)fail('A tune supports 1-15,299 events (61,200 bytes). Use a shorter MIDI clip.');
+  function tune(events){if(!events.length||events.length>Math.floor((MAX-4)/4))fail('Tune exceeds the disk capacity.');
     const out=new Uint8Array(4+events.length*4);out.set(events.length<=255?[74,77,1,events.length]:[74,77,2,0]);
-    events.forEach((e,i)=>{integer(e.frames,0,255,'Duration');integer(e.voice,0,15,'Voice');integer(e.note,0,127,'MIDI note');
+    events.forEach((e,i)=>{integer(e.frames,0,255,'Duration');integer(e.voice,0,7,'Voice');integer(e.note,0,127,'MIDI note');
       if(![0,128,129,130,131].includes(e.control))fail('Invalid voice control.');out.set([e.frames,e.voice,e.note,e.control],4+i*4);});return out;}
   function decodeTune(data){if(data[0]!==74||data[1]!==77||!((data[2]===1&&data[3]>0&&data.length===4+data[3]*4)||(data[2]===2&&data[3]===0&&data.length>4&&data.length<=MAX&&(data.length-4)%4===0)))fail('Invalid JM note-stream header.');
     const events=[];for(let i=4;i<data.length;i+=4)events.push({frames:data[i],voice:data[i+1],note:data[i+2],control:data[i+3]});tune(events);return events;}
@@ -165,5 +130,5 @@ globalThis.DosDisk = (() => {
     }
     for(const voice of active.values())events.push({frames:0,voice,note:60,control:0});return tune(events);
   }
-  return {Disk,SIZE,BASE,MAX,types,textBytes,textOf,nameOf,image,decodeImage,tune,decodeTune,notes,midi};
+  return {Disk,SIZE,BASE,MAX,ROOT,FAT,CLUSTERS,BLOCK,types,textBytes,textOf,nameOf,image,decodeImage,tune,decodeTune,notes,midi};
 })();

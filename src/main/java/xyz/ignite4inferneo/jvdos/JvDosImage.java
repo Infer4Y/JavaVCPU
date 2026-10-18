@@ -5,6 +5,7 @@ import xyz.ignite4inferneo.OPCode;
 import xyz.ignite4inferneo.Registers;
 
 import static xyz.ignite4inferneo.OPCode.*;
+import static xyz.ignite4inferneo.jvdos.DosFileSystem.*;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -13,7 +14,7 @@ import java.util.Map;
 
 /** Assembly source for the resident DOS image. Java only emits bytes and resolves addresses.
  * Every keyboard, filesystem, display and executable-loader operation runs on the guest CPU.
- * Disk banks 2..255 each contain 255 linked 256-byte blocks. Head length uses bytes 0/14; byte 15 links continuation blocks.
+ * JVFS uses one volume per device, 1 KiB clusters, a 16-bit FAT and 24-bit file lengths.
  * RAM 246 holds font pointers and 247 instruction descriptors. RAM 248 is the transient
  * program area; 249 is the COM service page; 250/251/252 hold
  * names, input and kernel variables. COM services: 249:0 prints D and returns to A:B;
@@ -24,18 +25,18 @@ import java.util.Map;
 public final class JvDosImage {
     // A-D: working values; E/F: legacy addressing; G/H: far branches (COM ABI).
     // I/J: indirect reads; K/L: font coordinates; M/N/O/P remain available to routines.
-    private static final byte A=Registers.A.address(), B=Registers.B.address(),
+    static final byte A=Registers.A.address(), B=Registers.B.address(),
             C=Registers.C.address(), D=Registers.D.address(), E=Registers.E.address(),
             F=Registers.F.address(), G=Registers.G.address(), H=Registers.H.address(),
             I=Registers.I.address(), J=Registers.J.address(), K=Registers.K.address(),
             L=Registers.L.address();
-    private static final int SOURCE_REGISTER_COUNT = 16;
-    private static final int SOURCE_REGISTER_BASE = 224;
-    private static final String[] COMMANDS={"BROWSE","MKDIR","MD","CD","CHDIR","RMDIR","RD","HELP","DRIVE","BANK","DIR","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","ERASE","WRITE","EDIT","APPEND","COPY","REN","RENAME","MOVE","DELETE","ECHO","PRINT","CLS","CLEAR","VER","MEM","RUN","SAVE","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","SOUND","JCTRL","REM","END","STOP","REBOOT","EXIT"};
+    static final int SOURCE_REGISTER_COUNT = 16;
+    static final int SOURCE_REGISTER_BASE = 224;
+    private static final String[] COMMANDS={"BROWSE","MKDIR","MD","CD","CHDIR","RMDIR","RD","HELP","DRIVE","DIR","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","ERASE","WRITE","EDIT","APPEND","COPY","REN","RENAME","MOVE","DELETE","ECHO","PRINT","CLS","CLEAR","VER","MEM","RUN","SAVE","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","SOUND","JCTRL","REM","END","STOP","REBOOT","EXIT"};
     private static final java.util.Set<String> SCRIPT_COMMANDS=java.util.Set.of("PRINT","ECHO","CLS","CLEAR","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","REM","END","STOP","JCTRL");
     private static final java.util.Set<String> FILE_COMMANDS=java.util.Set.of("CD","CHDIR","RMDIR","RD","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","DELETE","ERASE","WRITE","EDIT","APPEND","COPY","REN","RENAME","MOVE","RUN","SAVE");
-    private static final int NAME=250, LINE=251, STATE=252, TPA=248;
-    private static final int CH=64,X=65,Y=66,COUNT=67,ARG=68,SLOT=69,INDEX=70,
+    static final int NAME=250, LINE=251, STATE=252, TPA=248;
+    static final int CH=64,X=65,Y=66,COUNT=67,ARG=68,SLOT=69,INDEX=70,
             LENGTH=71,FOUND=72,FREE=73,TEMP=74,MODE=75,SECOND=76,SOURCE=77,
             PRINT_RETURN=80,GLYPH_RETURN=82,SEARCH_RETURN=84,NUMBER_RETURN=86,
             MESSAGE_PAGE=88,MESSAGE_ADDRESS=89,MESSAGE_RETURN=90,
@@ -52,20 +53,20 @@ public final class JvDosImage {
             TILE_X=144,TILE_Y=145,IMAGE_COLOR=146,IMAGE_X=147,IMAGE_Y=148,
             KEY_RAW=150,SHIFT=151,MUSIC_FRAMES=152,MUSIC_VOICE=153,MUSIC_NOTE=154,MUSIC_CONTROL=155,DISK_BANK=156;
     // Extended state occupies bank-zero page 253; bank one holds the file buffer.
-    private static final int LENGTH_H=192,INDEX_H=193,CURSOR_H=194,SCRIPT_INDEX_H=195,SCRIPT_SIZE_H=196,
+    static final int LENGTH_H=192,INDEX_H=193,CURSOR_H=194,SCRIPT_INDEX_H=195,SCRIPT_SIZE_H=196,
             MEDIA_POS_H=197,MEDIA_NEXT_H=198,LINE_START_H=199,TARGET_H=200,EDIT_SIZE=201,EDIT_SIZE_H=202,
             FILE_TYPE=203,ROOT_SLOT=204,BLOCK=205,BLOCK_COUNT=206,SEGMENT=207,
             FILE_RETURN=208,BUF=210,BUF_H=211,NEEDED=212,PLAN_COUNT=213,PLAN_INDEX=214,
             OLD_TAIL=215,SCAN=216,WORK=217,WORK_H=218,NUM_H=219,NUMBER16_RETURN=220,
             DECIMAL=222,DECIMAL_H=223,DIGIT=224,LEADING=225,RUN_LINE_H=226,CMP_TEMP=227;
     // Shell history occupies bank-one pages 240..247; draft/completion scratch uses 248..250.
-    private static final int H_COUNT=228,H_NEXT=229,H_VIEW=230,H_SLOT=231,H_PAGE=232,H_OFFSET=233,
+    static final int H_COUNT=228,H_NEXT=229,H_VIEW=230,H_SLOT=231,H_PAGE=232,H_OFFSET=233,
             H_INDEX=234,H_RETURN=235,H_OLD_COUNT=237,
             C_ACTIVE=238,C_NEXT=239,C_START=240,C_END=241,C_COUNT=242,C_CURSOR=243,C_PREFIX=244,
             C_TYPE=245,C_WRAP=246,C_INDEX=247,C_MATCH=248,C_BANK=249,C_PAGE=250,C_OFFSET=251,
             C_CHAR=252,C_OUT=253,C_TOTAL=254,C_NEW_CURSOR=255,C_RETURN=256,C_SPACE=258;
-    private static final int IMAGE_SCALE=259,IMAGE_LEFT=260,IMAGE_TOP=261, CWD=262, DIR_TARGET=263, DESKTOP_LOADING=273, DESKTOP_BANK=274, DESKTOP_CWD=275, DESKTOP_DRIVE=276;
-    private static final int CMD_INDEX=277,CMD_FLAGS=278,CMD_PAGE=279,CMD_OFFSET=280,
+    static final int IMAGE_SCALE=259,IMAGE_LEFT=260,IMAGE_TOP=261, CWD=262, DIR_TARGET=263, DESKTOP_LOADING=273, DESKTOP_BANK=274, DESKTOP_CWD=275, DESKTOP_DRIVE=276;
+    static final int CMD_INDEX=277,CMD_FLAGS=278,CMD_PAGE=279,CMD_OFFSET=280,
             CMD_INPUT_BANK=281,CMD_INPUT_PAGE=282,CMD_INPUT_OFFSET=283,
             CMD_ENTRY_RETURN=284,CMD_FIND_RETURN=286,LAUNCH_LENGTH=288;
 
@@ -73,7 +74,7 @@ public final class JvDosImage {
     public static void main(String[] args) throws java.io.IOException {
         if(args.length!=1) throw new IllegalArgumentException("Supply an output image path");
         byte[][] pages=Programs.bootImage(); byte[] image=new byte[65536];
-        byte[] header={'J','V','C','P','M',22,(byte)pages.length,1};
+        byte[] header={'J','V','C','P','M',23,(byte)pages.length,1};
         System.arraycopy(header,0,image,0,header.length);
         for(int page=0;page<pages.length;page++) System.arraycopy(pages[page],0,image,512+page*256,pages[page].length);
         java.nio.file.Files.write(java.nio.file.Path.of(args[0]),image);
@@ -89,7 +90,7 @@ public final class JvDosImage {
                 if(branch.local()&&!same){pinned.add(branch.id());next.remove(branch.id());}
                 else if(same&&!pinned.contains(branch.id()))next.add(branch.id());
             }
-            if(next.equals(local)){if(s.codeEndPage>=246)throw new IllegalStateException("Kernel overlaps font pointers: "+s.codeEndPage);return result;}
+            if(next.equals(local)){if(s.codeEndPage>=244)throw new IllegalStateException("Kernel overlaps filesystem cache: "+s.codeEndPage);return result;}
             local=next;
         }
         throw new IllegalStateException("DOS branch layout did not converge");
@@ -121,37 +122,13 @@ public final class JvDosImage {
         s.set(DISK_BANK,2);
         s.set(CWD,0);
         s.set(SHIFT,0);
-        s.text("JV-DOS 1.5\nHELP FOR COMMANDS\n\n");
-        // Seed a real executable once; later boots preserve the user's directory and data.
-        s.store(2,A);
-        s.store(255,B);
-        s.store(0,C);
-        s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);
-        s.store(0x4a,A);
-        s.eq(D,A,"boot.autoexec");
-        byte[] hello=helloProgram();
-        s.store(2,A);s.store(0,B);
-        s.store(0,C);s.store(hello.length,D);s.emit(WRITE_BYTE_TO_STORAGE,A,B,C,D);
-        String filename="HELLO.COM";
-        for(int i=0;i<12;i++) { s.store(i+1,C);s.store(i<filename.length()?filename.charAt(i):0,D);s.emit(WRITE_BYTE_TO_STORAGE,A,B,C,D); }
-        for(int i=0;i<hello.length;i++) { s.store(16+i,C);s.store(hello[i]&255,D);s.emit(WRITE_BYTE_TO_STORAGE,A,B,C,D); }
-        s.diskLiteral(255,0,0x4a);
-        s.label("boot.autoexec");
-        // Optional startup source on the system disk, bank 2 root. Never create or replace it.
-        String autoexec="AUTOEXEC.JVS";
-        for(int n=0;n<12;n++) {
-            s.store(autoexec.charAt(n),D);
-            s.emit(STORE_MEM_ABSOLUTE,D,0,NAME,64+n);
-        }
-        s.call("search",SEARCH_RETURN);
-        s.get(A,FOUND);s.store(255,B);s.eq(A,B,"shell");
-        s.put(A,SLOT);
-        s.call("file.load",FILE_RETURN);
-        s.jump("script.start");
+        s.text("JV-DOS 2.0\nHELP FOR COMMANDS\n\n");
+        DosFileSystem.boot(s);
 
-        s.label("shell");
+        s.label("shell");s.fset(FileSystemAbi.HANDLE,0);s.fs(FileSystemAbi.ABORT);s.fset(FileSystemAbi.HANDLE,1);s.fs(FileSystemAbi.ABORT);
+        s.set(DEST_PARSE_FLAG,0);
         s.get(A,DESKTOP_LOADING);s.store(0,B);s.eq(A,B,"shell.desktop.restored");
-        s.get(A,DESKTOP_BANK);s.put(A,DISK_BANK);s.get(A,DESKTOP_CWD);s.put(A,CWD);
+        s.get(A,DESKTOP_CWD);s.put(A,CWD);s.get(A,SAVED_CWD_H);s.put(A,CWD_H);
         s.get(A,DESKTOP_DRIVE);s.store(0,B);s.emit(ADD,A,B,Registers.STORAGE_PAGE.address());
         s.set(DESKTOP_LOADING,0);s.label("shell.desktop.restored");
         s.get(A,SCRIPT_ACTIVE);
@@ -164,13 +141,7 @@ public final class JvDosImage {
         s.set(MODE,0);
         s.set(H_VIEW,0);
         s.set(C_ACTIVE,0);
-        s.store(0,A);s.emit(ADD,Registers.STORAGE_PAGE.address(),A,D);s.put(D,TEMP);s.call("number",NUMBER_RETURN);
-        s.text(":");s.get(D,DISK_BANK);s.put(D,TEMP);s.call("number",NUMBER_RETURN);
-        s.get(A,CWD);s.store(0,B);s.eq(A,B,"prompt.end");
-        s.text(":");s.get(A,CWD);s.store(1,B);s.emit(SUB,A,B,A);s.put(A,SLOT);s.set(INDEX,1);
-        s.label("prompt.folder");s.get(C,INDEX);s.diskReadAt(C,D);s.store(0,A);s.eq(D,A,"prompt.end");
-        s.put(D,CH);s.call("print",PRINT_RETURN);s.get(A,INDEX);s.emit(INCREMENT_REGISTER,A);s.put(A,INDEX);s.store(13,B);s.ne(A,B,"prompt.folder");
-        s.label("prompt.end");s.text("> ");
+        DosFileSystem.prompt(s);
         s.get(A,X);
         s.put(A,BASE_X);
         s.get(A,Y);
@@ -335,7 +306,7 @@ public final class JvDosImage {
         s.jump("shell");
 
         s.label("cmd.HELP");
-        s.text("DIR TYPE VIEW EDIT COPY REN MOVE DEL\nMD CD RD RUN IMAGE PLAY JCTRL\nDRIVE BANK CLS VER MEM REBOOT EXIT\nUP/DOWN HISTORY  TAB COMPLETE\nEDIT: ESC SAVES AND EXITS\n");
+        s.text("DIR TYPE VIEW EDIT COPY REN MOVE DEL\nMD CD RD RUN IMAGE PLAY JCTRL\nDRIVE CLS VER MEM REBOOT EXIT\nUP/DOWN HISTORY  TAB COMPLETE\nEDIT: ESC SAVES AND EXITS\n");
         s.jump("shell");
         s.label("cmd.CLEAR");
         s.label("cmd.CLS");
@@ -344,10 +315,10 @@ public final class JvDosImage {
         s.set(Y,4);
         s.jump("shell");
         s.label("cmd.VER");
-        s.text("JV-DOS 1.5\n");
+        s.text("JV-DOS 2.0\n");
         s.jump("shell");
         s.label("cmd.MEM");
-        s.text("128K RAM\n254 FILE BANKS, 255 BLOCKS EACH\n61200 BYTES MAXIMUM FILE SIZE\nJCTRL PROGRAM WORKSPACE: 8K\n");
+        s.text("128K RAM / 16M PER DRIVE\nJVFS 1 / 1K CLUSTERS\nFILE SIZE LIMITED BY DISK SPACE\nJCTRL PROGRAM WORKSPACE: 8K\n");
         s.jump("shell");
         s.label("cmd.REBOOT");
         s.jump("boot");
@@ -374,162 +345,7 @@ public final class JvDosImage {
         s.text("\n");
         s.jump("shell");
 
-        emitDrive(s);
-        s.label("cmd.BANK");
-        s.get(A,ARG);
-        s.get(B,COUNT);
-        s.eq(A,B,"bank.show");
-        s.store(1,C);
-        s.emit(ADD,A,C,C);
-        s.ne(C,B,"bank.bad");
-        s.store(64,B);
-        s.emit(ADD,A,B,C);
-        s.readAt(LINE,C,D);
-        s.get(A,DISK_BANK);
-        s.store('+',B);
-        s.eq(D,B,"bank.next");
-        s.store('-',B);
-        s.ne(D,B,"bank.bad");
-        s.store(2,B);
-        s.eq(A,B,"bank.show");
-        s.store(1,B);
-        s.emit(SUB,A,B,A);
-        s.jump("bank.set");
-        s.label("bank.next");
-        s.store(255,B);
-        s.eq(A,B,"bank.show");
-        s.emit(INCREMENT_REGISTER,A);
-        s.label("bank.set");
-        s.put(A,DISK_BANK);
-        s.set(CWD,0);
-        s.jump("bank.show");
-        s.label("bank.bad");
-        s.text("USE BANK + OR BANK -\n");
-        s.jump("shell");
-        s.label("bank.show");
-        s.text("DISK BANK ");
-        s.get(D,DISK_BANK);
-        s.put(D,TEMP);
-        s.call("number",NUMBER_RETURN);
-        s.text("\n");
-        s.jump("shell");
-        emitDirectories(s);
-        s.label("cmd.DIR");
-        s.set(SLOT,0);
-        s.label("dir.loop");
-        s.diskRead(1,D);
-        s.store(0,A);
-        s.eq(D,A,"dir.next");
-        s.store(255,A);
-        s.eq(D,A,"dir.next");
-        s.parentFilter(SLOT,"dir.next");
-        s.set(INDEX,1);
-        s.label("dir.name");
-        s.get(C,INDEX);
-        s.diskReadAt(C,D);
-        s.store(0,A);
-        s.eq(D,A,"dir.size");
-        s.put(D,CH);
-        s.call("print",PRINT_RETURN);
-        s.get(A,INDEX);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,INDEX);
-        s.store(13,B);
-        s.eq(A,B,"dir.size");
-        s.jump("dir.name");
-        s.label("dir.size");
-        s.diskRead(13,D);
-        s.store(4,A);
-        String regular=s.unique("dir.regular");
-        s.ne(D,A,regular);
-        s.text(" <DIR>\n");
-        s.jump("dir.next");
-        s.label(regular);
-        s.text(" ");
-        s.diskRead(0,D);
-        s.put(D,TEMP);
-        s.diskRead(14,D);
-        s.put(D,NUM_H);
-        s.call("number16",NUMBER16_RETURN);
-        s.text(" BYTES\n");
-        s.label("dir.next");
-        s.get(A,SLOT);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,SLOT);
-        s.store(255,B);
-        s.ne(A,B,"dir.loop");
-        s.jump("shell");
-
-        // All commands below share guest-side argument scanning and directory lookup.
-        for(String command:new String[]{"TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","ERASE","WRITE","EDIT","APPEND","COPY","REN","RUN","SAVE"}) {
-            s.label("cmd."+command);
-            s.call("parse.name",SEARCH_RETURN);
-            s.call("search",SEARCH_RETURN);
-            if(command.equals("WRITE")||command.equals("EDIT")||command.equals("SAVE")) s.jump("prepare."+command);
-            else {
-                s.get(A,FOUND);
-                s.store(255,B);
-                s.eq(A,B,"missing");
-                s.put(A,SLOT);
-                s.call("file.load",FILE_RETURN);
-                s.jump("do."+command);
-            }
-        }
-        s.label("cmd.JCTRL");
-        // Desktop takes over the source buffer; launching it ends the current script.
-        s.set(SCRIPT_ACTIVE,0);
-        // The managed desktop lives on the system disk; the record is outside the boot image.
-        s.store(0,A);s.emit(ADD,Registers.STORAGE_PAGE.address(),A,A);s.put(A,WORK);s.store(0,Registers.STORAGE_PAGE.address());
-        int[] packageMagic={'J','C','T',1};
-        for(int n=0;n<packageMagic.length;n++) {
-            s.store(0,A);s.store(1,B);s.store(n,C);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.store(packageMagic[n],A);s.ne(D,A,"desktop.missing");
-        }
-        s.store(0,A);s.store(1,B);s.store(4,C);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.store(2,A);s.emit(COMPARE_UNSIGNED,D,A,C);s.store(1,A);s.eq(C,A,"desktop.missing");
-        // Save the file-operation context while loading the executable from the system disk.
-        s.get(A,DISK_BANK);s.put(A,DESKTOP_BANK);s.get(A,CWD);s.put(A,DESKTOP_CWD);
-        s.get(A,WORK);s.put(A,DESKTOP_DRIVE);s.put(D,DISK_BANK);
-        s.set(DESKTOP_LOADING,1);s.set(CWD,0);
-        String desktopCommand="RUN JCTRL.COM";
-        for(int n=0;n<desktopCommand.length();n++){s.store(desktopCommand.charAt(n),D);s.emit(STORE_MEM_ABSOLUTE,D,0,LINE,64+n);}
-        s.set(COUNT,desktopCommand.length());s.set(ARG,4);
-        s.call("parse.name",SEARCH_RETURN);s.call("search",SEARCH_RETURN);
-        s.get(A,FOUND);s.store(255,B);s.eq(A,B,"missing");s.put(A,SLOT);
-        s.call("file.load",FILE_RETURN);
-        s.get(A,DESKTOP_LOADING);s.store(0,B);s.eq(A,B,"desktop.context.restored");
-        s.get(A,DESKTOP_BANK);s.put(A,DISK_BANK);s.get(A,DESKTOP_CWD);s.put(A,CWD);
-        s.get(A,DESKTOP_DRIVE);s.store(0,B);s.emit(ADD,A,B,Registers.STORAGE_PAGE.address());
-        s.set(DESKTOP_LOADING,0);s.label("desktop.context.restored");
-        s.jump("do.RUN");
-        s.label("desktop.missing");s.get(A,WORK);s.store(0,B);s.emit(ADD,A,B,Registers.STORAGE_PAGE.address());s.text("BUNDLED DESKTOP NOT INSTALLED\n");s.jump("shell");
-        s.label("missing");
-        s.text("FILE NOT FOUND\n");
-        s.jump("shell");
-        s.label("full");
-        s.text("DIRECTORY FULL\n");
-        s.jump("shell");
-        s.label("usage");
-        s.text("BAD OR MISSING FILE NAME\n");
-        s.jump("shell");
-        s.label("exists");
-        s.text("DESTINATION EXISTS\n");
-        s.jump("shell");
-        for(String command:new String[]{"WRITE","EDIT","SAVE"}) {
-            s.label("prepare."+command);
-            s.get(A,FOUND);
-            s.store(255,B); String found=s.unique("found"), ready=s.unique("prepared");
-            s.ne(A,B,found);
-            s.get(A,FREE);
-            s.eq(A,B,"full");
-            s.put(A,SLOT);
-            s.call("file.empty",FILE_RETURN);
-            s.jump(ready);
-            s.label(found);
-            s.put(A,SLOT);
-            s.call("file.load",FILE_RETURN);
-            s.label(ready);
-            if(!command.equals("EDIT")) s.set16(LENGTH,LENGTH_H,0);
-            s.jump("do."+command);
-        }
+        DosFileSystem.commands(s);
         s.label("do.APPEND");
         s.set(FILE_TYPE,1);
         s.jump("write.text");
@@ -619,44 +435,6 @@ public final class JvDosImage {
         s.set(INK,28);
         s.text("\nSAVED\n");
         s.jump("shell");
-        s.label("do.DEL");
-        s.label("do.ERASE");
-        s.call("file.delete",FILE_RETURN);
-        s.text("DELETED\n");
-        s.jump("shell");
-        s.label("do.TYPE");
-        s.label("do.CAT");
-        s.set16(INDEX,INDEX_H,0);
-        s.label("type.loop");
-        s.eq16(INDEX,INDEX_H,LENGTH,LENGTH_H,"type.end");
-        s.bufferRead(INDEX,INDEX_H,D);
-        s.put(D,CH);
-        s.call("print",PRINT_RETURN);
-        s.inc16(INDEX,INDEX_H);
-        s.jump("type.loop");
-        s.label("type.end");
-        s.text("\n");
-        s.jump("shell");
-
-        for(String command:new String[]{"COPY","REN"}) {
-            s.label("do."+command);
-            s.get(A,SLOT);
-            s.put(A,SOURCE);
-            s.call("parse.name",SEARCH_RETURN);
-            s.call("search",SEARCH_RETURN);
-            s.get(A,FOUND);
-            s.store(255,B);
-            s.ne(A,B,"exists");
-            if(command.equals("COPY")) { s.get(A,FREE);
-                s.eq(A,B,"full");
-                s.put(A,SLOT);
-                s.call("file.save",FILE_RETURN); }
-            else { s.get(A,SOURCE);
-                s.put(A,SLOT);
-                s.call("name.write",SEARCH_RETURN); }
-            s.text("OK\n");
-            s.jump("shell");
-        }
         s.label("do.RUN");
         s.get(A,SCRIPT_ACTIVE);
         s.store(1,B);
@@ -670,15 +448,13 @@ public final class JvDosImage {
         s.eq(D,A,"script.start");
         s.set16(INDEX,INDEX_H,0);
         s.bufferRead(INDEX,INDEX_H,D);
-        for(int c=32;c<=90;c++) if(printable(c)) { s.store(c,A);
-            s.eq(D,A,"script.start"); }
+        s.store(32,A);s.emit(COMPARE_UNSIGNED,D,A,C);s.store(1,B);s.eq(C,B,"run.binary");s.store(91,A);s.emit(COMPARE_UNSIGNED,D,A,C);s.eq(C,B,"script.start");s.label("run.binary");
         s.eq16Value(LENGTH,LENGTH_H,0,"invalid.program");
         // Validate all bytes, including instruction boundaries at each 256-byte code page.
         s.label("run.verify");
         s.eq16(INDEX,INDEX_H,LENGTH,LENGTH_H,"run.verified");
         s.bufferRead(INDEX,INDEX_H,D);
-        for(OPCode opcode:OPCode.values()) { s.store(opcode.code()&255,A);
-            s.eq(D,A,"run.descriptor"); }
+        s.store(OPCode.values().length,A);s.emit(COMPARE_UNSIGNED,D,A,C);s.store(1,B);s.eq(C,B,"run.descriptor");
         s.jump("invalid.program");
         s.label("run.descriptor");
         s.store(5,A);
@@ -712,8 +488,7 @@ public final class JvDosImage {
         s.store(0,A);
         s.eq(D,A,"run.consume");
         s.bufferRead(INDEX,INDEX_H,D);
-        for(int register=0;register<Registers.values().length;register++) { s.store(register,A);
-            s.eq(D,A,"run.consume"); }
+        s.store(Registers.values().length,A);s.emit(COMPARE_UNSIGNED,D,A,C);s.store(1,B);s.eq(C,B,"run.consume");
         s.jump("invalid.program");
         s.label("invalid.program");
         s.text("INVALID EXECUTABLE\nCHECK OPCODES AND PAGE BOUNDARIES\n");
@@ -769,7 +544,9 @@ public final class JvDosImage {
         s.readAt(LINE,C,D);
         s.store(32,A);
         s.eq(D,A,"parse.space");
+        s.get(A,DEST_PARSE_FLAG);s.store(1,B);s.eq(A,B,"parse.separator.allowed");
         for(int separator:new int[]{47,92}) { s.store(separator,A); s.eq(D,A,"usage"); }
+        s.label("parse.separator.allowed");
         s.get(A,INDEX);
         s.store(12,B);
         s.eq(A,B,"usage");
@@ -789,6 +566,7 @@ public final class JvDosImage {
         s.emit(INCREMENT_REGISTER,A);
         s.put(A,ARG);
         s.label("parse.end");
+        s.get(A,DEST_PARSE_FLAG);s.store(1,B);s.eq(A,B,"name.destination");
         s.read(NAME,64,D);
         s.store(46,A);
         String ordinary=s.unique("name.ordinary");
@@ -803,6 +581,7 @@ public final class JvDosImage {
         s.store(2,B);
         s.eq(A,B,"usage");
         s.label(ordinary);
+        s.label("name.destination");
         s.get(A,INDEX);
         s.store(0,B);
         s.eq(A,B,"usage");
@@ -810,119 +589,19 @@ public final class JvDosImage {
         s.emit(ADD,A,B,C);
         s.store(0,D);
         s.store(NAME,E);
+        s.label("parse.pad");
         s.emit(STORE_MEM_ON_PAGE,D,E,C);
+        s.emit(INCREMENT_REGISTER,C);s.store(77,A);s.ne(C,A,"parse.pad");
         s.ret(SEARCH_RETURN);
 
-        s.label("search");
-        s.set(FREE,255);
-        s.set(FOUND,255);
-        s.set(SLOT,0);
-        s.label("search.slot");
-        s.diskRead(1,D);
-        s.store(0,A);
-        s.eq(D,A,"search.free");
-        s.store(255,A);
-        s.eq(D,A,"search.next");
-        s.parentFilter(SLOT,"search.next");
-        s.set(INDEX,0);
-        s.label("search.char");
-        s.get(A,INDEX);
-        s.store(64,B);
-        s.emit(ADD,A,B,C);
-        s.readAt(NAME,C,D);
-        s.put(D,TEMP);
-        s.get(A,INDEX);
-        s.store(1,B);
-        s.emit(ADD,A,B,C);
-        s.diskReadAt(C,D);
-        s.get(A,TEMP);
-        s.ne(D,A,"search.next");
-        s.store(0,B);
-        s.eq(A,B,"search.found");
-        s.get(A,INDEX);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,INDEX);
-        s.store(12,B);
-        s.eq(A,B,"search.found");
-        s.jump("search.char");
-        s.label("search.free");
-        s.get(A,FREE);
-        s.store(255,B);
-        s.ne(A,B,"search.next");
-        s.get(A,SLOT);
-        s.put(A,FREE);
-        s.label("search.next");
-        s.get(A,SLOT);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,SLOT);
-        s.store(255,B);
-        s.ne(A,B,"search.slot");
-        s.ret(SEARCH_RETURN);
-        s.label("search.found");
-        s.get(A,SLOT);
-        s.put(A,FOUND);
-        s.ret(SEARCH_RETURN);
-
-        s.label("name.write");
-        s.get(C,SLOT);
-        s.emit(INCREMENT_REGISTER,C);
-        s.get(A,DISK_BANK);
-        s.store(255,B);
-        s.get(D,CWD);
-        s.emit(WRITE_BYTE_TO_STORAGE,A,B,C,D);
-        s.set(INDEX,0);
-        s.label("name.loop");
-        s.get(A,INDEX);
-        s.store(64,B);
-        s.emit(ADD,A,B,C);
-        s.readAt(NAME,C,D);
-        s.put(D,CH);
-        s.get(A,INDEX);
-        s.store(1,B);
-        s.emit(ADD,A,B,C);
-        s.get(D,CH);
-        s.diskWriteAt(C,D);
-        s.get(A,INDEX);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,INDEX);
-        s.store(12,B);
-        s.ne(A,B,"name.loop");
-        s.ret(SEARCH_RETURN);
+        DosFileSystem.search(s);
 
         // Decimal output supports the full unsigned 16-bit file length.
         s.label("number");
         s.set(NUM_H,0);
         s.call("number16",NUMBER16_RETURN);
         s.ret(NUMBER_RETURN);
-        s.label("number16");
-        s.copy16(TEMP,NUM_H,DECIMAL,DECIMAL_H);
-        s.set(LEADING,0);
-        for(int divisor:new int[]{10000,1000,100,10,1}) {
-            String loop=s.unique("decimal.subtract"), digit=s.unique("decimal.digit"), skip=s.unique("decimal.skip"), output=s.unique("decimal.output");
-            s.set(DIGIT,0);
-            s.label(loop);
-            s.less16Value(DECIMAL,DECIMAL_H,divisor,digit);
-            s.subtract16(DECIMAL,DECIMAL_H,divisor);
-            s.get(A,DIGIT);
-            s.emit(INCREMENT_REGISTER,A);
-            s.put(A,DIGIT);
-            s.jump(loop);
-            s.label(digit);
-            if(divisor!=1) { s.get(A,DIGIT);
-                s.store(0,B);
-                s.ne(A,B,output);
-                s.get(A,LEADING);
-                s.eq(A,B,skip); }
-            s.label(output);
-            s.get(A,DIGIT);
-            s.store(48,B);
-            s.emit(ADD,A,B,D);
-            s.put(D,CH);
-            s.call("print",PRINT_RETURN);
-            s.set(LEADING,1);
-            s.label(skip);
-        }
-        s.ret(NUMBER16_RETURN);
+        s.label("number16");s.get(A,TEMP);s.put(A,DEC24);s.get(A,NUM_H);s.put(A,DEC24_H);s.set(DEC24_TOP,0);s.call("number24",DEC24_RETURN);s.ret(NUMBER16_RETURN);
 
         s.label("message");
         s.get(A,MESSAGE_PAGE);
@@ -1014,7 +693,7 @@ public final class JvDosImage {
         s.ret(PRINT_RETURN);
 
         emitBrowser(s); emitEditor(s); emitSourceLanguage(s); emitMedia(s); emitKeyboard(s); emitFontRenderer(s);
-        emitFileSystem(s); emitShellNavigation(s);emitMove(s);emitCommands(s);
+        DosFileSystem.io(s); emitShellNavigation(s);emitCommands(s);GuestFileSystem.emit(s);
         return s.finish();
     }
 
@@ -1288,89 +967,7 @@ public final class JvDosImage {
         s.ne(A,B,"image.pixel");
         s.jump("media.wait");
 
-        s.label("do.PLAY");
-        s.diskRead(16,D);
-        s.store('J',A);
-        s.ne(D,A,"media.error");
-        s.diskRead(17,D);
-        s.store('M',A);
-        s.ne(D,A,"media.error");
-        s.diskRead(18,D);
-        s.store(2,A);
-        s.eq(D,A,"music.extended");
-        s.store(1,A);
-        s.ne(D,A,"media.error");
-        s.diskRead(19,D);
-        s.put(D,SOURCE);
-        s.store(0,A);
-        s.eq(D,A,"media.error");
-        s.set16(WORK,WORK_H,4);
-        s.label("music.length");
-        s.get(A,SOURCE);
-        s.store(0,B);
-        s.eq(A,B,"music.length.done");
-        for(int i=0;i<4;i++)s.inc16(WORK,WORK_H);
-        s.get(A,SOURCE);
-        s.store(1,B);
-        s.emit(SUB,A,B,A);
-        s.put(A,SOURCE);
-        s.jump("music.length");
-        s.label("music.length.done"); String lengthValid=s.unique("music.length.valid");
-        s.eq16(WORK,WORK_H,LENGTH,LENGTH_H,lengthValid);
-        s.jump("media.error");
-        s.label(lengthValid);
-        s.jump("music.start");
-        // Version 2 derives its event count from the linked file length.
-        s.label("music.extended");
-        s.diskRead(19,D);
-        s.store(0,A);
-        s.ne(D,A,"media.error");
-        s.set16(WORK,WORK_H,4);
-        s.eq16(WORK,WORK_H,LENGTH,LENGTH_H,"media.error");
-        s.label("music.extended.length");
-        for(int i=0;i<4;i++) {
-            s.inc16(WORK,WORK_H);
-            s.eq16(WORK,WORK_H,LENGTH,LENGTH_H,i==3?"music.start":"media.error");
-        }
-        s.jump("music.extended.length");
-        s.label("music.start");
-        s.text("PLAYING - ESC TO STOP\n");
-        s.set16(INDEX,INDEX_H,4);
-        s.silence();
-        s.label("music.event");
-        s.eq16(INDEX,INDEX_H,LENGTH,LENGTH_H,"music.done");
-        for(int variable:new int[]{MUSIC_FRAMES,MUSIC_VOICE,MUSIC_NOTE,MUSIC_CONTROL}) {
-            s.bufferRead(INDEX,INDEX_H,D);
-            s.put(D,variable);
-            s.inc16(INDEX,INDEX_H);
-        }
-        s.get(A,MUSIC_VOICE); String voice=s.unique("music.voice"); for(int n=0;n<8;n++) { s.store(n,B);
-            s.eq(A,B,voice); } s.jump("media.error");
-        s.label(voice);
-        s.get(A,MUSIC_CONTROL); String control=s.unique("music.control"); for(int n:new int[]{0,128,129,130,131}) { s.store(n,B);
-            s.eq(A,B,control); } s.jump("media.error");
-        s.label(control);
-        s.get(A,MUSIC_VOICE);
-        s.get(B,MUSIC_NOTE);
-        s.get(C,MUSIC_CONTROL);
-        s.emit(OUTPUT_AUDIO,A,B,C);
-        s.label("music.wait");
-        s.get(A,MUSIC_FRAMES);
-        s.store(0,B);
-        s.eq(A,B,"music.event");
-        s.emit(DISPLAY);
-        s.emit(READ_INPUT,0,D);
-        s.store(27,A);
-        s.eq(D,A,"music.done");
-        s.get(A,MUSIC_FRAMES);
-        s.store(1,B);
-        s.emit(SUB,A,B,A);
-        s.put(A,MUSIC_FRAMES);
-        s.jump("music.wait");
-        s.label("music.done");
-        s.silence();
-        s.text("PLAYBACK FINISHED\n");
-        s.jump("shell");
+        s.label("do.PLAY");s.jump("filesystem.music");
         s.label("media.error");
         s.silence();
         s.text("INVALID MEDIA FILE\nUSE THE HTML DISK TOOL\n");
@@ -2161,7 +1758,7 @@ public final class JvDosImage {
             s.call("search",SEARCH_RETURN);s.get(A,FOUND);s.store(255,B);s.ne(A,B,"command.external.found");
         }
         s.jump("command.bad");
-        s.label("command.external.found");s.put(A,SLOT);s.diskRead(13,D);s.store(2,A);s.emit(COMPARE_UNSIGNED,D,A,C);s.store(1,B);s.ne(C,B,"command.bad");
+        s.label("command.external.found");s.get(D,FILE_TYPE);s.store(2,A);s.emit(COMPARE_UNSIGNED,D,A,C);s.store(1,B);s.ne(C,B,"command.bad");
         s.call("file.load",FILE_RETURN);s.jump("do.RUN");
 
         // Return I=bank, J=name page, K=name offset, L=length, M=flags, N/O=handler.
@@ -2404,7 +2001,7 @@ public final class JvDosImage {
         s.get(A,CURSOR);
         s.put(A,C_CURSOR);
         s.set(C_INDEX,0);
-        s.set(C_NEXT,0);
+        s.set(C_NEXT,0);s.set(FS_COOKIE_SAVE,0);s.set(FS_COOKIE_SAVE_H,0);s.set(FS_ROW_SAVE,0);
         s.set(C_START,0);
         s.label("complete.snapshot");
         s.get(A,C_INDEX);
@@ -2490,59 +2087,20 @@ public final class JvDosImage {
         s.call("command.entry",CMD_ENTRY_RETURN);
         s.put(L,C_MATCH);s.set(C_BANK,0);s.put(J,C_PAGE);s.put(K,C_OFFSET);s.jump("complete.test");
         s.label("complete.files");
-        s.get(A,C_NEXT);
-        s.store(255,B);
-        s.eq(A,B,"complete.wrap");
-        s.get(B,C_NEXT);
-        s.get(A,DISK_BANK);
-        s.store(1,C);
-        s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);
-        s.store(0,A);
-        s.eq(D,A,"complete.file.next");
-        s.store(255,A);
-        s.eq(D,A,"complete.file.next");
-        s.parentFilter(C_NEXT,"complete.file.next");
+        s.get(A,CWD);s.fput(A,FileSystemAbi.DIR);s.get(A,CWD_H);s.fput(A,FileSystemAbi.DIR+1);
+        for(int i=0;i<3;i++){s.get(A,FS_COOKIE_SAVE+i);s.fput(A,FileSystemAbi.COOKIE+i);}
+        s.fs(FileSystemAbi.NEXT);s.fget(A,FileSystemAbi.STATUS);s.store(FileSystemAbi.EOF,B);s.eq(A,B,"complete.wrap");s.store(0,B);s.ne(A,B,"filesystem.error");
+        for(int i=0;i<3;i++){s.fget(A,FileSystemAbi.COOKIE+i);s.put(A,FS_COOKIE_SAVE+i);}
         s.set(C_INDEX,0);
-        s.label("complete.file.name");
-        s.get(A,C_INDEX);
-        s.store(12,B);
-        s.eq(A,B,"complete.file.ready");
-        s.store(1,B);
-        s.emit(ADD,A,B,C);
-        s.get(B,C_NEXT);
-        s.get(A,DISK_BANK);
-        s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);
-        s.store(0,A);
-        s.eq(D,A,"complete.file.ready");
-        s.get(C,C_INDEX);
-        s.store(1,A);
-        s.store(250,B);
-        s.emit(STORE_MEM_ON_BANK,D,A,B,C);
-        s.get(A,C_INDEX);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,C_INDEX);
-        s.jump("complete.file.name");
-        s.label("complete.file.ready");
-        s.get(A,C_INDEX);
-        s.put(A,C_MATCH);
-        s.set(C_BANK,1);
-        s.set(C_PAGE,250);
-        s.set(C_OFFSET,0);
-        s.get(A,C_NEXT);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,C_NEXT);
-        s.jump("complete.test");
-        s.label("complete.file.next");
-        s.get(A,C_NEXT);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,C_NEXT);
-        s.jump("complete.files");
+        s.label("complete.file.name");s.get(A,C_INDEX);s.store(FileSystemAbi.NAME,B);s.emit(ADD,A,B,C);s.store(0,A);s.store(FileSystemAbi.DOS_PAGE,B);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);
+        s.store(0,A);s.eq(D,A,"complete.file.ready");s.get(C,C_INDEX);s.store(1,A);s.store(250,B);s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.get(A,C_INDEX);s.emit(INCREMENT_REGISTER,A);s.put(A,C_INDEX);s.store(12,B);s.ne(A,B,"complete.file.name");
+        s.label("complete.file.ready");s.get(A,C_INDEX);s.put(A,C_MATCH);s.set(C_BANK,1);s.set(C_PAGE,250);s.set(C_OFFSET,0);s.jump("complete.test");
         s.label("complete.wrap");
         s.get(A,C_WRAP);
         s.store(1,B);
         s.eq(A,B,"complete.none");
         s.set(C_WRAP,1);
-        s.set(C_NEXT,0);
+        s.set(C_NEXT,0);s.set(FS_COOKIE_SAVE,0);s.set(FS_COOKIE_SAVE_H,0);s.set(FS_ROW_SAVE,0);
         s.jump("complete.scan");
         s.label("complete.none");
         s.set(C_ACTIVE,0);
@@ -2698,7 +2256,7 @@ public final class JvDosImage {
     }
 
     private static boolean printable(int c) { return c>=32&&c<=126; }
-    private static byte[] helloProgram() {
+    public static byte[] helloProgram() {
         byte[] result=new byte[117]; String text="HELLO\n";
         for(int i=0;i<6;i++) {
             int n=i*18; int[] code={2,text.charAt(i),D,2,TPA,A,2,n+18,B,2,249,G,2,0,H,10,G,H};
@@ -2743,427 +2301,8 @@ public final class JvDosImage {
         };
     }
 
-    private static void emitDrive(Asm s) {
-        s.label("cmd.DRIVE");
-        s.get(A,ARG); s.get(B,COUNT); s.eq(A,B,"drive.show");
-        s.set(WORK,0);
-        s.label("drive.parse");
-        s.get(A,ARG); s.get(B,COUNT); s.eq(A,B,"drive.select");
-        s.store(64,B); s.emit(ADD,A,B,C); s.readAt(LINE,C,D);
-        s.store('0',A); s.emit(COMPARE_UNSIGNED,D,A,C); s.store(1,B); s.eq(C,B,"drive.bad");
-        s.store('9',A); s.emit(COMPARE_UNSIGNED,D,A,C); s.store(2,B); s.eq(C,B,"drive.bad");
-        s.store('0',A); s.emit(SUB,D,A,D); s.put(D,DIGIT);
-        s.get(A,WORK); s.store(25,B); s.emit(COMPARE_UNSIGNED,A,B,C);
-        s.store(2,D); s.eq(C,D,"drive.bad");
-        String safe=s.unique("drive.safe"); s.ne(A,B,safe);
-        s.get(A,DIGIT); s.store(5,B); s.emit(COMPARE_UNSIGNED,A,B,C); s.store(2,D); s.eq(C,D,"drive.bad");
-        s.label(safe); s.get(A,WORK); s.store(10,B); s.emit(MULTIPLY,A,B,A);
-        s.get(B,DIGIT); s.emit(ADD,A,B,A); s.put(A,WORK);
-        s.get(A,ARG); s.emit(INCREMENT_REGISTER,A); s.put(A,ARG); s.jump("drive.parse");
-        s.label("drive.select");
-        s.store(0,A); s.emit(ADD,Registers.STORAGE_PAGE.address(),A,A); s.put(A,SECOND);
-        s.get(A,WORK); s.store(0,B); s.emit(ADD,A,B,Registers.STORAGE_PAGE.address());
-        s.emit(READ_INPUT,0x40,A); s.store(1,B); String mounted=s.unique("drive.mounted"); s.eq(A,B,mounted);
-        s.get(A,SECOND); s.store(0,B); s.emit(ADD,A,B,Registers.STORAGE_PAGE.address());
-        s.text("DRIVE NOT MOUNTED\n"); s.jump("shell");
-        s.label(mounted); s.set(CWD,0); s.set(DISK_BANK,2); s.jump("drive.show");
-        s.label("drive.bad"); s.text("USE DRIVE 0-255\n"); s.jump("shell");
-        s.label("drive.show"); s.text("DRIVE ");
-        s.store(0,A); s.emit(ADD,Registers.STORAGE_PAGE.address(),A,D); s.put(D,TEMP);
-        s.call("number",NUMBER_RETURN); s.text("\n"); s.jump("shell");
-    }
-
-    /** Parent IDs live in reserved disk page 255, offsets slot+1; zero means root.
-     * A directory has type 4 and uses one ordinary head block with no data chain. */
-    private static void emitDirectories(Asm s) {
-        s.label("directory.required.file");
-        s.text("IS A DIRECTORY\n"); s.jump("shell");
-        s.label("directory.not.directory");
-        s.text("NOT A DIRECTORY\n"); s.jump("shell");
-        s.label("directory.not.empty");
-        s.text("DIRECTORY NOT EMPTY\n"); s.jump("shell");
-        for(String command:new String[]{"MKDIR","MD","CD","CHDIR","RMDIR","RD"}) {
-            s.label("cmd."+command);
-            boolean cd=command.equals("CD")||command.equals("CHDIR");
-            boolean make=command.equals("MKDIR")||command.equals("MD");
-            if(cd) {
-                s.get(A,ARG); s.get(B,COUNT); s.eq(A,B,"shell");
-                s.store(64,B); s.emit(ADD,A,B,C); s.readAt(LINE,C,D);
-                for(int slash:new int[]{47,92}) {
-                    String next=s.unique("cd.slash");
-                    s.store(slash,A); s.ne(D,A,next);
-                    s.get(A,ARG); s.emit(INCREMENT_REGISTER,A); s.get(B,COUNT); s.ne(A,B,"usage");
-                    s.set(CWD,0); s.jump("shell"); s.label(next);
-                }
-                s.store(46,A); String named=s.unique("cd.named"); s.ne(D,A,named);
-                s.emit(INCREMENT_REGISTER,C); s.readAt(LINE,C,D);
-                s.store(0,A); s.eq(D,A,"shell");
-                s.store(46,A); s.ne(D,A,named);
-                s.get(A,ARG); s.store(2,B); s.emit(ADD,A,B,A); s.get(B,COUNT); s.ne(A,B,named);
-                s.get(C,CWD); s.store(0,A); s.eq(C,A,"shell");
-                s.get(A,DISK_BANK); s.store(255,B); s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);
-                s.put(D,CWD); s.jump("shell"); s.label(named);
-            }
-            s.call("parse.name",SEARCH_RETURN); s.call("search",SEARCH_RETURN);
-            s.get(A,FOUND); s.store(255,B);
-            if(make) {
-                s.ne(A,B,"exists"); s.get(A,FREE); s.eq(A,B,"full"); s.put(A,SLOT);
-                s.call("name.write",SEARCH_RETURN);
-                s.store(0,D); for(int offset:new int[]{0,14,15}) s.diskWrite(offset,D);
-                s.store(4,D); s.diskWrite(13,D); s.jump("shell");
-            } else {
-                s.eq(A,B,"missing"); s.put(A,SLOT);
-                s.diskRead(13,D); s.store(4,A); s.ne(D,A,"directory.not.directory");
-                s.get(A,SLOT); s.emit(INCREMENT_REGISTER,A); s.put(A,DIR_TARGET);
-                if(cd) { s.put(A,CWD); s.jump("shell"); }
-                else {
-                    s.set(SLOT,0); String loop=s.unique("rd.scan"),next=s.unique("rd.next"); s.label(loop);
-                    s.diskRead(1,D); s.store(0,A); s.eq(D,A,next); s.store(255,A); s.eq(D,A,next);
-                    s.get(C,SLOT); s.emit(INCREMENT_REGISTER,C); s.get(A,DISK_BANK); s.store(255,B);
-                    s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D); s.get(A,DIR_TARGET); s.eq(D,A,"directory.not.empty");
-                    s.label(next); s.get(A,SLOT); s.emit(INCREMENT_REGISTER,A); s.put(A,SLOT);
-                    s.store(255,B); s.ne(A,B,loop);
-                    s.get(A,DIR_TARGET); s.store(1,B); s.emit(SUB,A,B,A); s.put(A,SLOT);
-                    s.store(0,D); for(int offset:new int[]{0,1,13,14,15}) s.diskWrite(offset,D);
-                    s.jump("shell");
-                }
-            }
-        }
-    }
-
-    /** Same-bank metadata moves; never copy or buffer file contents. */
-    private static void emitMove(Asm s) {
-        s.label("cmd.DELETE");s.jump("cmd.DEL");s.label("cmd.RENAME");s.jump("cmd.REN");
-        s.label("cmd.MOVE");s.call("parse.name",SEARCH_RETURN);s.call("search",SEARCH_RETURN);
-        s.get(A,FOUND);s.store(255,B);s.eq(A,B,"missing");s.put(A,SOURCE);
-        s.get(A,ARG);s.get(B,COUNT);s.eq(A,B,"usage");s.emit(SUB,B,A,B);s.put(B,SECOND);s.store(64,C);s.emit(ADD,A,C,C);s.readAt(LINE,C,D);
-        s.store(1,A);s.get(B,SECOND);String named=s.unique("move.named");s.ne(A,B,"move.dotdot");
-        s.store('/',A);s.eq(D,A,"move.root");s.store(92,A);s.eq(D,A,"move.root");s.store('.',A);s.ne(D,A,named);s.get(A,CWD);s.put(A,DIR_TARGET);s.jump("move.check");
-        s.label("move.dotdot");s.store(2,A);s.ne(A,B,named);s.store('.',A);s.ne(D,A,named);s.emit(INCREMENT_REGISTER,C);s.readAt(LINE,C,D);s.ne(D,A,named);
-        s.get(C,CWD);s.store(0,A);s.eq(C,A,"move.root");s.get(A,DISK_BANK);s.store(255,B);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.put(D,DIR_TARGET);s.jump("move.check");
-        s.label("move.root");s.set(DIR_TARGET,0);s.jump("move.check");
-        s.label(named);s.call("parse.name",SEARCH_RETURN);s.get(A,ARG);s.get(B,COUNT);s.ne(A,B,"usage");s.call("search",SEARCH_RETURN);
-        s.get(A,FOUND);s.store(255,B);s.eq(A,B,"move.rename");s.put(A,SLOT);s.diskRead(13,D);s.store(4,A);s.ne(D,A,"exists");s.get(A,SLOT);s.emit(INCREMENT_REGISTER,A);s.put(A,DIR_TARGET);
-        s.label("move.check");s.get(A,DIR_TARGET);s.put(A,TARGET);s.set(TEMP,0);
-        s.label("move.ancestor");s.get(C,TARGET);s.store(0,A);s.eq(C,A,"move.name");s.get(A,SOURCE);s.emit(INCREMENT_REGISTER,A);s.eq(A,C,"move.invalid");
-        s.store(1,B);s.emit(SUB,C,B,B);s.get(A,DISK_BANK);s.store(13,C);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.store(4,A);s.ne(D,A,"move.invalid");
-        s.get(C,TARGET);s.get(A,DISK_BANK);s.store(255,B);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.put(D,TARGET);s.get(A,TEMP);s.emit(INCREMENT_REGISTER,A);s.put(A,TEMP);s.store(255,B);s.eq(A,B,"move.invalid");s.jump("move.ancestor");
-        s.label("move.name");s.set(INDEX,0);
-        s.label("move.name.copy");s.get(A,INDEX);s.store(1,B);s.emit(ADD,A,B,C);s.get(A,DISK_BANK);s.get(B,SOURCE);s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);s.put(D,CH);s.get(A,INDEX);s.store(64,B);s.emit(ADD,A,B,C);s.get(D,CH);s.store(NAME,E);s.emit(STORE_MEM_ON_PAGE,D,E,C);
-        s.get(A,INDEX);s.emit(INCREMENT_REGISTER,A);s.put(A,INDEX);s.store(12,B);s.ne(A,B,"move.name.copy");s.store(0,D);s.store(NAME,E);s.store(76,C);s.emit(STORE_MEM_ON_PAGE,D,E,C);
-        s.get(A,CWD);s.put(A,SECOND);s.get(A,DIR_TARGET);s.put(A,CWD);s.call("search",SEARCH_RETURN);s.get(A,SECOND);s.put(A,CWD);s.get(A,FOUND);s.store(255,B);s.eq(A,B,"move.commit");s.get(B,SOURCE);s.eq(A,B,"move.done");s.jump("exists");
-        s.label("move.commit");s.get(C,SOURCE);s.emit(INCREMENT_REGISTER,C);s.get(A,DISK_BANK);s.store(255,B);s.get(D,DIR_TARGET);s.emit(WRITE_BYTE_TO_STORAGE,A,B,C,D);s.jump("move.done");
-        s.label("move.rename");s.get(A,SOURCE);s.put(A,SLOT);s.call("name.write",SEARCH_RETURN);
-        s.label("move.done");s.text("MOVED\n");s.jump("shell");
-        s.label("move.invalid");s.text("INVALID MOVE DESTINATION\n");s.jump("shell");
-    }
-
-    /** Linked 240-byte disk blocks, buffered in RAM bank one. No host filesystem hooks. */
-    private static void emitFileSystem(Asm s) {
-        s.label("file.empty");
-        s.set16(LENGTH,LENGTH_H,0);
-        s.set(FILE_TYPE,1);
-        s.ret(FILE_RETURN);
-        s.label("file.load");
-        s.diskRead(13,D);
-        s.store(4,A);
-        s.eq(D,A,"directory.required.file");
-        s.get(A,SLOT);
-        s.put(A,ROOT_SLOT);
-        s.put(A,BLOCK);
-        s.diskRead(0,D);
-        s.put(D,LENGTH);
-        s.diskRead(14,D);
-        s.put(D,LENGTH_H);
-        s.diskRead(13,D);
-        s.put(D,FILE_TYPE);
-        String valid=s.unique("file.length.valid");
-        s.less16Value(LENGTH,LENGTH_H,61201,valid);
-        s.jump("file.corrupt");
-        s.label(valid);
-        s.emit(LOAD_MEM_ABSOLUTE,0,252,24,A);s.store(124,B);String fullBuffer=s.unique("file.full.buffer");s.ne(A,B,fullBuffer);
-        s.less16Value(LENGTH,LENGTH_H,8193,fullBuffer);s.jump("file.corrupt");s.label(fullBuffer);
-        // Track visited slots in reserved RAM page 254 before following untrusted links.
-        s.store(0,A);
-        s.store(0,D);
-        s.store(254,E);
-        s.label("file.visited.clear");
-        s.emit(STORE_MEM_ON_PAGE,D,E,A);
-        s.emit(INCREMENT_REGISTER,A);
-        s.store(0,B);
-        s.ne(A,B,"file.visited.clear");
-        s.set16(BUF,BUF_H,0);
-        s.set(BLOCK_COUNT,0);
-        s.label("file.load.block");
-        s.get(C,BLOCK);
-        s.readAt(254,C,D);
-        s.store(0,A);
-        s.ne(D,A,"file.corrupt");
-        s.store(1,D);
-        s.store(254,E);
-        s.get(C,BLOCK);
-        s.emit(STORE_MEM_ON_PAGE,D,E,C);
-        s.get(A,BLOCK_COUNT);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,BLOCK_COUNT);
-        s.store(0,B);
-        s.eq(A,B,"file.corrupt");
-        s.set(SEGMENT,0);
-        s.label("file.load.byte");
-        s.eq16(BUF,BUF_H,LENGTH,LENGTH_H,"file.load.end");
-        s.get(A,SEGMENT);
-        s.store(240,B);
-        s.eq(A,B,"file.load.next");
-        s.store(16,B);
-        s.emit(ADD,A,B,C);
-        s.get(A,DISK_BANK);
-        s.get(B,BLOCK);
-        s.emit(READ_BYTE_FROM_STORAGE,A,B,C,D);
-        s.bufferWrite(BUF,BUF_H,D);
-        s.inc16(BUF,BUF_H);
-        s.get(A,SEGMENT);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,SEGMENT);
-        s.jump("file.load.byte");
-        s.label("file.load.next");
-        s.blockRead(15,D);
-        s.store(0,A);
-        s.eq(D,A,"file.corrupt");
-        s.store(255,A);
-        s.eq(D,A,"file.corrupt");
-        s.put(D,BLOCK);
-        s.blockRead(1,D);
-        s.store(255,A);
-        s.ne(D,A,"file.corrupt");
-        s.jump("file.load.block");
-        s.label("file.load.end");
-        s.blockRead(15,D);
-        s.store(0,A);
-        s.ne(D,A,"file.corrupt");
-        // A continuation cannot be owned by another head in the same bank.
-        s.set(SCAN,0);
-        s.label("file.owner.scan");
-        s.get(A,SCAN);
-        s.store(255,B);
-        s.eq(A,B,"file.owner.done");
-        s.get(B,ROOT_SLOT); String ownerNext=s.unique("file.owner.next");
-        s.eq(A,B,ownerNext);
-        s.put(A,BLOCK);
-        s.blockRead(1,D);
-        s.store(0,A);
-        s.eq(D,A,ownerNext);
-        s.store(255,A);
-        s.eq(D,A,ownerNext);
-        s.set(BLOCK_COUNT,0);
-        s.label("file.owner.chain");
-        s.blockRead(15,D);
-        s.store(0,A);
-        s.eq(D,A,ownerNext);
-        s.store(255,A);
-        s.eq(D,A,"file.corrupt");
-        s.put(D,BLOCK);
-        s.get(C,BLOCK);
-        s.readAt(254,C,D);
-        s.store(0,A);
-        s.ne(D,A,"file.corrupt");
-        s.blockRead(1,D);
-        s.store(255,A);
-        s.ne(D,A,"file.corrupt");
-        s.get(A,BLOCK_COUNT);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,BLOCK_COUNT);
-        s.store(0,B);
-        s.eq(A,B,"file.corrupt");
-        s.jump("file.owner.chain");
-        s.label(ownerNext);
-        s.get(A,SCAN);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,SCAN);
-        s.jump("file.owner.scan");
-        s.label("file.owner.done");
-        s.get(A,ROOT_SLOT);
-        s.put(A,SLOT);
-        s.ret(FILE_RETURN);
-
-        s.label("file.save");
-        s.get(A,SLOT);
-        s.put(A,ROOT_SLOT);
-        s.put(A,BLOCK);
-        s.copy16(LENGTH,LENGTH_H,WORK,WORK_H);
-        s.set(NEEDED,1);
-        s.label("file.needed"); String last=s.unique("file.needed.last");
-        s.less16Value(WORK,WORK_H,241,last);
-        s.subtract16(WORK,WORK_H,240);
-        s.get(A,NEEDED);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,NEEDED);
-        s.jump("file.needed");
-        s.label(last);
-        // Build an allocation plan before touching names, lengths, links or content.
-        s.set(PLAN_COUNT,0);
-        s.set(OLD_TAIL,0);
-        s.label("file.plan.old");
-        s.get(C,PLAN_COUNT);
-        s.get(D,BLOCK);
-        s.store(254,E);
-        s.emit(STORE_MEM_ON_PAGE,D,E,C);
-        s.get(A,PLAN_COUNT);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,PLAN_COUNT);
-        s.get(B,NEEDED);
-        s.eq(A,B,"file.plan.enough");
-        s.blockRead(1,D);
-        s.store(0,A);
-        s.eq(D,A,"file.plan.free.start");
-        s.blockRead(15,D);
-        s.store(0,A);
-        s.eq(D,A,"file.plan.free.start");
-        s.put(D,BLOCK);
-        s.jump("file.plan.old");
-        s.label("file.plan.enough");
-        s.blockRead(1,D);
-        s.store(0,A);
-        s.eq(D,A,"file.plan.ready");
-        s.blockRead(15,D);
-        s.put(D,OLD_TAIL);
-        s.jump("file.plan.ready");
-        s.label("file.plan.free.start");
-        s.set(SCAN,1);
-        s.label("file.plan.free");
-        s.get(A,SCAN);
-        s.store(255,B);
-        s.eq(A,B,"file.full");
-        s.get(B,ROOT_SLOT); String next=s.unique("file.plan.scan.next");
-        s.eq(A,B,next);
-        s.put(A,BLOCK);
-        s.blockRead(1,D);
-        s.store(0,A);
-        s.ne(D,A,next);
-        s.get(C,PLAN_COUNT);
-        s.get(D,BLOCK);
-        s.store(254,E);
-        s.emit(STORE_MEM_ON_PAGE,D,E,C);
-        s.get(A,PLAN_COUNT);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,PLAN_COUNT);
-        s.get(B,NEEDED);
-        s.eq(A,B,"file.plan.ready");
-        s.label(next);
-        s.get(A,SCAN);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,SCAN);
-        s.jump("file.plan.free");
-        s.label("file.plan.ready");
-        s.set(PLAN_INDEX,0);
-        s.set16(BUF,BUF_H,0);
-        s.label("file.save.block");
-        s.get(C,PLAN_INDEX);
-        s.readAt(254,C,D);
-        s.put(D,BLOCK);
-        s.set(SEGMENT,0);
-        s.label("file.save.byte");
-        s.eq16(BUF,BUF_H,LENGTH,LENGTH_H,"file.save.link");
-        s.get(A,SEGMENT);
-        s.store(240,B);
-        s.eq(A,B,"file.save.link");
-        s.bufferRead(BUF,BUF_H,D);
-        s.put(D,CH);
-        s.get(A,SEGMENT);
-        s.store(16,B);
-        s.emit(ADD,A,B,C);
-        s.get(A,DISK_BANK);
-        s.get(B,BLOCK);
-        s.get(D,CH);
-        s.emit(WRITE_BYTE_TO_STORAGE,A,B,C,D);
-        s.inc16(BUF,BUF_H);
-        s.get(A,SEGMENT);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,SEGMENT);
-        s.jump("file.save.byte");
-        s.label("file.save.link");
-        s.get(A,PLAN_INDEX);
-        s.emit(INCREMENT_REGISTER,A);
-        s.put(A,PLAN_INDEX);
-        s.get(B,NEEDED);
-        String finalBlock=s.unique("file.save.final"), link=s.unique("file.save.link.value");
-        s.eq(A,B,finalBlock);
-        s.get(C,PLAN_INDEX);
-        s.readAt(254,C,D);
-        s.jump(link);
-        s.label(finalBlock);
-        s.store(0,D);
-        s.label(link);
-        s.blockWrite(15,D);
-        s.get(A,BLOCK);
-        s.get(B,ROOT_SLOT); String head=s.unique("file.save.head");
-        s.eq(A,B,head);
-        s.store(255,D);
-        s.blockWrite(1,D);
-        s.label(head);
-        s.get(A,PLAN_INDEX);
-        s.get(B,NEEDED);
-        s.ne(A,B,"file.save.block");
-        // Release old tail blocks only after all replacement blocks have been written.
-        s.get(A,OLD_TAIL);
-        s.put(A,BLOCK);
-        s.label("file.save.free");
-        s.get(A,BLOCK);
-        s.store(0,B);
-        s.eq(A,B,"file.save.header");
-        s.blockRead(15,D);
-        s.put(D,OLD_TAIL);
-        s.store(0,D);
-        s.blockWrite(1,D);
-        s.blockWrite(0,D);
-        s.blockWrite(14,D);
-        s.blockWrite(15,D);
-        s.get(A,OLD_TAIL);
-        s.put(A,BLOCK);
-        s.jump("file.save.free");
-        s.label("file.save.header");
-        s.get(A,ROOT_SLOT);
-        s.put(A,SLOT);
-        s.call("name.write",SEARCH_RETURN);
-        s.get(D,FILE_TYPE);
-        s.diskWrite(13,D);
-        s.get(D,LENGTH_H);
-        s.diskWrite(14,D);
-        s.get(D,LENGTH);
-        s.diskWrite(0,D);
-        s.ret(FILE_RETURN);
-
-        s.label("file.delete");
-        s.get(A,SLOT);
-        s.put(A,BLOCK);
-        s.label("file.delete.block");
-        s.blockRead(15,D);
-        s.put(D,OLD_TAIL);
-        s.store(0,D);
-        s.blockWrite(1,D);
-        s.blockWrite(0,D);
-        s.blockWrite(14,D);
-        s.blockWrite(15,D);
-        s.get(A,OLD_TAIL);
-        s.store(0,B); String deleted=s.unique("file.deleted");
-        s.eq(A,B,deleted);
-        s.put(A,BLOCK);
-        s.jump("file.delete.block");
-        s.label(deleted);
-        s.ret(FILE_RETURN);
-        s.label("file.full");
-        s.text("DISK BANK FULL - FILE UNCHANGED\n");
-        s.get(A,MODE);
-        s.store(1,B);
-        s.eq(A,B,"poll");
-        s.jump("shell");
-        s.label("file.corrupt");
-        s.set(SCRIPT_ACTIVE,0);
-        s.text("INVALID FILE CHAIN\n");
-        s.jump("shell");
-    }
-
     /** Labels, far branches and calls compile exclusively to the existing CPU opcodes. */
-    private static final class Asm {
+    static final class Asm {
             final int first; final List<byte[]> pages=new ArrayList<>(); final Map<String,Integer> labels=new HashMap<>();
         final List<Fix> fixes=new ArrayList<>(); final Map<String,String> messages=new java.util.LinkedHashMap<>();
         int page,pos,serial,branchSerial,codeEndPage;
@@ -3189,6 +2328,14 @@ public final class JvDosImage {
         void label(String name) { if(labels.put(name,page*256+pos)!=null) throw new IllegalStateException("Duplicate "+name); }
         String unique(String prefix) { return prefix+"."+serial++; }
         void store(int value,int register) { emit(STORE,value,register); }
+        void fget(int r,int offset){emit(LOAD_MEM_ABSOLUTE,0,FileSystemAbi.DOS_PAGE,offset,r);}
+        void fput(int r,int offset){emit(STORE_MEM_ABSOLUTE,r,0,FileSystemAbi.DOS_PAGE,offset);}
+        void fset(int offset,int value){store(value,D);fput(D,offset);}
+        void fs(int operation){
+            fset(FileSystemAbi.OP,operation);String back=unique("filesystem.return");
+            store(0,A);store(FileSystemAbi.DOS_PAGE,B);store(0,17);ref(back,true,18);ref(back,false,19);
+            store(0,C);store(JvDosServices.PAGE,E);store(FileSystemAbi.ENTRY,F);emit(CHANGE_BANK_PAGE_JUMP,C,E,F);label(back);
+        }
         void ref(String target,boolean high,int register) { reserve(3); raw(STORE.code(),0,register); fixes.add(new Fix(page,pos-2,target,high)); }
         void jump(String target) { int id=branchSerial++;boolean local=localBranches.contains(id);reserve(local?2:9);branches.add(new Branch(id,page,target,local));if(local){raw(JMP.code(),0);fixes.add(new Fix(page,pos-1,target,false));}else{ref(target,true,G);ref(target,false,H);emit(CHANGE_PAGE_JUMP,G,H);} }
         void eq(int a,int b,String target) { int id=branchSerial++;boolean local=localBranches.contains(id);reserve(local?4:8);branches.add(new Branch(id,page,target,local));if(local)raw(COND_JUMP.code(),a,b,0);else{ref(target,true,G);raw(CHANGE_PAGE_COND_JUMP.code(),G,a,b,0);}fixes.add(new Fix(page,pos-1,target,false)); }
@@ -3274,17 +2421,7 @@ public final class JvDosImage {
         }
         void bufferRead(int low,int high,int dest) { get(B,high); get(C,low); store(1,A); emit(LOAD_MEM_ON_BANK,A,B,C,dest); }
         void bufferWrite(int low,int high,int value) { get(B,high); get(C,low); store(1,A); emit(STORE_MEM_ON_BANK,value,A,B,C); }
-        void blockRead(int offset,int dest) { get(A,DISK_BANK); get(B,BLOCK); store(offset,C); emit(READ_BYTE_FROM_STORAGE,A,B,C,dest); }
-        void blockWrite(int offset,int value) { get(A,DISK_BANK); get(B,BLOCK); store(offset,C); emit(WRITE_BYTE_TO_STORAGE,A,B,C,value); }
-        void parentFilter(int slot,String skip) {
-            get(C,slot); emit(INCREMENT_REGISTER,C); get(A,DISK_BANK); store(255,B);
-            emit(READ_BYTE_FROM_STORAGE,A,B,C,D); get(A,CWD); ne(D,A,skip);
-        }
-        void diskRead(int offset,int dest) { store(offset,C); diskReadAt(C,dest); }
-        void diskReadAt(int offset,int dest) { get(B,SLOT); get(A,DISK_BANK); emit(READ_BYTE_FROM_STORAGE,A,B,offset,dest); }
-        void diskWrite(int offset,int value) { store(offset,C); diskWriteAt(C,value); }
-        void diskWriteAt(int offset,int value) { get(B,SLOT); get(A,DISK_BANK); emit(WRITE_BYTE_TO_STORAGE,A,B,offset,value); }
-        void diskLiteral(int slot,int offset,int value) { store(2,A); store(slot,B); store(offset,C); store(value,D); emit(WRITE_BYTE_TO_STORAGE,A,B,C,D); }
+        void diskRead(int offset,int dest) { emit(LOAD_MEM_ABSOLUTE,1,0,offset-16,dest); }
         byte[][] finish() {
             // Page-aligned fixed-size records permit cheap unsigned indexing on the guest.
             page++;pos=0;pages.add(new byte[256]);label("commands.table");
@@ -3326,6 +2463,10 @@ public final class JvDosImage {
                 int[] code={STORE.code(),address/256,G,STORE.code(),address%256,H,CHANGE_PAGE_JUMP.code(),G,H};
                 for(int j=0;j<code.length;j++) services[offset+j]=(byte)code[j];
             }
+            int filesystem=labels.get("fs.entry");
+            int[] gate={STORE.code(),filesystem/256,G,STORE.code(),filesystem%256,H,CHANGE_PAGE_JUMP.code(),G,H};
+            for(int j=0;j<gate.length;j++)services[FileSystemAbi.ENTRY+j]=(byte)gate[j];
+            services[39]='J';services[40]='F';services[41]=1;
             services[JvDosServices.GRAPHICS_SIGNATURE]='J';services[JvDosServices.GRAPHICS_SIGNATURE+1]='G';services[JvDosServices.GRAPHICS_SIGNATURE+2]=JvDosServices.GRAPHICS_VERSION;
             for(int bank:new int[]{246,247,NAME,LINE,STATE}) installReaders(pages.get(bank-first));
             byte[] state=pages.get(STATE-first);

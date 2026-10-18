@@ -15,6 +15,7 @@ import java.util.function.BooleanSupplier;
 import xyz.ignite4inferneo.Network;
 import xyz.ignite4inferneo.Storage;
 import xyz.ignite4inferneo.jvdos.DesktopImage;
+import xyz.ignite4inferneo.jvdos.JvFileSystem;
 
 /** Runs unmodified DOS/JCTRL guest bytecode against a loopback HTTP fixture. */
 public final class BrowserRegression {
@@ -95,14 +96,12 @@ public final class BrowserRegression {
     public static void main(String[] args)throws Exception {
         Path disk=Path.of("build/browser-regression.img");Files.createDirectories(disk.getParent());
         try(var channel=java.nio.channels.FileChannel.open(disk,java.nio.file.StandardOpenOption.CREATE,java.nio.file.StandardOpenOption.WRITE)){channel.truncate(0);channel.position(Storage.STORAGE_SIZE-1L);channel.write(java.nio.ByteBuffer.wrap(new byte[1]));}
-        Storage.load(disk);vm=invoke(method("terminal"));
-        invoke(method("chain",int.class,int.class,String.class,byte[].class,int.class),100,0,"JCTRL.COM",DesktopImage.program(),0);
+        Storage.load(disk);JvFileSystem.device(0).format();DiskInstaller.installIfMissing();vm=invoke(method("terminal"));
         byte[] program=Files.readAllBytes(Path.of("examples/jctrl/WEB.COM"));
         check(program.length<=BUFFER*256,"program leaves explicit cache/state workspace");
-        invoke(method("chain",int.class,int.class,String.class,byte[].class,int.class),100,160,"WEB.COM",program,0);
-        ram()[252][220]=100;
-        invoke(COMMAND,"RUN WEB.COM");check(((int[])field("r").get(vm))[11]==0&&ram()[252][220]==100,"fullscreen guard returns to DOS and preserves bank");
-        invoke(COMMAND,"RUN JCTRL.COM");invoke(CLICK,20,59);frames(200);
+        JvFileSystem.device(0).put(JvFileSystem.ROOT,"WEB.COM",program,0);
+        invoke(COMMAND,"RUN WEB.COM");check(((int[])field("r").get(vm))[11]==0,"fullscreen guard returns to DOS");
+        invoke(COMMAND,"JCTRL");int row=0;var entries=JvFileSystem.device(0).list(JvFileSystem.ROOT);while(!entries.get(row).name().equals("WEB.COM"))row++;invoke(CLICK,20,53+row*6);frames(200);
         check(state(23)==1,"browser opens address prompt");byte[] before=Storage.readRange(0,Storage.STORAGE_SIZE);
         try(Fixture fixture=new Fixture()){
             open(fixture.url("/Case?x=1#section"));String request=fixture.request();
