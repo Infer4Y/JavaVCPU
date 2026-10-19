@@ -7,9 +7,10 @@ package xyz.ignite4inferneo.jvdos;
  */
 public final class DesktopServices {
     private DesktopServices() { }
-    public static final int ENTRY=42, VERSION=3;
+    public static final int ENTRY=42, VERSION=5;
     public static final int QUERY=0, TEXT=1, PACKED_TEXT=2, KEYBOARD=3, CONTEXT=4,
-        CACHE_BEGIN=5,CACHE_FLUSH=6,CACHE_FINISH=7,CACHE_NAVIGATE=8,CACHE_ABORT=9, DOCUMENT=10, NETWORK_PACKED=11;
+        CACHE_BEGIN=5,CACHE_FLUSH=6,CACHE_FINISH=7,CACHE_NAVIGATE=8,CACHE_ABORT=9, DOCUMENT=10, NETWORK_PACKED=11,
+        DOCUMENT_FRAME=12;
     public static final int OK=0, BAD_ARGUMENT=1, END=2;
     /** TEXT: B/C = virtual bank-one page/offset; D = length (0 means 256).
      * May cross pages, but must remain within the current app workspace (0..31 or 0..90). No terminator is required.
@@ -25,6 +26,14 @@ public final class DesktopServices {
      * Clears the surface and cursor. TEXT, PACKED_TEXT and legacy print use it;
      * CLEAR_GRA clears it. Pixels/games retain their default 128x128 surface.
      * Uses existing framebuffer RAM; selected until the application closes.
+     * DOCUMENT_FRAME: B = first virtual page of a ten-page frame: five character
+     * pages followed by five color pages, one byte per cell, row-major (48 x 23). Retains references until
+     * DOCUMENT or another FRAME; caller keeps buffers alive. Marks the view dirty.
+     * Since v5, CLEAR_GRA clears both retained frame buffers through shared guest code.
+     * The span must fit app RAM and exclude page 31. Palette colors use 7 bits.
+     * Suppresses reader controls. Frame clients receive up to 16 x 255 guest
+     * instructions per desktop tick; DISPLAY still yields immediately.
+     * DOCUMENT restores the standard reader view.
      *
      * CACHE_BEGIN: B/C = first/exclusive-end buffer pages, at least two pages (three in DOCUMENT mode);
      * C must be <= the workspace end; the span must exclude page 31. Reserves bytes 0..63 of virtual page 31 and JVFS handle 3.

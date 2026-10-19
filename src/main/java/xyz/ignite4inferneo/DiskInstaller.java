@@ -19,7 +19,7 @@ public final class DiskInstaller {
     private DiskInstaller() {
     }
 
-    /** Updates firmware, the resident OS and its managed desktop before guest execution. */
+    /** Updates firmware, the resident OS, JCTRL and TEXTEDIT before guest execution. */
     public static void installIfMissing() throws IOException {
         boolean changed=false;
         // Old experimental bank images are deliberately reformatted. The boot
@@ -43,6 +43,7 @@ public final class DiskInstaller {
         }
         // Desktop content is checked even when the kernel revision is already current.
         changed|=BundledDesktopInstaller.install(xyz.ignite4inferneo.jvdos.DesktopImage.program());
+        changed|=BundledDesktopInstaller.installTextEditor(xyz.ignite4inferneo.jvdos.TextEditImage.program());
         if(changed)Storage.save();
     }
 

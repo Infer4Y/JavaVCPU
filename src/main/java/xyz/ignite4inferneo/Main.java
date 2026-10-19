@@ -78,6 +78,7 @@ public class Main {
             Network.close();
             try { Storage.save(); } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
         }, "storage-flush"));
+        // Install/update the managed JCTRL and TEXTEDIT packages before booting.
         DiskInstaller.installIfMissing();
 
         cpuStartTime = System.currentTimeMillis();
@@ -179,7 +180,7 @@ public class Main {
 
             //if (opcode != OPCode.DISPLAY.code()) Thread.sleep(0,1000);
 
-            intructs = intructs.add(new BigInteger("1"));
+            intructs = intructs.add(BigInteger.ONE);
         }
     }
 

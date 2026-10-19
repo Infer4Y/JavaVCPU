@@ -1,5 +1,74 @@
 # JCTRL Pong
 
+## JCTRL text editor
+
+`TEXTEDIT.COM` is a windowed guest text/hex editor, like `WEB.COM`. Build it and
+the current desktop with JDK 26:
+
+```powershell
+.\gradlew.bat desktopImage textEditExample
+.\gradlew.bat textEditRegression
+```
+
+Start the VM, enter `JCTRL`, and open `TEXTEDIT.COM` from Files. Startup installs
+and updates both managed applications on the system disk. It also upgrades the
+original standalone TEXTEDIT release. Modified/manual copies and same-name
+directories are preserved. Replace manual JCTRL copies with the rebuilt version.
+TEXTEDIT requires application services v5 and returns to DOS if launched fullscreen.
+The generated COM remains available for manual import through Disk Workshop as
+**Binary / COM**, with the VM stopped.
+
+Enter a filename from the current Files folder, then Enter. A missing filename
+starts a new document; F7 creates it. Files are limited to **4,096 bytes**;
+larger files are refused without writing them.
+
+| Input | Action |
+| --- | --- |
+| F6 / F8 | Open a filename / start a new document |
+| F7 | Save to the virtual disk; clears the `*` modification marker |
+| Arrows | Move the caret; Up/Down retain the visual column in text |
+| Home / End | Start/end of the current wrapped text row; whole file in COM mode |
+| Page Up / Page Down, mouse wheel | Move twenty rows |
+| Backspace / Delete | Remove before/at the text caret |
+| Enter / Tab | Insert a newline / four spaces |
+| Esc / window X | Close; unsaved changes are discarded |
+
+The `|` marker shows the caret and temporarily covers the character being edited.
+Shift supplies uppercase and punctuation. JVS highlighting distinguishes
+keywords, decimal numbers, registers, REM/semicolon comments and PRINT/ECHO text.
+`.HEX` text highlights hexadecimal digits and `#`/semicolon comments.
+Binary disk entries (including `.COM`) show twelve bytes per row, coloring
+opcodes, operands and invalid opcode bytes. Type two hex digits to replace a
+byte; COM mode overwrites bytes and preserves file length. It does not execute
+the file or convert binary bytes into text when saving.
+
+Opening another file with changes pending asks for **Y** to discard; any other
+key returns to the document. Save before closing with Esc/X. Saves use the
+resident JVFS replacement transaction; a failed write aborts the replacement.
+Text bytes, including imported CRLF endings and tabs, are preserved unless edited.
+Imported tabs display as `>`; new tabs insert four spaces. Lines wrap at 48 cells.
+Colors and content survive window moves.
+
+`src/main/java/xyz/ignite4inferneo/jvdos/TextEditImage.java` assembles ordinary
+guest bytecode and is included in the application jar for boot installation.
+The file buffer uses virtual pages 64-79; the retained character/color frame
+uses 80-89, and state uses 90. Page 31 holds the JVFS mailbox in bytes 0-63 and
+packed read-only literals above it; execution skips that page.
+No CPU opcodes, Java editor hooks,
+network controller changes or additional RAM are needed. Regression checks
+exercise the actual desktop interpreter, syntax colors, navigation, byte edits,
+page boundaries, file creation/replacement, oversized-file refusal and cancellation.
+
+The editor uses shared JCTRL keyboard, frame clearing, rendering and resident
+JVFS block I/O. Horizontal movement patches the caret cells; short-line edits
+rebuild only the affected row. Overlapping byte moves keep their pointers in
+registers. Wrapped lines, newlines, CRLF and tabs use the full redraw path.
+The v5 scheduler executes the full bounded 16-slice app budget and yields on
+DISPLAY. `textEditPerformanceRegression` checks latency and instruction counts
+for movement and insertion in an 800-byte JVS file.
+
+## Pong
+
 `PONG.COM` is a guest-bytecode game for the JCTRL application window.
 Move the mouse vertically inside the game to control the left paddle. The right
 paddle is the computer. First to seven points wins; score pips appear across the

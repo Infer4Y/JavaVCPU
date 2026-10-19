@@ -73,6 +73,12 @@ Rebuild the desktop executable and Workshop installation asset with:
 .\gradlew.bat desktopImage
 ```
 
+Startup also installs and updates the bundled windowed `TEXTEDIT.COM` editor.
+Launch it from JCTRL Files, enter a filename, and use F7 to save. It highlights
+JVS and hex source and edits binary COM bytes in hex (4 KiB file limit).
+See [editor controls and installation](examples/jctrl/README.md#jctrl-text-editor).
+Rebuild its standalone COM with `gradlew.bat textEditExample`.
+
 ## Virtual hardware
 
 | Part | Details |

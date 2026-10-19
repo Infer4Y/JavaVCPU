@@ -7,7 +7,8 @@ import java.util.*;
 import java.nio.file.*;
 
 /** A separate, cooperative DOS application. All UI and file reads execute on the guest CPU.
- * Code lives in RAM bank one below page 128; private state and relocated literals use pages 224..239. Small apps use 128..159 and pixels 160..223. Larger document apps use 128..218, with text cells at 219..223.
+ * Code lives below page 128, with up to six overflow pages relocated to 234..239.
+ * Private state and literals use pages 224..239. Small apps use 128..159 and pixels 160..223. Larger document apps use 128..218, with text cells at 219..223.
  * Bank-zero DOS, its font tables, and bank-one shell history remain resident.
  */
 public final class DesktopImage {
@@ -69,13 +70,13 @@ public final class DesktopImage {
                 else if(samePage&&!farOnly.contains(branch.id()))next.add(branch.id());
                 if(branch.local()){if(branch.conditional())conditions++;else jumps++;}else far++;
             }
-            if(next.equals(local)){if(s.codePages>128)throw new IllegalStateException("Desktop instructions overlap workspace: "+s.codePages);if(image.length>34816)throw new IllegalStateException("Desktop code overlaps application workspace: "+image.length/256+" pages");return new Compilation(image,baseline,pass,jumps,conditions,far); }
+            if(next.equals(local)){if(s.codePages>(s.relocateData?134:128))throw new IllegalStateException("Desktop instructions overlap workspace: "+s.codePages);if(image.length>34816)throw new IllegalStateException("Desktop code overlaps application workspace: "+image.length/256+" pages");return new Compilation(image,baseline,pass,jumps,conditions,far); }
             local=next;
         }
         throw new IllegalStateException("Desktop branch layout did not converge");
     }
     private static void emitProgram(Asm s) {
-        s.relocateData=true;
+        s.relocateData=true;s.packStrings=true;
         s.label("entry");
         // Require the stable resident graphics ABI before calling any shared code.
         for(int i=0;i<3;i++){s.emit(LOAD_MEM_ABSOLUTE,0,JvDosServices.PAGE,JvDosServices.GRAPHICS_SIGNATURE+i,A);s.notEqual(A,new int[]{'J','G',JvDosServices.GRAPHICS_VERSION}[i],"incompatible");}
@@ -192,7 +193,7 @@ public final class DesktopImage {
         s.label("files.bank.digit");s.less(A,16,"files.bank.hex");s.store(16,C);s.emit(SUB,A,C,A);s.emit(INCREMENT_REGISTER,B);s.jump("files.bank.digit");
         s.label("files.bank.hex");s.put(A,TEMP);s.put(B,OFFSET);s.get(A,OFFSET);s.put(A,CHAR);s.call("files.hex",RET_HEX);s.get(A,TEMP);s.put(A,CHAR);s.call("files.hex",RET_HEX);s.jump("window.title.done");
         s.label("window.view");s.get(A,DesktopDocument.MODE);s.equal(A,1,"window.document.title");s.get(A,APP);s.equal(A,5,"window.shell.title");s.text("APPLICATION");s.jump("window.title.done");s.label("window.shell.title");s.text("DOS CONSOLE");
-        s.jump("window.title.done");s.label("window.document.title");s.text("WEB / DOCUMENT");
+        s.jump("window.title.done");s.label("window.document.title");s.text("DOCUMENT");
         s.label("window.title.done");s.relative(WIDTH-9,3);s.text("X");
         s.get(A,ACTIVE);s.equal(A,0,"window.dir");s.equal(A,1,"window.reader");
         s.get(A,INFO);s.equal(A,1,"window.help");
@@ -277,7 +278,7 @@ public final class DesktopImage {
         s.label("vm.large");s.store(1,D);s.vwriteLiteral(11,D);s.jump("paint");
         s.label("vm.small");s.store(248,D);s.vwriteLiteral(9,D);s.jump("paint");
         s.label("app.error");s.call("app.stop",RET_STEP);s.set(APP,6);s.jump("paint");
-        s.label("app.stop");s.set(DesktopDocument.MODE,0);s.fset(FileSystemAbi.HANDLE,2);s.fs(FileSystemAbi.CLOSE);s.get(A,APP);s.notEqual(A,5,"app.stop.ready");for(int h=0;h<2;h++){s.fset(FileSystemAbi.HANDLE,h);s.fs(FileSystemAbi.ABORT);}s.label("app.stop.ready");s.fset(FileSystemAbi.HANDLE,3);s.fs(FileSystemAbi.ABORT);s.set(DesktopPageCache.MODE,0);s.set(DIRTY,1);s.set(RUN,0);s.store(0,A);s.store(3,D);s.emit(WRITE_NETWORK,A,D);s.store(0,B);s.store(0,C);
+        s.label("app.stop");s.set(DesktopDocument.MODE,0);s.put(D,DesktopDocument.EDITOR);s.fset(FileSystemAbi.HANDLE,2);s.fs(FileSystemAbi.CLOSE);s.get(A,APP);s.notEqual(A,5,"app.stop.ready");for(int h=0;h<2;h++){s.fset(FileSystemAbi.HANDLE,h);s.fs(FileSystemAbi.ABORT);}s.label("app.stop.ready");s.fset(FileSystemAbi.HANDLE,3);s.fs(FileSystemAbi.ABORT);s.set(DesktopPageCache.MODE,0);s.set(DIRTY,1);s.set(RUN,0);s.store(0,A);s.store(3,D);s.emit(WRITE_NETWORK,A,D);s.store(0,B);s.store(0,C);
         for(int voice=0;voice<8;voice++){s.store(voice,A);s.emit(OUTPUT_AUDIO,A,B,C);}s.ret(RET_STEP);
         s.label("app.draw");s.get(A,DesktopDocument.MODE);s.equal(A,1,"document.draw");s.relative(6,16);s.get(A,APP);s.equal(A,5,"shell.draw.header");s.relative(24,16);s.text("HOME            NEXT             RUN / OPEN");s.jump("app.draw.frame");s.label("shell.draw.header");s.text("REAL DOS - CLICK WINDOW TO TYPE");s.label("app.draw.frame");
         s.call("frame.draw",RET_FRAME);s.get(A,APP);s.equal(A,5,"app.draw.done");s.relative(6,158);s.get(A,APP);s.equal(A,6,"app.draw.error");
@@ -296,8 +297,8 @@ public final class DesktopImage {
     }
     private static void emitFrame(Asm s) {
         s.label("frame.clear");s.set(DesktopDocument.PAGE,219);s.set(DesktopDocument.OFFSET,0);s.set(DIRTY,1);
-        s.store(1,A);s.store(160,B);s.store(0,C);s.store(0,D);s.get(E,DesktopDocument.MODE);s.equal(E,0,"frame.clear.byte");s.store(219,B);
-        s.label("frame.clear.byte");s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.emit(INCREMENT_REGISTER,C);s.notEqual(C,0,"frame.clear.byte");s.emit(INCREMENT_REGISTER,B);s.notEqual(B,224,"frame.clear.byte");s.ret(RET_CLEAR);
+        s.store(1,A);s.store(160,B);s.store(0,C);s.store(0,D);s.store(224,I);s.get(E,DesktopDocument.MODE);s.equal(E,0,"frame.clear.byte");s.store(219,B);s.get(E,DesktopDocument.EDITOR);s.equal(E,0,"frame.clear.byte");s.store(0,F);s.emit(ADD,E,F,B);s.store(10,F);s.emit(ADD,B,F,I);s.set(DIRTY,0);
+        s.label("frame.clear.byte");s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.emit(INCREMENT_REGISTER,C);s.notEqual(C,0,"frame.clear.byte");s.emit(INCREMENT_REGISTER,B);s.ne(B,I,"frame.clear.byte");s.ret(RET_CLEAR);
         s.label("frame.pixel");
         // Address = 160:0 + y*128 + x, for a 128-square application surface.
         s.get(A,PY);s.less(A,128,"frame.pixel.y");s.jump("frame.pixel.done");
@@ -369,7 +370,7 @@ public final class DesktopImage {
     }
     /** An interpreter emitted as guest instructions, not a host-side VM hook. */
     private static void emitVirtualCpu(Asm s) {
-        s.label("app.tick");s.set(BUDGET,64);s.get(A,APP);s.equal(A,5,"shell.tick");s.equal(A,4,"music.tick");s.equal(A,1,"vm.step");s.ret(RET_STEP);
+        s.label("app.tick");s.set(BUDGET,64);s.get(A,DesktopDocument.EDITOR);s.equal(A,0,"app.tick.kind");s.set(SLICE,16);s.set(BUDGET,255);s.label("app.tick.kind");s.get(A,APP);s.equal(A,5,"shell.tick");s.equal(A,4,"music.tick");s.equal(A,1,"vm.step");s.ret(RET_STEP);
         s.label("shell.tick");s.set(SLICE,8);s.set(BUDGET,255);s.jump("vm.step");
         s.label("app.finished");s.jump("app.stop");
         s.label("app.tick.error");s.set(APP,6);s.jump("app.stop");
@@ -451,7 +452,7 @@ public final class DesktopImage {
         s.label("vm.input.done");s.result(OB,D);s.jump("vm.advance");
         s.label("vm.advance");s.vreadLiteral(8,A);s.get(B,ILEN);s.emit(ADD,A,B,A);s.vwriteLiteral(8,A);
         s.label("vm.done");s.get(A,BUDGET);s.store(1,B);s.emit(SUB,A,B,A);s.put(A,BUDGET);s.equal(A,0,"app.tick.done");s.jump("vm.step");
-        s.label("app.tick.done");s.get(A,APP);s.notEqual(A,5,"app.tick.return");s.get(A,SLICE);s.store(1,B);s.emit(SUB,A,B,A);s.put(A,SLICE);s.equal(A,0,"app.tick.return");s.set(BUDGET,255);s.jump("vm.step");s.label("app.tick.return");s.get(A,APP);s.notEqual(A,5,"app.tick.end");s.vreadLiteral(10,A);s.put(A,SHELLDRIVE);s.label("app.tick.end");s.ret(RET_STEP);
+        s.label("app.tick.done");s.get(A,APP);s.equal(A,5,"app.tick.slice");s.get(A,DesktopDocument.EDITOR);s.equal(A,0,"app.tick.return");s.label("app.tick.slice");s.get(A,SLICE);s.store(1,B);s.emit(SUB,A,B,A);s.put(A,SLICE);s.equal(A,0,"app.tick.return");s.set(BUDGET,255);s.jump("vm.step");s.label("app.tick.return");s.get(A,APP);s.notEqual(A,5,"app.tick.end");s.vreadLiteral(10,A);s.put(A,SHELLDRIVE);s.label("app.tick.end");s.ret(RET_STEP);
         s.label("vm.filesystem");s.vreadLiteral(10,A);s.store(0,B);s.emit(ADD,A,B,10);s.get(A,APP);s.equal(A,5,"vm.filesystem.dos");
         s.vreadLiteral(0,A);s.vreadLiteral(1,B);s.equal(A,1,"vm.filesystem.bank.one");s.notEqual(A,0,"app.tick.error");s.notEqual(B,248,"app.tick.error");s.store(1,A);s.store(128,B);s.jump("vm.filesystem.app.ready");
         s.label("vm.filesystem.bank.one");s.get(C,APP_LIMIT);s.emit(COMPARE_UNSIGNED,B,C,D);s.equal(D,1,"vm.filesystem.app.page");s.jump("app.tick.error");s.label("vm.filesystem.app.page");s.store(128,C);s.emit(ADD,B,C,B);s.label("vm.filesystem.app.ready");s.store(FileSystemAbi.HANDLE,C);s.store(3,D);s.emit(STORE_MEM_ON_BANK,D,A,B,C);DesktopFileSystem.mapBuffer(s);
@@ -500,13 +501,13 @@ public final class DesktopImage {
         final List<Branch> branches=new ArrayList<>();
         final List<Integer> imagePageFixes=new ArrayList<>();
         final List<java.util.function.Consumer<Asm>> lateData=new ArrayList<>();
-        int page,pos,serial,branchSerial;boolean relocateData,mailboxHole,packStrings;int codePages;
+        int page,pos,serial,branchSerial;boolean relocateData,mailboxHole,packStrings,mailboxLiterals;int codePages;
         record Branch(int id,int page,String target,boolean local,boolean conditional) { }
         record Fix(int page,int offset,String label,boolean high) { }
         Asm(Set<Integer> localBranches){this.localBranches=localBranches;pages.add(new byte[256]);Arrays.fill(pages.getFirst(),STOP.code());}
         String unique(String prefix){return prefix+"."+serial++;}
         void raw(int... bytes){for(int b:bytes)pages.get(page)[pos++]=(byte)b;}
-        void reserve(int n){if(pos+n<=247)return;int nextPage=mailboxHole&&page==30?32:page+1;raw(STORE.code(),nextPage,G,STORE.code(),0,H,CHANGE_PAGE_JUMP.code(),G,H);if(nextPage==32&&page==30){byte[] hole=new byte[256];Arrays.fill(hole,STOP.code());pages.add(hole);}page=nextPage;pos=0;byte[] next=new byte[256];Arrays.fill(next,STOP.code());pages.add(next);}
+        void reserve(int n){if(pos+n<=247)return;int nextPage=mailboxHole&&page==30?32:page+1;raw(STORE.code(),relocateData&&nextPage>=128?nextPage+106:nextPage,G,STORE.code(),0,H,CHANGE_PAGE_JUMP.code(),G,H);if(nextPage==32&&page==30){byte[] hole=new byte[256];Arrays.fill(hole,STOP.code());pages.add(hole);}page=nextPage;pos=0;byte[] next=new byte[256];Arrays.fill(next,STOP.code());pages.add(next);}
         void emit(OPCode op,int... operands){if(operands.length!=op.inputLength())throw new IllegalArgumentException(op.name());reserve(op.length());raw(op.code());raw(operands);}
         void label(String name){if(labels.put(name,page*256+pos)!=null)throw new IllegalStateException(name);}
         void store(int value,int register){emit(STORE,value,register);}
@@ -566,7 +567,7 @@ public final class DesktopImage {
             for(var data:lateData){page++;pos=0;byte[] literal=new byte[256];Arrays.fill(literal,STOP.code());pages.add(literal);data.accept(this);}
             var literals=new ArrayList<>(strings.entrySet());
             var rooms=new ArrayList<int[]>();
-            if(packStrings){literals.sort(java.util.Comparator.comparingInt((Map.Entry<String,String> item)->item.getKey().length()).reversed());rooms.add(new int[]{page,pos});}
+            if(packStrings){literals.sort(java.util.Comparator.comparingInt((Map.Entry<String,String> item)->item.getKey().length()).reversed());rooms.add(new int[]{page,pos});if(mailboxLiterals&&mailboxHole&&pages.size()>31)rooms.add(new int[]{31,64});}
             for(var item:literals){
                 if(item.getKey().length()>80)throw new IllegalStateException("Long desktop string");
                 int need=5*((item.getKey().length()+3)/3);int[] room=null;

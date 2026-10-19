@@ -17,6 +17,7 @@ final class DesktopAppServices {
         s.equal(A,QUERY,"app.service.query");s.equal(A,TEXT,"app.service.text");
         s.equal(A,PACKED_TEXT,"app.service.packed");s.equal(A,NETWORK_PACKED,"app.service.packed");s.equal(A,KEYBOARD,"app.service.key");
         s.equal(A,CONTEXT,"app.service.context");s.equal(A,DOCUMENT,"document.enable");
+        s.equal(A,DOCUMENT_FRAME,"document.frame");
         s.equal(A,CACHE_BEGIN,"app.cache.begin");s.equal(A,CACHE_FLUSH,"app.cache.flush");s.equal(A,CACHE_FINISH,"app.cache.finish");s.equal(A,CACHE_NAVIGATE,"app.cache.navigate");s.equal(A,CACHE_ABORT,"app.cache.abort");s.jump("app.service.bad");
         s.label("app.service.query");s.store(DesktopServices.VERSION,A);s.vwriteLiteral(3,A);s.jump("app.service.return");
         s.label("app.service.context");s.get(A,CWD);s.vwriteLiteral(1,A);s.get(A,DesktopFileSystem.CWD_H);s.vwriteLiteral(2,A);s.jump("app.service.return");

@@ -18,11 +18,13 @@ dependencies {
 
 test {
     useJUnitPlatform()
+    // This project runs its main-based regression suites through check below.
+    failOnNoDiscoveredTests = false
 }
 // These headless storage checks have no external test-library dependencies.
 var regressionClasses = layout.buildDirectory.dir('classes/storageRegression')
 tasks.register('compileStorageRegression', JavaCompile) {
-    source = files(sourceSets.main.java, file('examples/jctrl/BrowserImage.java'), fileTree('src/test/java') { include '**/*Regression.java' })
+    source = files(sourceSets.main.java, fileTree('examples/jctrl') { include '*.java' }, fileTree('src/test/java') { include '**/*Regression.java' })
     classpath = files()
     options.incremental = false
     destinationDirectory = regressionClasses
@@ -99,6 +101,37 @@ tasks.register('browserFormsRegression', JavaExec) {
     mainClass = 'xyz.ignite4inferneo.BrowserRegression'
     args 'forms'
 }
+
+tasks.register('textEditExample', JavaExec) {
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'xyz.ignite4inferneo.jvdos.TextEditImage'
+    args file('examples/jctrl/TEXTEDIT.COM').absolutePath
+}
+
+tasks.register('textEditRegression', JavaExec) {
+    dependsOn compileStorageRegression, textEditExample
+    classpath = files(regressionClasses)
+    mainClass = 'xyz.ignite4inferneo.jvdos.TextEditRegression'
+}
+check.dependsOn textEditRegression
+
+tasks.register('textEditPerformanceRegression', JavaExec) {
+    dependsOn compileStorageRegression
+    classpath = files(regressionClasses)
+    mainClass = 'xyz.ignite4inferneo.jvdos.TextEditRegression'
+    args 'performance'
+}
+// Both editor scenarios use the same disposable image.
+textEditPerformanceRegression.mustRunAfter textEditRegression
+check.dependsOn textEditPerformanceRegression
+
+tasks.register('editorInstallRegression', JavaExec) {
+    dependsOn compileStorageRegression
+    classpath = files(regressionClasses)
+    mainClass = 'xyz.ignite4inferneo.EditorInstallRegression'
+}
+check.dependsOn editorInstallRegression
 
 // The headless driver shares the generator's compact state layout.
 tasks.named('compileTestJava', JavaCompile) {

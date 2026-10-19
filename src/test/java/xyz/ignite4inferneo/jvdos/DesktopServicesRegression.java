@@ -72,7 +72,10 @@ public final class DesktopServicesRegression {
         if(invalid){s.emit(LOAD_MEM_ABSOLUTE,1,96,250,D);s.emit(STOP);return;}
         call(DOCUMENT);s.store('A',D);s.emit(STORE_MEM_ABSOLUTE,D,1,90,255);
         span(90,255,1,0);span(90,255,2,1);span(91,0,1,2);
-        s.emit(LOAD_MEM_ABSOLUTE,1,90,255,D);result(3,D);String wire=s.strings.computeIfAbsent("PROBE",t->s.unique("wire"));s.ref(wire,true,B);s.ref(wire,false,C);call(NETWORK_PACKED);result(4,A);s.emit(STOP);
+        s.emit(LOAD_MEM_ABSOLUTE,1,90,255,D);result(3,D);String wire=s.strings.computeIfAbsent("PROBE",t->s.unique("wire"));s.ref(wire,true,B);s.ref(wire,false,C);call(NETWORK_PACKED);result(4,A);
+        s.store(82,B);call(DOCUMENT_FRAME);result(5,A);
+        s.store(27,B);call(DOCUMENT_FRAME);result(6,A);
+        s.store(81,B);call(DOCUMENT_FRAME);result(7,A);s.emit(STOP);
     }).bytes();}
     private static void launch(String name)throws Exception {
         vm=invoke("terminal",new Class[]{});invoke("command",new Class[]{String.class},"JCTRL");
@@ -98,7 +101,7 @@ public final class DesktopServicesRegression {
         disk.put(JvFileSystem.ROOT,"EXTEND.COM",extended(false),0);launch("EXTEND.COM");
         for(int i=0;i<3000&&(ram()[481][0]&255)!=0;i++)press(0);
         check((ram()[481][1]&255)==1,"extended document code executes beyond virtual page 31");
-        int[] extendedExpected={0,1,1,'A',0};for(int i=0;i<extendedExpected.length;i++)check((ram()[415][64+i]&255)==extendedExpected[i],"extended span validation "+i);
+        int[] extendedExpected={0,1,1,'A',0,1,1,0};for(int i=0;i<extendedExpected.length;i++)check((ram()[415][64+i]&255)==extendedExpected[i],"extended span validation "+i);
         check((ram()[481][28]&255)==1,"network packed helper does not draw text");
         check((ram()[481][445-256]&255)==91,"extended client receives bounded document RAM");
         disk.put(JvFileSystem.ROOT,"BADPAGE.COM",extended(true),0);launch("BADPAGE.COM");ram()[480][250]=(byte)182;

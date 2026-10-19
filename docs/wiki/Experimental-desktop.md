@@ -6,6 +6,12 @@ The desktop is a separate JavaVCPU guest application, `JCTRL.COM`, launched with
 
 Start the VM and enter `JCTRL`. The installer keeps a managed `JCTRL.COM` in the root of system disk 0. Its ownership record (bytes 256..295) stores the physical entry address and SHA-256. An unchanged managed copy can be updated independently of the kernel. Manual/modified copies, full disks and corrupt volumes are preserved. JV-DOS 2.0 requires a freshly formatted JVFS disk; older experimental formats are reset on startup.
 
+Startup also installs and updates `TEXTEDIT.COM`, using its own ownership record
+at bytes 296..335. The original standalone release is recognized and upgraded;
+other manual or modified copies are preserved. Open TEXTEDIT from Files for
+highlighted JVS/HEX editing or binary COM byte editing. It uses shared guest
+services and cached caret/line updates. See [editor controls](../../examples/jctrl/README.md#jctrl-text-editor).
+
 For a manual copy, stop the VM, open `storage.img` in Workshop, select a folder and click **Add JCTRL desktop**, then download and replace the disk while stopped. Alternatively import `examples/dos/JCTRL.COM`. Launch a manual copy with `RUN JCTRL.COM` in its folder. Manual copies are not automatically updated.
 
 The desktop opens the current folder on the currently selected storage device. Browsing and viewing do not modify files. Drag-and-drop and DOS file commands persist changes to the selected disk. Explorer navigation stays separate from DOS's location; commands in the DOS window update the real shell's location.
@@ -96,7 +102,7 @@ The machine still has 128 KiB RAM. Small apps and the embedded DOS shell retain 
 
 ## Application layout and rebuilding
 
-`DesktopImage.java` emits a flat executable using the existing instruction set. The ordinary COM loader validates it and runs it in RAM bank one at page 0, offset 0. Executable instructions stay below page 128. If literal pages overflow into 128..135, startup copies only the loaded overflow into reserved pages 234..239 and 231..232 before the application workspace is used. The current image relocates its overflow literals and packed keyboard table before launching apps. All literal references are relocated by the assembler; this uses only ordinary guest loads and stores. Strings are packed into literal operands of nonexecuted data instructions so the existing validator can check every instruction, including the data pages.
+`DesktopImage.java` emits a flat executable using the existing instruction set. The ordinary COM loader validates it and runs it in RAM bank one at page 0, offset 0. Code pages 128..133 and overflow data are relocated before application RAM is used. Startup copies loaded pages 128..133 to 234..239, and 134..135 to 231..232. The current image relocates its overflow literals and packed keyboard table before launching apps. All literal references are relocated by the assembler; this uses only ordinary guest loads and stores. Strings are packed into literal operands of nonexecuted data instructions so the existing validator can check every instruction, including the data pages.
 
 The application memory layout is entirely within the original 128 KiB:
 
@@ -113,7 +119,7 @@ The application memory layout is entirely within the original 128 KiB:
 | 228 | Virtual application registers |
 | 229 | Explorer directory-page history (85 retained page starts) |
 | 230 | Focused DOS keyboard queue |
-| 231..232, 234..239 | Relocated immutable literals |
+| 231..232, 234..239 | Relocated desktop code and literals |
 | 233 | Desktop filesystem mailbox |
 | 251 | DOS path buffer |
 | 252 | DOS block-copy buffer |
@@ -126,7 +132,7 @@ On exit it clears the screen, resets the shell's text position, and uses `CHANGE
 
 Run `gradlew.bat desktopImage` to regenerate `examples/dos/JCTRL.COM` and `tools/disk-workshop/desktop.js`. `storageRegression` checks actual guest filesystem operations, large files/directories, corruption, full-disk recovery, package ownership, glyph rendering, cursor restoration and Pong. `browserRegression` checks WEB storage/rendering, and `browserNavigationRegression` covers redirects, links, Back, framing and gateway requests with local fixtures. `browserFormsRegression` covers GET queries, select defaults, cursor editing and later link groups. Disposable images and previews live under `build/`.
 
-The assembler performs branch relaxation before writing the executable: same-page unconditional and equality branches use `JMP` (2 bytes) and `COND_JUMP` (4 bytes). Cross-page targets retain `CHANGE_PAGE_JUMP` and `CHANGE_PAGE_COND_JUMP` sequences. It recomputes labels and page layout after each change; any shortened branch that crosses a page boundary in a later pass is pinned to its far form. This also relocates string pointers, return addresses, and the self-modifying input operand. The build prints baseline/optimized byte counts and selected branch counts. The assembler also checks that executable instructions remain below page 128 and relocates overflow literal pages into their reserved guest RAM area.
+The assembler performs branch relaxation before writing the executable: same-page unconditional and equality branches use `JMP` (2 bytes) and `COND_JUMP` (4 bytes). Cross-page targets retain `CHANGE_PAGE_JUMP` and `CHANGE_PAGE_COND_JUMP` sequences. It recomputes labels and page layout after each change; any shortened branch that crosses a page boundary in a later pass is pinned to its far form. This also relocates string pointers, return addresses, and the self-modifying input operand. The build prints baseline/optimized byte counts and selected branch counts. The assembler bounds code to 134 pages and relocates overflow code, fallthrough jumps and literal references into reserved guest RAM.
 
 
 ## Shared services for applications
@@ -138,7 +144,7 @@ printing every page character through the interpreter. Text requests render up
 to 256 characters before returning to the event loop, so window movement and
 cancellation remain cooperative. Existing COM programs keep their original ABI.
 
-The generated JCTRL image is 34,560 bytes; WEB.COM is 19,968 bytes and uses
+The generated JCTRL image is 34,816 bytes; WEB.COM is 19,968 bytes and uses
 the larger guest document layout. WEB supports bounded redirects, relative links,
 a link chooser with groups beyond nine destinations, editable GET form queries, Back and chunked HTTP. An optional localhost gateway provides
 verified TLS and decompression; HTML parsing stays in the guest. Completed WEB documents are saved under

@@ -65,7 +65,7 @@ JCTRL interprets COM programs inside its application window without changes to t
 
 ## Shared JCTRL application services
 
-JCTRL application ABI v3 exposes **virtual** `0:249:42` to interpreted COM clients.
+JCTRL application ABI v5 exposes **virtual** `0:249:42` to interpreted COM clients.
 It is implemented by ordinary desktop guest bytecode; it is not a CPU opcode,
 host callback, or a fullscreen DOS trampoline. Rebuild/update JCTRL before using
 it. Existing character-print, completion and filesystem entries remain valid.
@@ -80,7 +80,7 @@ request is bounded and yields to the desktop after returning.
 
 | Operation | Inputs | Outputs |
 | --- | --- | --- |
-| QUERY (0) | None | D = version (3) |
+| QUERY (0) | None | D = version (5) |
 | TEXT (1) | B/C = virtual bank-one page/offset; D = count, 0 means 256 | Status in A |
 | PACKED_TEXT (2) | B/C = `DesktopImage.Asm` packed literal pointer | Status in A |
 | KEYBOARD (3) | B = VK code; C = shift flag 0/1 | C = updated shift flag; D = ASCII, or 0 for no printable character |
@@ -92,6 +92,7 @@ request is bounded and yields to the desktop after returning.
 | CACHE_ABORT (9) | None | D = 0 |
 | DOCUMENT (10) | None | Clear and select the retained 48-column, 23-row reader surface |
 | NETWORK_PACKED (11) | B/C = packed literal pointer | Append up to 80 literal bytes to TCP TX port 5; status in A |
+| DOCUMENT_FRAME (12) | B = first page of a ten-page character/color frame | Retain the frame, select editor chrome and request repaint; status in A |
 
 TEXT validates its entire span before drawing; it may cross pages but cannot
 leave the current application workspace (0-31, or 0-90 for larger document COMs). PACKED_TEXT reads the assembler's three-byte
@@ -111,6 +112,21 @@ instead of 64 pixel pages. The footer also sends L/B for links/Back. Closing the
 128 by 128 pixel surface. The reader footer sends P/N/H/R/U through the focused
 key mailbox, and the wheel sends Page Up/Down. This operation requires version 2;
 version-3 extended document memory is selected by COM file size; smaller clients keep their existing bounds. Older text and pixel services retain their calling convention.
+
+DOCUMENT_FRAME (v4) retains a reference to ten contiguous app pages. The first
+five hold row-major character bytes (48 columns by 23 rows); the following five
+hold matching palette colors. Both buffers remain owned by the application and
+must stay alive until DOCUMENT or a later FRAME call. Each FRAME requests a
+repaint. Frame clients receive a bounded burst of up to 4,080 guest instructions
+per desktop tick for editing/lexing; DISPLAY yields immediately. The full ten-page span must fit app RAM and exclude page 31; invalid
+requests return BAD_ARGUMENT without changing the retained frame. The reader
+footer is hidden; clients draw their controls in the frame. Wheel events still send Page Up/Down.
+DOCUMENT restores the standard reader surface. See
+[TEXTEDIT](../../examples/jctrl/README.md#jctrl-text-editor) for a working client.
+Since v5, CLEAR_GRA clears the referenced character and color buffers through
+shared guest code, without publishing the cleared intermediate frame. Call
+DOCUMENT_FRAME after completing changes to request repaint. The bounded
+16-slice scheduling budget now applies to frame clients as well as the DOS window.
 
 The spool reserves **bytes 0-63 of virtual page 31** as its JVFS mailbox and
 **filesystem handle 3** until ABORT/close. Give it at least two buffer pages (three in DOCUMENT mode);

@@ -40,7 +40,16 @@ public final class DesktopAssemblyRegression {
             });
             check(execute(counted.bytes())[3]==counted.bytes().length/256,"image page count resolves after final layout");
         }
-        System.out.println("PASS: relaxed local/far branches, true/false page conditions, backward loops, boundaries and deterministic layout");
+        var overflow=DesktopImage.assembleOptimized(s -> {
+            s.relocateData=true;
+            for(int i=0;i<128*82;i++)s.store(0,4);
+            s.store(42,3);s.jump("overflow.done");s.label("overflow.done");s.emit(STOP);
+        });
+        byte[] relocated=new byte[256*256];Arrays.fill(relocated,STOP.code());
+        System.arraycopy(overflow.bytes(),0,relocated,0,128*256);
+        System.arraycopy(overflow.bytes(),128*256,relocated,234*256,overflow.bytes().length-128*256);
+        check(execute(relocated)[3]==42,"code fallthrough and branch targets relocate above page 127");
+        System.out.println("PASS: relaxed local/far branches, overflow relocation, backward loops, boundaries and deterministic layout");
     }
     private static void selection(DesktopImage.Asm s,boolean equal,int before,int between) {
         s.store(7,0);s.store(equal?7:8,1);
@@ -55,7 +64,7 @@ public final class DesktopAssemblyRegression {
             int length=OPCode.values()[opcode].length();check((offset&255)+length<=256,"instruction fits code page");offset+=length;
         }
         int[] r=new int[20];int page=0,pc=0;
-        for(int steps=0;steps<10000;steps++) {
+        for(int steps=0;steps<20000;steps++) {
             int address=page*256+pc,op=bytes[address]&255;
             int a=pc<255?bytes[address+1]&255:0,b=pc<254?bytes[address+2]&255:0;
             int c=pc<253?bytes[address+3]&255:0,d=pc<252?bytes[address+4]&255:0;
