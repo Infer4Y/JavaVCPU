@@ -15,8 +15,8 @@ final class DesktopAppServices {
         s.label("vm.app.service");s.get(A,APP);s.notEqual(A,1,"app.tick.error");
         s.set(STATUS,OK);s.vreadLiteral(0,A);s.put(A,OP);
         s.equal(A,QUERY,"app.service.query");s.equal(A,TEXT,"app.service.text");
-        s.equal(A,PACKED_TEXT,"app.service.packed");s.equal(A,KEYBOARD,"app.service.key");
-        s.equal(A,CONTEXT,"app.service.context");
+        s.equal(A,PACKED_TEXT,"app.service.packed");s.equal(A,NETWORK_PACKED,"app.service.packed");s.equal(A,KEYBOARD,"app.service.key");
+        s.equal(A,CONTEXT,"app.service.context");s.equal(A,DOCUMENT,"document.enable");
         s.equal(A,CACHE_BEGIN,"app.cache.begin");s.equal(A,CACHE_FLUSH,"app.cache.flush");s.equal(A,CACHE_FINISH,"app.cache.finish");s.equal(A,CACHE_NAVIGATE,"app.cache.navigate");s.equal(A,CACHE_ABORT,"app.cache.abort");s.jump("app.service.bad");
         s.label("app.service.query");s.store(DesktopServices.VERSION,A);s.vwriteLiteral(3,A);s.jump("app.service.return");
         s.label("app.service.context");s.get(A,CWD);s.vwriteLiteral(1,A);s.get(A,DesktopFileSystem.CWD_H);s.vwriteLiteral(2,A);s.jump("app.service.return");
@@ -25,16 +25,16 @@ final class DesktopAppServices {
         // packed variant additionally checks each cursor movement, including gaps.
         s.label("app.service.text");s.vreadLiteral(3,A);s.put(A,LEFT);s.jump("app.service.source");
         s.label("app.service.packed");s.set(LEFT,80);s.set(PART,0);
-        s.label("app.service.source");s.vreadLiteral(1,A);s.less(A,32,"app.service.source.valid");s.jump("app.service.bad");
-        s.label("app.service.source.valid");s.store(128,B);s.emit(ADD,A,B,A);s.put(A,SOURCE);s.vreadLiteral(2,A);s.put(A,OFFSET);
-        s.get(A,OP);s.equal(A,PACKED_TEXT,"app.service.loop");s.get(A,SOURCE);s.notEqual(A,159,"app.service.loop");
+        s.label("app.service.source");s.vreadLiteral(1,A);s.get(B,APP_LIMIT);s.emit(COMPARE_UNSIGNED,A,B,C);s.equal(C,1,"app.service.source.valid");s.jump("app.service.bad");
+        s.label("app.service.source.valid");s.put(A,SOURCE);s.vreadLiteral(2,A);s.put(A,OFFSET);
+        s.get(A,OP);s.notEqual(A,TEXT,"app.service.loop");s.get(A,SOURCE);s.get(B,APP_LIMIT);s.emit(INCREMENT_REGISTER,A);s.ne(A,B,"app.service.loop");
         s.get(A,LEFT);s.notEqual(A,0,"app.service.last.sum");s.get(A,OFFSET);s.notEqual(A,0,"app.service.bad");s.jump("app.service.loop");
         s.label("app.service.last.sum");s.get(B,OFFSET);s.emit(ADD,A,B,C);s.equal(C,0,"app.service.loop");s.emit(COMPARE_UNSIGNED,C,B,D);s.equal(D,1,"app.service.bad");
-        s.label("app.service.loop");s.get(B,SOURCE);s.less(B,160,"app.service.read");s.jump("app.service.bad");
-        s.label("app.service.read");s.get(C,OFFSET);s.store(1,A);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.put(D,PRINT_CHAR);
-        s.get(A,OP);s.notEqual(A,PACKED_TEXT,"app.service.draw");s.equal(D,0,"app.service.return");
-        s.label("app.service.draw");s.call("app.print",RET_PRINT);s.inc16(OFFSET,SOURCE);
-        s.get(A,OP);s.notEqual(A,PACKED_TEXT,"app.service.count");s.get(A,PART);s.emit(INCREMENT_REGISTER,A);s.put(A,PART);s.notEqual(A,3,"app.service.count");s.set(PART,0);s.inc16(OFFSET,SOURCE);s.inc16(OFFSET,SOURCE);
+        s.label("app.service.loop");s.get(B,SOURCE);s.get(C,APP_LIMIT);s.emit(COMPARE_UNSIGNED,B,C,A);s.equal(A,1,"app.service.read");s.jump("app.service.bad");
+        s.label("app.service.read");s.appPage(B);s.get(C,OFFSET);s.store(1,A);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.put(D,PRINT_CHAR);
+        s.get(A,OP);s.equal(A,TEXT,"app.service.draw");s.equal(D,0,"app.service.return");
+        s.label("app.service.draw");s.get(A,OP);s.equal(A,NETWORK_PACKED,"app.service.transmit");s.call("app.print",RET_PRINT);s.jump("app.service.advance");s.label("app.service.transmit");s.get(D,PRINT_CHAR);s.store(5,A);s.emit(WRITE_NETWORK,A,D);s.label("app.service.advance");s.inc16(OFFSET,SOURCE);
+        s.get(A,OP);s.equal(A,TEXT,"app.service.count");s.get(A,PART);s.emit(INCREMENT_REGISTER,A);s.put(A,PART);s.notEqual(A,3,"app.service.count");s.set(PART,0);s.inc16(OFFSET,SOURCE);s.inc16(OFFSET,SOURCE);
         s.label("app.service.count");s.get(A,LEFT);s.store(1,B);s.emit(SUB,A,B,A);s.put(A,LEFT);s.notEqual(A,0,"app.service.loop");s.jump("app.service.return");
 
         s.label("app.service.key");s.vreadLiteral(1,A);s.put(A,RAW);s.vreadLiteral(2,A);s.less(A,2,"app.service.key.shift");s.jump("app.service.bad");
@@ -54,7 +54,7 @@ final class DesktopAppServices {
         // One bounded service per desktop slice: repaint once per block and let
         // input/window dragging run before another request is accepted.
         s.set(BUDGET,1);s.jump("vm.done");
-        emitKeys(s);DesktopPageCache.emit(s);
+        s.lateData.add(DesktopAppServices::emitKeys);DesktopPageCache.emit(s);DesktopDocument.emit(s);
     }
     private static void emitKeys(Asm s) {
         int[][] keys={{32,32,32},{44,44,60},{45,45,95},{46,46,62},{47,47,63},

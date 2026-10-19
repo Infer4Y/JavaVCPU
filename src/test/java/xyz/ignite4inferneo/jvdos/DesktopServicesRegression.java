@@ -64,6 +64,16 @@ public final class DesktopServicesRegression {
         }
         s.emit(STOP);
     }).bytes();}
+
+    private static byte[] extended(boolean invalid){return DesktopImage.assembleOptimized(asm->{
+        s=asm;s.mailboxHole=true;s.jump("extended.code");
+        while(s.page<40){s.reserve(247);s.store(0,A);}
+        s.label("extended.code");s.store(1,E);
+        if(invalid){s.emit(LOAD_MEM_ABSOLUTE,1,96,250,D);s.emit(STOP);return;}
+        call(DOCUMENT);s.store('A',D);s.emit(STORE_MEM_ABSOLUTE,D,1,90,255);
+        span(90,255,1,0);span(90,255,2,1);span(91,0,1,2);
+        s.emit(LOAD_MEM_ABSOLUTE,1,90,255,D);result(3,D);String wire=s.strings.computeIfAbsent("PROBE",t->s.unique("wire"));s.ref(wire,true,B);s.ref(wire,false,C);call(NETWORK_PACKED);result(4,A);s.emit(STOP);
+    }).bytes();}
     private static void launch(String name)throws Exception {
         vm=invoke("terminal",new Class[]{});invoke("command",new Class[]{String.class},"JCTRL");
         var entries=JvFileSystem.device(0).list(JvFileSystem.ROOT);int row=0;while(!entries.get(row).name().equals(name))row++;
@@ -85,6 +95,15 @@ public final class DesktopServicesRegression {
         for(int i=0;i<expected.length;i++)check((ram()[415][64+i]&255)==expected[i],"service result "+i+": "+(ram()[415][64+i]&255)+" expected "+expected[i]);
         check((ram()[481][28]&255)==22&&(ram()[481][29]&255)==8,"invalid text spans draw no partial output");
         var folder=disk.find(JvFileSystem.ROOT,"WEB.CACHE");check(folder!=null&&disk.list(folder.first()).isEmpty(),"abort removes uncommitted cache entry");
+        disk.put(JvFileSystem.ROOT,"EXTEND.COM",extended(false),0);launch("EXTEND.COM");
+        for(int i=0;i<3000&&(ram()[481][0]&255)!=0;i++)press(0);
+        check((ram()[481][1]&255)==1,"extended document code executes beyond virtual page 31");
+        int[] extendedExpected={0,1,1,'A',0};for(int i=0;i<extendedExpected.length;i++)check((ram()[415][64+i]&255)==extendedExpected[i],"extended span validation "+i);
+        check((ram()[481][28]&255)==1,"network packed helper does not draw text");
+        check((ram()[481][445-256]&255)==91,"extended client receives bounded document RAM");
+        disk.put(JvFileSystem.ROOT,"BADPAGE.COM",extended(true),0);launch("BADPAGE.COM");ram()[480][250]=(byte)182;
+        for(int i=0;i<3000&&(ram()[481][0]&255)!=0;i++)press(0);
+        check((ram()[481][1]&255)==6&&(ram()[480][250]&255)==182,"extended clients cannot address desktop RAM");
         disk.put(JvFileSystem.ROOT,"CHAR.COM",benchmark(false),0);disk.put(JvFileSystem.ROOT,"BLOCK.COM",benchmark(true),0);
         long[] legacy=measure("CHAR.COM"),bulk=measure("BLOCK.COM");
         System.out.println("256 glyphs: legacy="+legacy[0]+" instructions / "+legacy[1]+" pixel writes; shared="+bulk[0]+" / "+bulk[1]);

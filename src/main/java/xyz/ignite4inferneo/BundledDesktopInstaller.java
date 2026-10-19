@@ -12,7 +12,8 @@ final class BundledDesktopInstaller {
     private static final byte[] MAGIC={'J','C','T',2};
     private BundledDesktopInstaller() { }
     static boolean install(byte[] payload) throws IOException {
-        if(payload.length==0||payload.length>32768)throw new IllegalArgumentException("Invalid desktop image");
+        // 128 executable pages plus eight literal pages relocated by the guest.
+        if(payload.length==0||payload.length>34816)throw new IllegalArgumentException("Invalid desktop image");
         var volume=JvFileSystem.device(0);
         try{volume.validate();}catch(IllegalArgumentException corrupt){IO.println("Desktop installation skipped: "+corrupt.getMessage());return false;}
         var entry=volume.find(JvFileSystem.ROOT,"JCTRL.COM");

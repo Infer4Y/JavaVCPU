@@ -60,12 +60,12 @@ Control register 10 selects the storage medium for opcodes 18/19; preserve the c
 
 ## JCTRL guest program runner
 
-JCTRL can interpret small COM programs inside its application window without changes to the Java CPU or ISA. It supplies an 8 KiB virtual code/data workspace and a 128?128 RAM-backed pixel buffer. Small programs retain virtual 0:248 placement; larger ones start at virtual 1:0. Guest-handled DOS entries 0:249:0 and 0:249:9 provide character output and completion. STOP finishes the interpreted application while the real VM's STOP behavior remains unchanged. See [the desktop guide](Experimental-desktop.md) for supported JVS commands, memory limits, graphics scaling, and media playback.
+JCTRL interprets COM programs inside its application window without changes to the Java CPU or ISA. Programs up to 8192 bytes keep a 32-page virtual workspace and a 128 by 128 RAM-backed pixel buffer. Larger COMs automatically use document mode: up to 23,296 bytes (91 virtual pages), mapped to physical bank-one pages 128-218. Their retained text surface occupies 219-223. Document programs use shared text services; pixel operations address RAM reused by their code/data and should not be used for drawing. Instruction fetches remain limited to the loaded file; data reads/writes and text/filesystem buffers are bounded to the current app workspace. The native desktop and its state remain inaccessible. Small programs retain virtual 0:248 placement; larger ones start at virtual 1:0. Guest-handled DOS entries 0:249:0 and 0:249:9 provide character output and completion. STOP finishes the interpreted application while the real VM's STOP behavior remains unchanged. See [the desktop guide](Experimental-desktop.md) for supported JVS commands, memory limits, graphics scaling, and media playback.
 
 
 ## Shared JCTRL application services
 
-JCTRL application ABI v1 exposes **virtual** `0:249:42` to interpreted COM clients.
+JCTRL application ABI v3 exposes **virtual** `0:249:42` to interpreted COM clients.
 It is implemented by ordinary desktop guest bytecode; it is not a CPU opcode,
 host callback, or a fullscreen DOS trampoline. Rebuild/update JCTRL before using
 it. Existing character-print, completion and filesystem entries remain valid.
@@ -80,7 +80,7 @@ request is bounded and yields to the desktop after returning.
 
 | Operation | Inputs | Outputs |
 | --- | --- | --- |
-| QUERY (0) | None | D = version (1) |
+| QUERY (0) | None | D = version (3) |
 | TEXT (1) | B/C = virtual bank-one page/offset; D = count, 0 means 256 | Status in A |
 | PACKED_TEXT (2) | B/C = `DesktopImage.Asm` packed literal pointer | Status in A |
 | KEYBOARD (3) | B = VK code; C = shift flag 0/1 | C = updated shift flag; D = ASCII, or 0 for no printable character |
@@ -90,24 +90,38 @@ request is bounded and yields to the desktop after returning.
 | CACHE_FINISH (7) | None | D = cache mode |
 | CACHE_NAVIGATE (8) | B = 0 Home, 1 Previous, 2 Next; C = current screen's first RAM page | B/C = loaded text's exclusive end page/offset; D = mode; A = END when Next has no further text |
 | CACHE_ABORT (9) | None | D = 0 |
+| DOCUMENT (10) | None | Clear and select the retained 48-column, 23-row reader surface |
+| NETWORK_PACKED (11) | B/C = packed literal pointer | Append up to 80 literal bytes to TCP TX port 5; status in A |
 
 TEXT validates its entire span before drawing; it may cross pages but cannot
-leave virtual bank-one pages 0-31. PACKED_TEXT reads the assembler's three-byte
+leave the current application workspace (0-31, or 0-90 for larger document COMs). PACKED_TEXT reads the assembler's three-byte
 literal groups, skips their two instruction bytes, and stops at NUL or 80
-characters. Both reuse JCTRL's existing framebuffer/font renderer. KEYBOARD only
+characters. Both reuse JCTRL's existing framebuffer/font renderer. NETWORK_PACKED
+uses the same packed bounds but appends to the network TX queue without drawing.
+The caller configures/connects the TCP device, issues its send command and checks
+its error register; no host callback or network device change is involved. KEYBOARD only
 decodes supplied events; clients still read their focused input through the
 normal keyboard port. It handles Shift press/release and numpad punctuation.
 
+DOCUMENT opts into a light window-wide text surface using the existing framebuffer
+RAM. Print, TEXT and PACKED_TEXT write retained character cells; CLEAR_GRA clears
+the cells and cursor. JCTRL draws them with its shared resident font when needed,
+including after dragging or uncovering the window. Clearing touches five pages
+instead of 64 pixel pages. The footer also sends L/B for links/Back. Closing the application restores the normal
+128 by 128 pixel surface. The reader footer sends P/N/H/R/U through the focused
+key mailbox, and the wheel sends Page Up/Down. This operation requires version 2;
+version-3 extended document memory is selected by COM file size; smaller clients keep their existing bounds. Older text and pixel services retain their calling convention.
+
 The spool reserves **bytes 0-63 of virtual page 31** as its JVFS mailbox and
-**filesystem handle 3** until ABORT/close. Give it at least two buffer pages;
-the exclusive end must be at most 31, so neither reads nor writes touch the
-mailbox or resident desktop. Cache modes are 0 (RAM fallback), 1 (writing), and
+**filesystem handle 3** until ABORT/close. Give it at least two buffer pages (three in DOCUMENT mode);
+the span must stay inside the app workspace and must not contain page 31,
+so neither reads nor writes touch the mailbox or resident desktop. Cache modes are 0 (RAM fallback), 1 (writing), and
 2 (committed and open for readback). BEGIN creates a new text file under
 `WEB.CACHE` in the selected directory, searches 256 candidate filenames without
 replacing existing ones, and uses the app's storage-device register. FLUSH
 appends only the newly filled buffer, and tracks the write position independently
 of the size committed on CLOSE. FINISH commits and reopens the file for reads.
-NAVIGATE loads up to 512 bytes through the resident seek/block routines, including
+NAVIGATE loads up to 512 bytes (768 when begun in DOCUMENT mode) through the resident seek/block routines, including
 across cluster boundaries. It is available in mode 2; before commit the client
 can still page through its RAM window.
 

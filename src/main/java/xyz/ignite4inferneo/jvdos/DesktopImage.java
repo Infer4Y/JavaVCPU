@@ -7,7 +7,7 @@ import java.util.*;
 import java.nio.file.*;
 
 /** A separate, cooperative DOS application. All UI and file reads execute on the guest CPU.
- * Code lives in RAM bank one below page 128; private state and relocated literals use pages 224..239. Application code/data uses 128..159; pixels use 160..223.
+ * Code lives in RAM bank one below page 128; private state and relocated literals use pages 224..239. Small apps use 128..159 and pixels 160..223. Larger document apps use 128..218, with text cells at 219..223.
  * Bank-zero DOS, its font tables, and bank-one shell history remain resident.
  */
 public final class DesktopImage {
@@ -23,7 +23,7 @@ public final class DesktopImage {
         TARGET=50,TARGET_H=51,NEXT=52,NEXT_H=53,USED=54,USED_H=55,LINES=56,CHARS=57,ERROR=58,
         HITX=59,HITY=60,LOOP=61,RETURN_RECT=64,RETURN_TEXT=66,RETURN_GLYPH=68,RETURN_WIN=70,
         RETURN_FILES=72,RETURN_VIEW=74,RETURN_READ=76;
-    // Guest-only application state. Program RAM: bank one 128..159 (8 KiB).
+    // Guest-only application state. Small program RAM: 128..159; document RAM: 128..218.
     // Application pixels: 160..223 (128x128 bytes). Virtual registers: 228.
     static final int RUN=256,APP=257,FILE_LO=258,FILE_HI=259,LOAD_LO=260,LOAD_HI=261,
         OPC=262,OA=263,OB=264,OC=265,OD=266,AV=267,BV=268,CV=269,DV=270,ILEN=271,
@@ -36,7 +36,7 @@ public final class DesktopImage {
         RET_INIT=320,RET_LOAD=322,RET_STEP=324,RET_FETCH=326,RET_MEMORY=328,
         RET_PIXEL=330,RET_FRAME=332,RET_CLEAR=334,RET_PRINT=336,RET_IMAGE=338,RET_NUMBER=340,RET_HEX=354,SELECTED=356,HDEPTH=357,MBANK=358,QHEAD=359,QTAIL=360,SLICE=361,FSOURCE=362,FDOWN=363,FDRAG=364,FTARGET=365,FCOUNT=366,FNAME=367,FSX=368,FSY=369,FCAND=370,DRAFT=371,SWAIT=372,SHELLDRIVE=373,SHELLUSED=374;
     static final int WIDTH=216,HEIGHT=168;
-    static final int CURSOR_INK=375,CURSOR_SHADOW=376;
+    static final int CURSOR_INK=375,CURSOR_SHADOW=376,APP_LIMIT=445;
     record Compilation(byte[] bytes,int baselineBytes,int passes,int localJumps,int localConditionals,int farBranches) { }
     private static final Compilation COMPILED=assembleOptimized(DesktopImage::emitProgram);
     private static final byte[] IMAGE=COMPILED.bytes();
@@ -69,7 +69,7 @@ public final class DesktopImage {
                 else if(samePage&&!farOnly.contains(branch.id()))next.add(branch.id());
                 if(branch.local()){if(branch.conditional())conditions++;else jumps++;}else far++;
             }
-            if(next.equals(local)){if(s.codePages>128)throw new IllegalStateException("Desktop instructions overlap workspace");if(image.length>34816)throw new IllegalStateException("Desktop code overlaps application workspace: "+image.length/256+" pages");return new Compilation(image,baseline,pass,jumps,conditions,far); }
+            if(next.equals(local)){if(s.codePages>128)throw new IllegalStateException("Desktop instructions overlap workspace: "+s.codePages);if(image.length>34816)throw new IllegalStateException("Desktop code overlaps application workspace: "+image.length/256+" pages");return new Compilation(image,baseline,pass,jumps,conditions,far); }
             local=next;
         }
         throw new IllegalStateException("Desktop branch layout did not converge");
@@ -111,7 +111,7 @@ public final class DesktopImage {
         s.get(A,KEY);
         s.equal(A,112,"help");s.equal(A,113,"files.open");s.equal(A,114,"about");
         s.get(A,ACTIVE);s.equal(A,1,"viewer.keys");s.equal(A,0,"files.keys");s.jump("mouse");
-        s.label("viewer.keys");s.get(A,APP);s.equal(A,5,"mouse");s.get(A,KEY);s.equal(A,36,"viewer.home");
+        s.label("viewer.keys");s.get(A,DesktopDocument.MODE);s.equal(A,1,"document.wheel");s.get(A,APP);s.equal(A,5,"mouse");s.get(A,KEY);s.equal(A,36,"viewer.home");
         for(int key:new int[]{32,10,34,40})s.equal(A,key,"viewer.next");
         s.get(A,WHEEL);s.equal(A,0,"mouse");s.store(128,B);s.emit(COMPARE_UNSIGNED,A,B,C);s.equal(C,1,"viewer.next");s.jump("viewer.home");
         s.label("files.keys");s.get(A,KEY);s.equal(A,117,"files.rename");s.equal(A,118,"files.mkdir");s.equal(A,119,"files.copy");s.equal(A,127,"files.delete");s.equal(A,36,"files.home");s.equal(A,8,"files.up");
@@ -160,7 +160,7 @@ public final class DesktopImage {
         s.label("info.open");s.set(ACTIVE,2);s.store(1,A);s.windowPut(2,A);s.raise();s.jump("paint");
         s.label("files.open");s.set(FDOWN,0);s.set(ACTIVE,0);s.store(1,A);s.windowPut(2,A);s.raise();s.jump("paint");
         DesktopFileSystem.navigation(s);
-        s.label("viewer.click");s.get(A,APP);s.equal(A,5,"paint");s.get(A,HITY);s.less(A,26,"viewer.buttons");s.jump("paint");
+        s.label("viewer.click");s.get(A,DesktopDocument.MODE);s.equal(A,1,"document.click");s.get(A,APP);s.equal(A,5,"paint");s.get(A,HITY);s.less(A,26,"viewer.buttons");s.jump("paint");
         s.label("viewer.buttons");s.get(A,HITX);s.less(A,64,"viewer.home");s.less(A,132,"viewer.next");s.jump("app.open");
         s.label("viewer.home");s.set(TARGET,0);s.set(TARGET_H,0);s.set(TARGET_TOP,0);s.jump("paint");
         s.label("viewer.next");s.get(A,NEXT);s.put(A,TARGET);s.get(A,NEXT_H);s.put(A,TARGET_H);s.get(A,NEXT_TOP);s.put(A,TARGET_TOP);s.jump("paint");
@@ -191,7 +191,8 @@ public final class DesktopImage {
         s.label("window.files");s.text("FILES");s.relative(124,3);s.text("DRIVE 0X");s.get(A,DRIVE);s.store(0,B);
         s.label("files.bank.digit");s.less(A,16,"files.bank.hex");s.store(16,C);s.emit(SUB,A,C,A);s.emit(INCREMENT_REGISTER,B);s.jump("files.bank.digit");
         s.label("files.bank.hex");s.put(A,TEMP);s.put(B,OFFSET);s.get(A,OFFSET);s.put(A,CHAR);s.call("files.hex",RET_HEX);s.get(A,TEMP);s.put(A,CHAR);s.call("files.hex",RET_HEX);s.jump("window.title.done");
-        s.label("window.view");s.get(A,APP);s.equal(A,5,"window.shell.title");s.text("APPLICATION");s.jump("window.title.done");s.label("window.shell.title");s.text("DOS CONSOLE");
+        s.label("window.view");s.get(A,DesktopDocument.MODE);s.equal(A,1,"window.document.title");s.get(A,APP);s.equal(A,5,"window.shell.title");s.text("APPLICATION");s.jump("window.title.done");s.label("window.shell.title");s.text("DOS CONSOLE");
+        s.jump("window.title.done");s.label("window.document.title");s.text("WEB / DOCUMENT");
         s.label("window.title.done");s.relative(WIDTH-9,3);s.text("X");
         s.get(A,ACTIVE);s.equal(A,0,"window.dir");s.equal(A,1,"window.reader");
         s.get(A,INFO);s.equal(A,1,"window.help");
@@ -265,8 +266,8 @@ public final class DesktopImage {
         s.get(A,REMAIN);s.put(A,FILE_LO);s.get(A,REMAIN_H);s.put(A,FILE_HI);
         s.get(A,TYPE);s.equal(A,2,"image.open");s.equal(A,3,"music.open");
         s.get(A,REMAIN_TOP);s.notEqual(A,0,"app.error");
-        // Interpreted COM programs have an explicit 8 KiB code/data workspace.
-        s.get(A,FILE_HI);s.less(A,32,"app.size.ok");s.notEqual(A,32,"app.error");s.get(A,FILE_LO);s.notEqual(A,0,"app.error");
+        // Larger document COMs borrow unused pixel RAM; all mapping remains guest code.
+        s.set(APP_LIMIT,32);s.get(A,FILE_HI);s.less(A,32,"app.size.ok");s.notEqual(A,32,"app.size.extended");s.get(A,FILE_LO);s.equal(A,0,"app.size.ok");s.label("app.size.extended");s.get(A,FILE_HI);s.set(APP_LIMIT,91);s.set(DesktopDocument.MODE,1);s.less(A,91,"app.size.ok");s.notEqual(A,91,"app.error");s.get(A,FILE_LO);s.notEqual(A,0,"app.error");
         s.label("app.size.ok");s.call("program.load",RET_LOAD);s.get(A,ERROR);s.notEqual(A,0,"app.error");
         s.set(APP,1);s.set(RUN,1);s.set(LOOP,0);
         s.label("vm.clear.regs");s.get(C,LOOP);s.store(0,D);s.store(1,A);s.store(228,B);s.emit(STORE_MEM_ON_BANK,D,A,B,C);
@@ -276,27 +277,27 @@ public final class DesktopImage {
         s.label("vm.large");s.store(1,D);s.vwriteLiteral(11,D);s.jump("paint");
         s.label("vm.small");s.store(248,D);s.vwriteLiteral(9,D);s.jump("paint");
         s.label("app.error");s.call("app.stop",RET_STEP);s.set(APP,6);s.jump("paint");
-        s.label("app.stop");s.fset(FileSystemAbi.HANDLE,2);s.fs(FileSystemAbi.CLOSE);s.get(A,APP);s.notEqual(A,5,"app.stop.ready");for(int h=0;h<2;h++){s.fset(FileSystemAbi.HANDLE,h);s.fs(FileSystemAbi.ABORT);}s.label("app.stop.ready");s.fset(FileSystemAbi.HANDLE,3);s.fs(FileSystemAbi.ABORT);s.set(DesktopPageCache.MODE,0);s.set(DIRTY,1);s.set(RUN,0);s.store(0,A);s.store(3,D);s.emit(WRITE_NETWORK,A,D);s.store(0,B);s.store(0,C);
+        s.label("app.stop");s.set(DesktopDocument.MODE,0);s.fset(FileSystemAbi.HANDLE,2);s.fs(FileSystemAbi.CLOSE);s.get(A,APP);s.notEqual(A,5,"app.stop.ready");for(int h=0;h<2;h++){s.fset(FileSystemAbi.HANDLE,h);s.fs(FileSystemAbi.ABORT);}s.label("app.stop.ready");s.fset(FileSystemAbi.HANDLE,3);s.fs(FileSystemAbi.ABORT);s.set(DesktopPageCache.MODE,0);s.set(DIRTY,1);s.set(RUN,0);s.store(0,A);s.store(3,D);s.emit(WRITE_NETWORK,A,D);s.store(0,B);s.store(0,C);
         for(int voice=0;voice<8;voice++){s.store(voice,A);s.emit(OUTPUT_AUDIO,A,B,C);}s.ret(RET_STEP);
-        s.label("app.draw");s.relative(6,16);s.get(A,APP);s.equal(A,5,"shell.draw.header");s.relative(24,16);s.text("HOME            NEXT             RUN / OPEN");s.jump("app.draw.frame");s.label("shell.draw.header");s.text("REAL DOS - CLICK WINDOW TO TYPE");s.label("app.draw.frame");
+        s.label("app.draw");s.get(A,DesktopDocument.MODE);s.equal(A,1,"document.draw");s.relative(6,16);s.get(A,APP);s.equal(A,5,"shell.draw.header");s.relative(24,16);s.text("HOME            NEXT             RUN / OPEN");s.jump("app.draw.frame");s.label("shell.draw.header");s.text("REAL DOS - CLICK WINDOW TO TYPE");s.label("app.draw.frame");
         s.call("frame.draw",RET_FRAME);s.get(A,APP);s.equal(A,5,"app.draw.done");s.relative(6,158);s.get(A,APP);s.equal(A,6,"app.draw.error");
         s.get(A,RUN);s.equal(A,1,"app.draw.running");s.text("DONE   F5 RESTART / ESC BACK");s.ret(RETURN_VIEW);
         s.label("app.draw.running");s.text("RUNNING   ESC STOP / X CLOSE");s.label("app.draw.done");s.ret(RETURN_VIEW);
         s.label("app.draw.error");s.text("INVALID / UNSUPPORTED APP OR MEDIA");s.ret(RETURN_VIEW);
         s.label("program.load");s.set(LOAD_LO,0);s.set(LOAD_HI,0);
         // Clear the workspace so reads of uninitialized application data are deterministic.
-        s.label("program.clear");s.get(B,LOAD_HI);s.store(128,A);s.emit(ADD,A,B,B);s.get(C,LOAD_LO);s.store(0,D);s.store(1,A);s.emit(STORE_MEM_ON_BANK,D,A,B,C);
-        s.inc16(LOAD_LO,LOAD_HI);s.get(A,LOAD_HI);s.notEqual(A,32,"program.clear");s.set(LOAD_LO,0);s.set(LOAD_HI,0);
+        s.label("program.clear");s.get(B,LOAD_HI);s.appPage(B);s.get(C,LOAD_LO);s.store(0,D);s.store(1,A);s.emit(STORE_MEM_ON_BANK,D,A,B,C);
+        s.inc16(LOAD_LO,LOAD_HI);s.get(A,LOAD_HI);s.get(B,APP_LIMIT);s.ne(A,B,"program.clear");s.set(LOAD_LO,0);s.set(LOAD_HI,0);
         s.label("program.load.byte");s.get(A,REMAIN);s.get(B,REMAIN_H);s.store(0,C);s.ne(A,C,"program.load.more");s.eq(B,C,"program.load.done");
         s.label("program.load.more");s.call("view.read",RETURN_READ);s.get(A,ERROR);s.notEqual(A,0,"program.load.done");
-        s.get(D,CHAR);s.get(B,LOAD_HI);s.store(128,A);s.emit(ADD,A,B,B);s.get(C,LOAD_LO);s.store(1,A);s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.inc16(LOAD_LO,LOAD_HI);s.jump("program.load.byte");
+        s.get(D,CHAR);s.get(B,LOAD_HI);s.appPage(B);s.get(C,LOAD_LO);s.store(1,A);s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.inc16(LOAD_LO,LOAD_HI);s.jump("program.load.byte");
         s.label("program.load.done");s.ret(RET_LOAD);
         emitFrame(s);emitGuestPrint(s);emitGuestMedia(s);emitVirtualCpu(s);DesktopAppServices.emit(s);
     }
     private static void emitFrame(Asm s) {
-        s.label("frame.clear");s.set(DIRTY,1);s.set(FRAME_PAGE,160);s.set(FRAME_OFFSET,0);
-        s.label("frame.clear.byte");s.get(B,FRAME_PAGE);s.get(C,FRAME_OFFSET);s.store(1,A);s.store(0,D);s.emit(STORE_MEM_ON_BANK,D,A,B,C);
-        s.get(A,FRAME_OFFSET);s.emit(INCREMENT_REGISTER,A);s.put(A,FRAME_OFFSET);s.notEqual(A,0,"frame.clear.byte");s.get(A,FRAME_PAGE);s.emit(INCREMENT_REGISTER,A);s.put(A,FRAME_PAGE);s.notEqual(A,224,"frame.clear.byte");s.ret(RET_CLEAR);
+        s.label("frame.clear");s.set(DesktopDocument.PAGE,219);s.set(DesktopDocument.OFFSET,0);s.set(DIRTY,1);
+        s.store(1,A);s.store(160,B);s.store(0,C);s.store(0,D);s.get(E,DesktopDocument.MODE);s.equal(E,0,"frame.clear.byte");s.store(219,B);
+        s.label("frame.clear.byte");s.emit(STORE_MEM_ON_BANK,D,A,B,C);s.emit(INCREMENT_REGISTER,C);s.notEqual(C,0,"frame.clear.byte");s.emit(INCREMENT_REGISTER,B);s.notEqual(B,224,"frame.clear.byte");s.ret(RET_CLEAR);
         s.label("frame.pixel");
         // Address = 160:0 + y*128 + x, for a 128-square application surface.
         s.get(A,PY);s.less(A,128,"frame.pixel.y");s.jump("frame.pixel.done");
@@ -315,7 +316,7 @@ public final class DesktopImage {
         s.emit(INCREMENT_REGISTER,M);s.emit(INCREMENT_REGISTER,N);s.notEqual(N,128,"frame.draw.row");s.ret(RET_FRAME);
     }
     private static void emitGuestPrint(Asm s) {
-        s.label("app.print");s.get(A,PRINT_CHAR);s.equal(A,13,"app.print.done");s.equal(A,10,"app.print.newline");s.less(A,32,"app.print.fallback");s.less(A,127,"app.print.valid");
+        s.label("app.print");s.get(A,DesktopDocument.MODE);s.equal(A,1,"document.print");s.get(A,PRINT_CHAR);s.equal(A,13,"app.print.done");s.equal(A,10,"app.print.newline");s.less(A,32,"app.print.fallback");s.less(A,127,"app.print.valid");
         s.label("app.print.fallback");s.store('?',A);
         s.label("app.print.valid");s.store(32,B);s.emit(SUB,A,B,A);s.store(2,B);s.emit(MULTIPLY,A,B,A);s.store(64,B);s.emit(ADD,A,B,C);s.store(0,A);s.store(246,B);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.put(D,PRINT_FONT_PAGE);s.emit(INCREMENT_REGISTER,C);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.put(D,PRINT_FONT_OFFSET);s.set(PRINT_GY,0);
         s.label("app.print.row");s.get(C,PRINT_FONT_OFFSET);s.get(A,PRINT_GY);s.emit(ADD,C,A,C);s.get(B,PRINT_FONT_PAGE);s.store(0,A);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.put(D,PRINT_BITS);
@@ -453,15 +454,16 @@ public final class DesktopImage {
         s.label("app.tick.done");s.get(A,APP);s.notEqual(A,5,"app.tick.return");s.get(A,SLICE);s.store(1,B);s.emit(SUB,A,B,A);s.put(A,SLICE);s.equal(A,0,"app.tick.return");s.set(BUDGET,255);s.jump("vm.step");s.label("app.tick.return");s.get(A,APP);s.notEqual(A,5,"app.tick.end");s.vreadLiteral(10,A);s.put(A,SHELLDRIVE);s.label("app.tick.end");s.ret(RET_STEP);
         s.label("vm.filesystem");s.vreadLiteral(10,A);s.store(0,B);s.emit(ADD,A,B,10);s.get(A,APP);s.equal(A,5,"vm.filesystem.dos");
         s.vreadLiteral(0,A);s.vreadLiteral(1,B);s.equal(A,1,"vm.filesystem.bank.one");s.notEqual(A,0,"app.tick.error");s.notEqual(B,248,"app.tick.error");s.store(1,A);s.store(128,B);s.jump("vm.filesystem.app.ready");
-        s.label("vm.filesystem.bank.one");s.less(B,32,"vm.filesystem.app.page");s.jump("app.tick.error");s.label("vm.filesystem.app.page");s.store(128,C);s.emit(ADD,B,C,B);s.label("vm.filesystem.app.ready");s.store(FileSystemAbi.HANDLE,C);s.store(3,D);s.emit(STORE_MEM_ON_BANK,D,A,B,C);DesktopFileSystem.mapBuffer(s);
+        s.label("vm.filesystem.bank.one");s.get(C,APP_LIMIT);s.emit(COMPARE_UNSIGNED,B,C,D);s.equal(D,1,"vm.filesystem.app.page");s.jump("app.tick.error");s.label("vm.filesystem.app.page");s.store(128,C);s.emit(ADD,B,C,B);s.label("vm.filesystem.app.ready");s.store(FileSystemAbi.HANDLE,C);s.store(3,D);s.emit(STORE_MEM_ON_BANK,D,A,B,C);DesktopFileSystem.mapBuffer(s);
         s.label("vm.filesystem.dos");s.store(0,A);s.store(FileSystemAbi.DOS_PAGE,B);s.label("vm.filesystem.call");s.nativeFs();DesktopFileSystem.unmapBuffer(s);s.get(A,DRIVE);s.store(0,B);s.emit(ADD,A,B,10);
         s.vreadLiteral(17,A);s.vwriteLiteral(11,A);s.vreadLiteral(18,A);s.vwriteLiteral(9,A);s.vreadLiteral(19,A);s.vwriteLiteral(8,A);s.jump("vm.done");
         s.label("vm.fetch");s.get(A,FETCH_COUNT);String first=s.unique("fetch.first");s.equal(A,0,first);s.get(A,ADDRESS);s.equal(A,0,"app.tick.error");s.label(first);
         s.call("vm.memory.map",RET_IMAGE);s.get(A,APP);s.equal(A,5,"vm.fetch.mapped");s.get(A,MAPPED);s.store(128,B);s.emit(SUB,A,B,A);s.get(B,FILE_HI);s.emit(COMPARE_UNSIGNED,A,B,C);s.equal(C,2,"app.tick.error");String inside=s.unique("fetch.inside");s.equal(C,1,inside);s.get(A,ADDRESS);s.get(B,FILE_LO);s.emit(COMPARE_UNSIGNED,A,B,C);s.notEqual(C,1,"app.tick.error");s.label(inside);s.label("vm.fetch.mapped");
         s.get(B,MAPPED);s.get(C,ADDRESS);s.get(A,MBANK);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.put(D,VALUE);s.get(A,ADDRESS);s.emit(INCREMENT_REGISTER,A);s.put(A,ADDRESS);s.get(A,FETCH_COUNT);s.emit(INCREMENT_REGISTER,A);s.put(A,FETCH_COUNT);s.ret(RET_FETCH);
         s.label("vm.memory.map");s.set(MBANK,1);s.get(A,APP);s.equal(A,5,"shell.memory.map");s.get(A,VBANK);s.equal(A,1,"vm.map.bank1");s.notEqual(A,0,"app.tick.error");s.get(A,PAGE);s.notEqual(A,248,"app.tick.error");s.set(MAPPED,128);s.ret(RET_IMAGE);
-        s.label("vm.map.bank1");s.get(A,PAGE);s.less(A,32,"vm.map.allowed");s.jump("app.tick.error");s.label("vm.map.allowed");s.store(128,B);s.emit(ADD,A,B,A);s.put(A,MAPPED);s.ret(RET_IMAGE);
-        s.label("shell.memory.map");s.get(A,VBANK);s.equal(A,0,"shell.map.zero");s.notEqual(A,1,"app.tick.error");s.get(A,PAGE);s.less(A,32,"vm.map.allowed");s.less(A,240,"app.tick.error");s.put(A,MAPPED);s.ret(RET_IMAGE);
+        s.label("vm.map.bank1");s.get(A,PAGE);s.get(B,APP_LIMIT);s.emit(COMPARE_UNSIGNED,A,B,C);s.equal(C,1,"vm.map.allowed");s.jump("app.tick.error");s.label("vm.map.allowed");s.appPage(A);s.put(A,MAPPED);s.ret(RET_IMAGE);
+        s.label("shell.memory.map");s.get(A,VBANK);s.equal(A,0,"shell.map.zero");s.notEqual(A,1,"app.tick.error");s.get(A,PAGE);s.less(A,32,"shell.map.app");s.less(A,240,"app.tick.error");s.put(A,MAPPED);s.ret(RET_IMAGE);
+        s.label("shell.map.app");s.store(128,B);s.emit(ADD,A,B,A);s.put(A,MAPPED);s.ret(RET_IMAGE);
         s.label("shell.map.zero");s.set(MBANK,0);s.get(A,PAGE);s.put(A,MAPPED);s.ret(RET_IMAGE);
         // Avoid nested use of RET_MEMORY: these entries inline the map through a distinct return slot.
         s.label("vm.memory.read");s.call("vm.memory.map",RET_IMAGE);s.get(B,MAPPED);s.get(C,ADDRESS);s.get(A,MBANK);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.put(D,VALUE);s.ret(RET_MEMORY);
@@ -497,13 +499,14 @@ public final class DesktopImage {
         final Set<Integer> localBranches;
         final List<Branch> branches=new ArrayList<>();
         final List<Integer> imagePageFixes=new ArrayList<>();
-        int page,pos,serial,branchSerial;boolean relocateData;int codePages;
+        final List<java.util.function.Consumer<Asm>> lateData=new ArrayList<>();
+        int page,pos,serial,branchSerial;boolean relocateData,mailboxHole,packStrings;int codePages;
         record Branch(int id,int page,String target,boolean local,boolean conditional) { }
         record Fix(int page,int offset,String label,boolean high) { }
         Asm(Set<Integer> localBranches){this.localBranches=localBranches;pages.add(new byte[256]);Arrays.fill(pages.getFirst(),STOP.code());}
         String unique(String prefix){return prefix+"."+serial++;}
         void raw(int... bytes){for(int b:bytes)pages.get(page)[pos++]=(byte)b;}
-        void reserve(int n){if(pos+n<=247)return;raw(STORE.code(),page+1,G,STORE.code(),0,H,CHANGE_PAGE_JUMP.code(),G,H);page++;pos=0;byte[] next=new byte[256];Arrays.fill(next,STOP.code());pages.add(next);}
+        void reserve(int n){if(pos+n<=247)return;int nextPage=mailboxHole&&page==30?32:page+1;raw(STORE.code(),nextPage,G,STORE.code(),0,H,CHANGE_PAGE_JUMP.code(),G,H);if(nextPage==32&&page==30){byte[] hole=new byte[256];Arrays.fill(hole,STOP.code());pages.add(hole);}page=nextPage;pos=0;byte[] next=new byte[256];Arrays.fill(next,STOP.code());pages.add(next);}
         void emit(OPCode op,int... operands){if(operands.length!=op.inputLength())throw new IllegalArgumentException(op.name());reserve(op.length());raw(op.code());raw(operands);}
         void label(String name){if(labels.put(name,page*256+pos)!=null)throw new IllegalStateException(name);}
         void store(int value,int register){emit(STORE,value,register);}
@@ -547,6 +550,8 @@ public final class DesktopImage {
         void relative(int x,int y){windowGet(0,A);store(x,B);emit(ADD,A,B,A);put(A,TX);windowGet(1,A);store(y,B);emit(ADD,A,B,A);put(A,TY);set(INK,127);}
         void text(String text){set(STRING_COUNT,0);String label=strings.computeIfAbsent(text,t->unique("string"));ref(label,true,A);put(A,STRING_PAGE);ref(label,false,A);put(A,STRING_OFFSET);call("text",RETURN_TEXT);}
         void rect(int x,int y,int w,int h,int color){set(RX,x);set(RY,y);set(RW,w);set(RH,h);set(COLOR,color);call("rect",RETURN_RECT);}
+        // Large document COMs use contiguous 128..218; text cells occupy 219..223.
+        void appPage(int register){store(128,P);emit(ADD,register,P,register);}
         void vreadLiteral(int index,int dest){emit(LOAD_MEM_ABSOLUTE,1,228,index,dest);}
         void vwriteLiteral(int index,int value){emit(STORE_MEM_ABSOLUTE,value,1,228,index);}
         void arg(int operand,int dest){get(C,operand);String ok=unique("reg.valid");less(C,20,ok);jump("app.tick.error");label(ok);store(1,A);store(228,B);emit(LOAD_MEM_ON_BANK,A,B,C,D);put(D,dest);}
@@ -558,14 +563,23 @@ public final class DesktopImage {
         void dec16(int low,int high){get(A,low);String done=unique("dec16");notEqual(A,0,done);get(A,high);store(1,B);emit(SUB,A,B,A);put(A,high);label(done);get(A,low);store(1,B);emit(SUB,A,B,A);put(A,low);}
         byte[] finish(){
             codePages=page+1;
-            for(var item:strings.entrySet()){
+            for(var data:lateData){page++;pos=0;byte[] literal=new byte[256];Arrays.fill(literal,STOP.code());pages.add(literal);data.accept(this);}
+            var literals=new ArrayList<>(strings.entrySet());
+            var rooms=new ArrayList<int[]>();
+            if(packStrings){literals.sort(java.util.Comparator.comparingInt((Map.Entry<String,String> item)->item.getKey().length()).reversed());rooms.add(new int[]{page,pos});}
+            for(var item:literals){
                 if(item.getKey().length()>80)throw new IllegalStateException("Long desktop string");
-                if(strings.entrySet().iterator().next().equals(item)||pos+5*((item.getKey().length()+3)/3)>256){
+                int need=5*((item.getKey().length()+3)/3);int[] room=null;
+                if(packStrings){for(int[] candidate:rooms)if(candidate[1]+need<=256){room=candidate;break;}if(room!=null){page=room[0];pos=room[1];}}
+                if((packStrings&&room==null)||(!packStrings&&(strings.entrySet().iterator().next().equals(item)||pos+need>256))){
+                    page=pages.size()-1;
                     page++;pos=0;byte[] data=new byte[256];Arrays.fill(data,STOP.code());pages.add(data);
+                    if(packStrings){room=new int[]{page,0};rooms.add(room);}
                 }
                 labels.put(item.getValue(),page*256+pos+2);
                 String value=item.getKey()+"\0\0\0";
                 for(int i=0;i<item.getKey().length()+1;i+=3)raw(STORE_MEM_ABSOLUTE.code(),D,value.charAt(i),value.charAt(i+1),value.charAt(i+2));
+                if(packStrings)room[1]=pos;
             }
             if(pages.size()>256)throw new IllegalStateException("Desktop assembly exceeds bank");
             for(int address:imagePageFixes)pages.get(address/256)[address&255]=(byte)pages.size();

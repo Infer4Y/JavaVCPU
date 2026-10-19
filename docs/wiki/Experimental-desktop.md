@@ -48,9 +48,9 @@ Click a COM file to run it. For JVS source, open it in the text reader and click
 
 ![JVS program output inside JCTRL](images/jctrl-source.png)
 
-The program runner is an interpreter **written in guest bytecode**. It executes inside the original machine, with an explicit 8 KiB code/data workspace and 128x128 pixel buffer allocated from guest RAM. It does not modify the Java CPU, install VM hooks, snapshot host memory, add opcodes, or provide native preemptive multitasking. One program or music stream runs at a time, yielding to JCTRL's event loop. Its output survives window dragging because it lives in guest RAM. Esc stops interpreted applications and returns to the desktop; X closes their window. The focused DOS window handles Esc itself. Stopping an interpreted STOP instruction finishes that application; the VM's STOP instruction itself is unchanged.
+The program runner is an interpreter **written in guest bytecode**. It executes inside the original machine. COMs up to 8 KiB keep a 32-page workspace and 128x128 pixel buffer. Larger document COMs use up to 91 pages of the same guest RAM, replacing pixel-buffer space with a retained 48-column text surface. It does not modify the Java CPU, install VM hooks, snapshot host memory, add opcodes, or provide native preemptive multitasking. One program or music stream runs at a time, yielding to JCTRL's event loop. Its output survives window dragging because it lives in guest RAM. Esc stops interpreted applications and returns to the desktop; X closes their window. The focused DOS window handles Esc itself. Stopping an interpreted STOP instruction finishes that application; the VM's STOP instruction itself is unchanged.
 
-COM compatibility includes all current opcode forms, with bounds checks on virtual registers, instruction fetches, and application RAM accesses. Small COM files start at virtual bank 0 page 248; larger files start at virtual bank 1 page 0. Virtual bank-one pages 0..31 provide the 8 KiB workspace; legacy bank-zero page 248 aliases its first page. Branches and code fetches must remain within the loaded file. Bank-zero DOS entries 249:0 and 249:9 are handled by the guest interpreter for print-and-return and application completion. The filesystem entry 249:30 is also supported, with block buffers mapped into the application workspace; RESET is reserved for boot. Other DOS internals and memory outside the workspace are unavailable. Graphics coordinates are reduced from 256x256 into the 128x128 buffer, while text uses a 32-column console. Storage/network/audio operations use the existing guest device instructions; normal application disk writes are persistent.
+COM compatibility includes all current opcode forms, with bounds checks on virtual registers, instruction fetches, and application RAM accesses. Small COM files start at virtual bank 0 page 248; larger files start at virtual bank 1 page 0. Virtual bank-one pages 0..31 provide the small-app workspace; larger document COMs can use 0..90; legacy bank-zero page 248 aliases its first page. Branches and code fetches must remain within the loaded file. Bank-zero DOS entries 249:0 and 249:9 are handled by the guest interpreter for print-and-return and application completion. The filesystem entry 249:30 is also supported, with block buffers mapped into the application workspace; RESET is reserved for boot. Other DOS internals and memory outside the workspace are unavailable. Graphics coordinates are reduced from 256x256 into the 128x128 buffer, while classic text uses a 32-column console. Document mode uses the shared 48-column window renderer; pixel operations address the RAM reused for the document program and should not be used for drawing in that mode. Storage/network/audio operations use the existing guest device instructions; normal application disk writes are persistent.
 
 JVS uses the full resident DOS language, including comments and `CLEAR`; JCTRL no longer embeds a second source interpreter, tokenizer, number parser, register parser or line scanner. The DOS window keeps the existing 8 KiB file-buffer limit and checks Esc between statements. Source remains cooperative: the desktop can repaint, move windows and deliver cancellation while the resident interpreter runs.
 
@@ -92,19 +92,20 @@ System image revision 23 provides JVFS ABI v1 alongside graphics ABI v1. Startup
 
 DOS and JCTRL now share one resident glyph renderer through bank-zero service `249:18`. Both use the existing font table; DOS requests opaque 4x6 character cells and JCTRL requests transparent 3x5 glyphs. The renderer keeps its scratch values in registers and writes no RAM, so desktop drawing cannot corrupt a paused DOS-window operation. The existing print and shell service addresses remain unchanged. See [COM programming](COM-programming.md) for the service contract.
 
-The machine still has 128 KiB RAM and the application workspace remains 8 KiB. COM virtualization, windows and streamed media run cooperatively in guest bytecode. Guest applications can call filesystem entry 0:249:30 with a mailbox in their workspace; the desktop translates that call and reserves handle 3 for the application. Raw hardware storage operations retain their existing behavior.
+The machine still has 128 KiB RAM. Small apps and the embedded DOS shell retain their 8 KiB workspace; larger document COMs borrow additional space from the existing pixel buffer. COM virtualization, windows and streamed media run cooperatively in guest bytecode. Guest applications can call filesystem entry 0:249:30 with a mailbox in their workspace; the desktop translates that call and reserves handle 3 for the application. Raw hardware storage operations retain their existing behavior.
 
 ## Application layout and rebuilding
 
-`DesktopImage.java` emits a flat executable using the existing instruction set. The ordinary COM loader validates it and runs it in RAM bank one at page 0, offset 0. Executable instructions stay below page 128. If literal pages overflow into 128..135, startup copies only the loaded overflow into reserved pages 234..239 and 231..232 before the application workspace is used. The current compact image has no overflow and skips copying. All literal references are relocated by the assembler; this uses only ordinary guest loads and stores. Strings are packed into literal operands of nonexecuted data instructions so the existing validator can check every instruction, including the data pages.
+`DesktopImage.java` emits a flat executable using the existing instruction set. The ordinary COM loader validates it and runs it in RAM bank one at page 0, offset 0. Executable instructions stay below page 128. If literal pages overflow into 128..135, startup copies only the loaded overflow into reserved pages 234..239 and 231..232 before the application workspace is used. The current image relocates its overflow literals and packed keyboard table before launching apps. All literal references are relocated by the assembler; this uses only ordinary guest loads and stores. Strings are packed into literal operands of nonexecuted data instructions so the existing validator can check every instruction, including the data pages.
 
 The application memory layout is entirely within the original 128 KiB:
 
 | RAM bank one pages | Ownership |
 | --- | --- |
 | 0..127 | Resident JCTRL code and literal data |
-| 128..159 | 8 KiB interpreted program code/data or JVS source |
-| 160..223 | 16 KiB, 128x128 palette application framebuffer |
+| 128..159 | Small app/JVS workspace, or the first 32 pages of a larger document app |
+| 160..218 | Classic app pixels, or additional document code/data pages |
+| 219..223 | Classic app pixels, or retained document text cells |
 | 224 | Desktop/window state |
 | 225 | Guest interpreter and media state |
 | 226 | Reserved |
@@ -123,22 +124,24 @@ Bank-zero DOS and its font table remain resident; the renderer reads the font th
 
 On exit it clears the screen, resets the shell's text position, and uses `CHANGE_BANK_PAGE_JUMP` to return to the stable DOS entry at bank 0, page 249, offset 9. These desktop and DOS changes do not add VM opcodes or host memory snapshots; `Memory.java` is unchanged by this work.
 
-Run `gradlew.bat desktopImage` to regenerate `examples/dos/JCTRL.COM` and `tools/disk-workshop/desktop.js`. `storageRegression` checks actual guest filesystem operations, large files/directories, corruption, full-disk recovery, package ownership, glyph rendering, cursor restoration and Pong. `browserRegression` checks WEB with a local HTTP fixture. Disposable images and previews live under `build/`.
+Run `gradlew.bat desktopImage` to regenerate `examples/dos/JCTRL.COM` and `tools/disk-workshop/desktop.js`. `storageRegression` checks actual guest filesystem operations, large files/directories, corruption, full-disk recovery, package ownership, glyph rendering, cursor restoration and Pong. `browserRegression` checks WEB storage/rendering, and `browserNavigationRegression` covers redirects, links, Back, framing and gateway requests with local fixtures. `browserFormsRegression` covers GET queries, select defaults, cursor editing and later link groups. Disposable images and previews live under `build/`.
 
 The assembler performs branch relaxation before writing the executable: same-page unconditional and equality branches use `JMP` (2 bytes) and `COND_JUMP` (4 bytes). Cross-page targets retain `CHANGE_PAGE_JUMP` and `CHANGE_PAGE_COND_JUMP` sequences. It recomputes labels and page layout after each change; any shortened branch that crosses a page boundary in a later pass is pinned to its far form. This also relocates string pointers, return addresses, and the self-modifying input operand. The build prints baseline/optimized byte counts and selected branch counts. The assembler also checks that executable instructions remain below page 128 and relocates overflow literal pages into their reserved guest RAM area.
 
 
 ## Shared services for applications
 
-The desktop now shares block text, packed-literal text, keyboard decoding and
+The desktop now shares document rendering, block/packed text, packed network output, keyboard decoding and
 JVFS-backed page history with COM applications through virtual `0:249:42`.
 WEB.COM uses these services instead of carrying its own keyboard decoder or
 printing every page character through the interpreter. Text requests render up
 to 256 characters before returning to the event loop, so window movement and
 cancellation remain cooperative. Existing COM programs keep their original ABI.
 
-The generated JCTRL image is 32,768 bytes; WEB.COM is 6,912 bytes and still uses
-the existing 8 KiB workspace. Completed WEB documents are saved under
+The generated JCTRL image is 34,560 bytes; WEB.COM is 19,968 bytes and uses
+the larger guest document layout. WEB supports bounded redirects, relative links,
+a link chooser with groups beyond nine destinations, editable GET form queries, Back and chunked HTTP. An optional localhost gateway provides
+verified TLS and decompression; HTML parsing stays in the guest. Completed WEB documents are saved under
 `WEB.CACHE` in the selected directory. Update both manual executables when
 installing this version. See [the application ABI](COM-programming.md#shared-jctrl-application-services)
-and [browser controls](../../examples/jctrl/README.md#jctrl-web-reader).
+and [browser controls](../../examples/jctrl/README.md#jctrl-web-browser).

@@ -31,7 +31,7 @@ final class DesktopFileSystem {
         s.label("vm.filesystem.buffer");
         for(int i=0;i<3;i++){s.store(FileSystemAbi.BUFFER_BANK+i,C);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.put(D,APP_BUFFER_BANK+i);}
         s.get(A,APP_BUFFER_BANK);s.equal(A,1,"vm.filesystem.buffer.one");s.notEqual(A,0,"app.tick.error");s.get(A,APP_BUFFER_PAGE);s.notEqual(A,248,"app.tick.error");s.jump("vm.filesystem.buffer.boundary");
-        s.label("vm.filesystem.buffer.one");s.get(A,APP_BUFFER_PAGE);s.less(A,31,"vm.filesystem.buffer.map");s.notEqual(A,31,"app.tick.error");
+        s.label("vm.filesystem.buffer.one");s.get(A,APP_BUFFER_PAGE);s.get(B,APP_LIMIT);s.store(1,C);s.emit(SUB,B,C,B);s.emit(COMPARE_UNSIGNED,A,B,C);s.equal(C,1,"vm.filesystem.buffer.map");s.notEqual(C,0,"app.tick.error");
         s.label("vm.filesystem.buffer.boundary");s.store(1,A);s.get(B,APP_MAILBOX);s.store(FileSystemAbi.COUNT,C);s.emit(LOAD_MEM_ON_BANK,A,B,C,D);s.get(A,APP_BUFFER_OFFSET);s.notEqual(D,0,"vm.filesystem.buffer.sum");s.notEqual(A,0,"app.tick.error");s.jump("vm.filesystem.buffer.map");
         s.label("vm.filesystem.buffer.sum");s.emit(ADD,A,D,D);s.equal(D,0,"vm.filesystem.buffer.map");s.emit(COMPARE_UNSIGNED,D,A,C);s.equal(C,1,"app.tick.error");
         s.label("vm.filesystem.buffer.map");s.get(A,APP_BUFFER_BANK);s.equal(A,0,"vm.filesystem.buffer.alias");s.get(D,APP_BUFFER_PAGE);s.store(128,C);s.emit(ADD,D,C,D);s.jump("vm.filesystem.buffer.store");s.label("vm.filesystem.buffer.alias");s.store(128,D);

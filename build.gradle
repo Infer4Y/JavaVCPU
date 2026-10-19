@@ -22,7 +22,7 @@ test {
 // These headless storage checks have no external test-library dependencies.
 var regressionClasses = layout.buildDirectory.dir('classes/storageRegression')
 tasks.register('compileStorageRegression', JavaCompile) {
-    source = files(sourceSets.main.java, fileTree('src/test/java') { include '**/*Regression.java' })
+    source = files(sourceSets.main.java, file('examples/jctrl/BrowserImage.java'), fileTree('src/test/java') { include '**/*Regression.java' })
     classpath = files()
     options.incremental = false
     destinationDirectory = regressionClasses
@@ -83,3 +83,25 @@ tasks.register('desktopServicesRegression', JavaExec) {
     mainClass = 'xyz.ignite4inferneo.jvdos.DesktopServicesRegression'
 }
 check.dependsOn desktopServicesRegression
+
+// Navigation/framing fixtures run separately from the larger filesystem browser scenario.
+tasks.register('browserNavigationRegression', JavaExec) {
+    dependsOn compileStorageRegression, browserExample
+    classpath = files(regressionClasses)
+    mainClass = 'xyz.ignite4inferneo.BrowserRegression'
+    args 'navigation'
+}
+check.dependsOn browserNavigationRegression
+
+tasks.register('browserFormsRegression', JavaExec) {
+    dependsOn compileStorageRegression, browserExample
+    classpath = files(regressionClasses)
+    mainClass = 'xyz.ignite4inferneo.BrowserRegression'
+    args 'forms'
+}
+
+// The headless driver shares the generator's compact state layout.
+tasks.named('compileTestJava', JavaCompile) {
+    source file('examples/jctrl/BrowserImage.java')
+}
+check.dependsOn browserFormsRegression

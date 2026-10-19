@@ -36,70 +36,141 @@ rectangle-loop overhead. The regression check measures twelve ball updates in
 34 desktop ticks with a stationary mouse; actual speed depends on VM execution
 and desktop repainting.
 
-## JCTRL web reader
+<a id="jctrl-web-reader"></a>
 
-`WEB.COM` is an HTTP text browser for JCTRL. This version requires the rebuilt
-JCTRL with application services v1. Normal startup updates the managed desktop;
-replace manual copies of both `examples/dos/JCTRL.COM` and
-`examples/jctrl/WEB.COM` through Workshop as **Binary / COM**. Direct fullscreen
-`RUN WEB.COM` returns to DOS; launch WEB from JCTRL Files.
+## JCTRL web browser
 
-Rebuild and test:
+`WEB.COM` is a guest HTTP/HTML text browser with numbered links, basic GET forms,
+redirects and Back navigation. It requires **JCTRL application services v3**. Rebuild/update
+both `examples/dos/JCTRL.COM` and `examples/jctrl/WEB.COM`; import manual copies
+through Workshop as **Binary / COM**, then launch WEB from JCTRL Files.
+Fullscreen `RUN WEB.COM` returns to DOS.
 
 ```powershell
 .\gradlew.bat desktopImage browserExample
-.\gradlew.bat browserRegression desktopServicesRegression
+.\gradlew.bat browserRegression browserNavigationRegression browserFormsRegression desktopServicesRegression storageRegression
+python tools/web-gateway/test_web_gateway.py --guest-classes build/classes/storageRegression
 ```
 
-Enter `host[:port]/path` or `http://host/path`, then press **Enter**. Letters
-normally use lowercase; hold **Shift** for uppercase and punctuation such as
-`:`, `?`, `&`, and `#`. The shared decoder also supports numpad input.
-**Backspace** removes a character; **Home** clears the address. Addresses hold
-120 characters; request paths retain case/query and omit fragments. Ports must
-be in 1-65535.
+Enter `host[:port]/path`, `http://host/path`, or `https://host/path`. Letters
+normally use lowercase; Shift supplies uppercase and punctuation. Backspace
+edits the address, Left/Right move the `|` cursor, End moves to the end, and Home
+clears it. Addresses and link/redirect targets are
+limited to 120 ASCII characters. Request paths preserve case/query and omit
+fragments. Ports must be 1-65535.
 
 | Input | Action |
 | --- | --- |
-| N / Space / Page Down / Down | Next screen; resume a response paused at the RAM limit |
-| P / Page Up / Up / Backspace | Previous screen |
-| H / Home | Beginning of the saved document |
-| R | Download the document again |
-| U | Edit the retained address and cancel any unfinished download |
+| N / Space / Page Down / Down | Next screen, resuming a paused download |
+| P / Page Up / Up / Backspace | Previous saved screen |
+| H / Home | First screen of the saved document |
+| L / Tab | Open the numbered link chooser |
+| Tab / Up / Down in chooser | Select a link; Enter follows it |
+| 1-9 in chooser | Follow that link |
+| Left / Right in chooser | Previous / next group of nine; refetches and scans the document |
+| L in chooser | Return to the current screen |
+| B | Back to the previous document (three-entry stack; refetches its URL) |
+| R | Reload the current address |
+| U | Edit the retained address; also cancels a pending download |
+| G in page/error/chooser | Toggle the optional local gateway and retry |
 | Esc / window X | Stop WEB and close its connection/file handle |
 
-While downloading, WEB keeps a 768-byte window in RAM and pauses at each refill.
-The first screen uses up to 512 characters. Previous/Home stay within that
-window until the response completes. After completion they can seek throughout
-the entire saved document, without another HTTP request.
+The footer labels are clickable, and the wheel changes screens. The light
+48-column document surface fills the JCTRL window and retains text when the
+window moves. The address/status stay visible; `[gateway]` identifies relayed
+connections. Nine nonempty, bounded links/forms are collected per group. Their
+`[1]`-`[9]` markers match the chooser. Left/Right in the chooser refetches the
+current URL and scans the whole document for another group, using the shared
+disk spool. Up to 255 candidate destinations can be scanned. Group changes need
+a network connection; they can also change results on a changing page.
+Quoted/unquoted, case-insensitive `href` attributes are recognized; `&amp;`
+inside a destination is decoded. Unsupported schemes are rejected explicitly.
 
-Completed rendered text is saved as a new `WEB0000.TXT`, `WEB0001.TXT`, etc. in
-`WEB.CACHE` under the folder selected when the browser launched. Existing files
-are never replaced. Cache files are normal JVFS text files: open them with Files,
-`TYPE`, or `VIEW`, and delete old ones when no longer needed. WEB searches up to
-256 names. An unavailable cache directory, allocation failure, or exhausted name
-range switches the reader to RAM-only operation. Uncommitted downloads are
-aborted on address changes, cancellation, or application close; completed files
-remain available.
+Basic GET forms appear in the same chooser. Selecting one opens its resolved
+address/query for editing; Enter submits it. Text/search inputs, hidden defaults,
+a named submit button, and single-select defaults are encoded using `+` and
+`%HH`. Disabled inputs and checkbox/radio controls are omitted.
+POST forms, password fields, files, textareas and interactive control widgets
+are not supported. Edit encoded query values directly (`+` for spaces); the
+whole resolved address still has the 120-character limit. Oversized or unfinished
+forms are refused instead of sending a truncated query.
 
-Headings, paragraphs, lists and table rows start new text rows. The reader hides
-`head`, `script`, and `style` contents, handles quoted tag attributes, and decodes
-common named entities and printable ASCII decimal references. `text/plain`
-retains markup characters and line breaks. The header shows the HTTP status.
+For **theoldnet.com/lite**, open L and choose 1 for the archived URL/year query,
+2 for archive search, or 3 for Wikipedia search. Change the query with the cursor
+keys, then Enter. The live homepage and archive search have been exercised in
+the actual guest, both directly over HTTP and through the verified HTTPS gateway.
 
-WEB uses the desktop's shared block-text, packed-literal, keyboard and JVFS spool
-services. A block renders in guest code before the desktop repaints, instead of
-interpreting and repainting each character separately. The independent service
-regression rendered 256 glyphs in about 3.46 million machine instructions versus
-113.9 million for individual print calls (about 33x less work). Idle views do not
-repaint. The 8 KiB application workspace and VM instruction set are unchanged.
+HTTP 301, 302, 303, 307 and 308 responses with a Location header are followed,
+up to five hops. Absolute, scheme-relative, root-relative, directory-relative,
+query and fragment references share one bounded resolver; path dot segments are
+removed without changing query case or data. Missing Location leaves the server
+response readable. Loops, oversized targets and invalid schemes stop with a
+message. The address and Back history use the final destination.
 
-Regression checks cover response bytes across RAM refills, disk history and
-cluster seeks, filename collisions, RAM fallback, cancellation, user-file
-preservation, register/span bounds and keyboard decoding. They use local HTTP
-fixtures and independent guest COM clients.
+Direct HTTP handles chunked bodies, chunk extensions and trailers, and rejects
+truncated chunk framing. Queued response bytes are drained when EOF arrives
+between receive-count/status reads. HTML formatting includes block boundaries, quoted
+attributes, head/script/style suppression, common named entities and printable
+ASCII decimal references. Plain text preserves markup characters and line breaks.
 
-This remains a small HTTP text reader: no TLS/HTTPS, clickable links, automatic
-redirects, JavaScript execution, CSS layout, images, compressed bodies or chunked
-transfer decoding. Unknown/non-ASCII entities display `?`; long words wrap at the
-window edge. See [the reusable application ABI](../../docs/wiki/COM-programming.md#shared-jctrl-application-services)
-for using the same routines in other COM applications.
+### Optional HTTPS gateway
+
+The VM's TCP device does not implement TLS. This optional companion provides
+verified TLS without modifying the CPU, network device or HTML renderer:
+
+```powershell
+python tools/web-gateway/web_gateway.py
+```
+
+Leave it running on **127.0.0.1:8080**, then press **G** in WEB's page/error view.
+For an HTTPS redirect, the target is retained so G can retry it immediately.
+The helper performs HTTP(S) transport, dechunking and gzip/deflate decompression;
+the guest still parses HTML, resolves redirects, formats pages and handles links.
+TLS certificates and hostnames are verified. Redirects are returned to the guest,
+not followed by the helper. Stop the helper with Ctrl+C. See
+[the gateway notes](../../tools/web-gateway/README.md).
+
+A 403 remains a refusal by the server. This browser does not bypass login,
+JavaScript checks or other site requirements. Cookies/authentication,
+CSS layout, images and JavaScript are not implemented; it is a small text
+browser, rather than an Internet Explorer-compatible engine. Unsupported UTF-8
+characters/entities are not rendered as a complete Unicode font. Direct compressed
+HTTP bodies suggest enabling the gateway instead of displaying compressed bytes.
+
+### Workspace and saved pages
+
+The 19.5 KiB COM uses JCTRL's larger document-app layout: up to 91 virtual pages
+of existing RAM, borrowed from the pixel buffer. Regular graphics COMs keep
+32 pages and their 128 by 128 pixel surface. Page 31 remains the shared JVFS
+mailbox and the assembler branches around it. Browser text uses virtual pages
+78-80 (768 bytes); each screen holds 16 rows. State slots and pairs of bounded
+URL/link/history records are packed into the remaining document RAM. Literal
+strings share the unused end of the lookup-table page and use first-fit packing.
+CPU/ISA and total RAM are
+unchanged. Clearing the native text surface touches five pages.
+
+Completed rendered text is saved as new `WEB0000.TXT`, `WEB0001.TXT`, etc. under
+`WEB.CACHE` in the selected folder. Existing files are never replaced. Cache
+files remain ordinary JVFS text readable through Files/TYPE/VIEW. Downloading
+pauses at each 768-byte refill; after completion Previous/Home can seek through
+the whole saved document without refetching it. Before completion they cover the
+current RAM window. An unavailable cache directory, allocation failure or
+exhausted 256-name range falls back to RAM. Cancelled/redirected unfinished
+spools are aborted; completed pages remain available.
+
+The browser reuses shared document, block-text, packed network output, keyboard
+and JVFS routines. Request-header literals run through the shared guest loop
+rather than a per-byte interpreted loop.
+Regression fixtures cover navigation/framing, transport, rendering, large-page
+refills, cache collisions/fallback, cancellation, register/span bounds, execution
+above page 31, GET submission/editing, empty select defaults, link groups across
+streamed pages and refusal of reads outside app RAM. See
+[the application ABI](../../docs/wiki/COM-programming.md#shared-jctrl-application-services).
+
+An opt-in live check (excluded from offline checks) loads the requested site in
+the guest and saves previews under `build/web-oldnet*.png`:
+
+```powershell
+python tools/web-gateway/test_live_browser.py --guest-classes build/classes/storageRegression
+python tools/web-gateway/test_live_browser.py --guest-classes build/classes/storageRegression --direct http://theoldnet.com/lite
+```
