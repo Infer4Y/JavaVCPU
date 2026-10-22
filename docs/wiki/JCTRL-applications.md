@@ -19,7 +19,7 @@ Enter **`JCTRL`** at the JV-DOS prompt, then open a COM from Files. Startup bund
 | Y at DISCARD? | Confirm opening/clearing modified content; another ordinary key cancels |
 | Esc / X | Close; save first to keep changes |
 
-Key releases and Shift/Ctrl/Alt leave the discard prompt open. Paint uses a fixed size and filename; rename/export saved files through DOS or Workshop to keep multiple paintings. `PAINT.JVI` is a type-2 JVFS image: `JI`, width 128, height 96, followed by 12,288 palette bytes (12,292 bytes total). DOS `IMAGE` and the desktop image viewer can open it.
+Key releases and Shift/Ctrl/Alt leave the discard prompt open. Paint uses a fixed size and filename; rename/export saved files through DOS or Workshop to keep multiple paintings. Reimported `.JVI` files currently need Workshop's Format set to **Palette image** followed by Apply to disk. `PAINT.JVI` is a type-2 JVFS image: `JI`, width 128, height 96, followed by 12,288 palette bytes (12,292 bytes total). DOS `IMAGE` and the desktop image viewer can open it.
 
 Invalid headers, dimensions, types or palette values are refused before replacing the canvas. A failed replacement save keeps the previous file, painting and dirty marker. Opening/clearing asks before discarding changes; closing does not. Paint requires **JCTRL application services v7**.
 
@@ -87,4 +87,4 @@ Build `.\gradlew.bat jctrlExamples`, import `examples/jctrl/PONG.COM` as binary 
 
 ![Guest Pong application](images/jctrl-pong.png)
 
-Pong uses the small graphics workspace and scaled framebuffer. It does not write storage. The storage regression suite exercises launch, mouse input, scoring, restart and exit. See [application source notes](../../examples/jctrl/README.md#pong) and [the shared application ABI](COM-programming#shared-jctrl-application-services).
+Pong uses the 32-page graphics workspace and scaled framebuffer. It does not write storage. The storage regression suite exercises launch, mouse input, scoring, restart and exit. See [application source notes](../../examples/jctrl/README.md#pong) and [the shared application ABI](COM-programming.md#shared-jctrl-application-services).

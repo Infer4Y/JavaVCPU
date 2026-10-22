@@ -39,9 +39,9 @@ OUTPUT C
 END
 ```
 
-Run `DEMO` or `RUN DEMO.JVS` to print 42. Up/Down recalls the last sixteen prompt commands; Tab completes commands and current-folder filenames. The [JVS guide](JVS-programming) describes the language.
+Run `DEMO` or `RUN DEMO.JVS` to print 42. Up/Down recalls the last sixteen prompt commands; Tab completes commands and current-folder filenames. The [JVS guide](JVS-programming.md) describes the language.
 
-Enter `JCTRL`, then open `TEXTEDIT.COM` or `PAINT.COM` from Files. TextEdit uses F7 to save; Paint uses F7 to save `PAINT.JVI`. Their Esc/X controls close without saving, unlike DOS `EDIT`. See [application controls](JCTRL-applications).
+Enter `JCTRL`, then open `TEXTEDIT.COM` or `PAINT.COM` from Files. TextEdit uses F7 to save; Paint uses F7 to save `PAINT.JVI`. Their Esc/X controls close without saving, unlike DOS `EDIT`. See [application controls](JCTRL-applications.md).
 
 ![Bundled desktop and Files](images/desktop-files.png)
 
@@ -62,4 +62,4 @@ Enter `JCTRL`, then open `TEXTEDIT.COM` or `PAINT.COM` from Files. TextEdit uses
 | `src/test/java/`, `tools/wiki/` | Headless guest regressions, screenshot capture and wiki sync |
 | `docs/wiki/`, `wiki/` | Editable guides and linked GitHub wiki checkout |
 
-`build` runs the project checks. `storageRegression` can run without external test-library dependencies. Additional app checks and asset generators are listed in [Tooling](Tooling-and-Disk-Workshop). Generate API docs with `.\gradlew.bat javadoc`; open `build/docs/javadoc/index.html`.
+`build` runs the project checks. `storageRegression` can run without external test-library dependencies. Additional app checks and asset generators are listed in [Tooling](Tooling-and-Disk-Workshop.md). Generate API docs with `.\gradlew.bat javadoc`; open `build/docs/javadoc/index.html`.

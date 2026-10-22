@@ -32,14 +32,15 @@ Palette bytes use the low seven bits, `RRGGGBB`: red 0-3, green 0-7, blue 0-3. B
 | `0x30`, `0x31` | Mouse x/y in framebuffer coordinates |
 | `0x32` | Mouse buttons: bit 0 left, bit 1 middle, bit 2 right |
 | `0x33` | Signed accumulated wheel movement, clamped to -127..127 and consumed on read |
+| `0x40` | 1 if the storage device selected by register 10 is mounted, otherwise 0 |
 
 Keyboard codes are Java `KeyEvent` codes. Press events contain the code; release events OR it with `0x80`. Codes above 127 collide in this event protocol, so the DOS decoder also checks held-key banks for quotes/backtick. The guest translates shifted punctuation and keypad input. It uses uppercase command input; imported text may contain lowercase.
 
 ## Audio and storage
 
-`OUTPUT_AUDIO` takes registers containing hardware voice (0-15), MIDI note and control. Gate bit 7 enables sound; waveform bits 0-2 select 0 square, 1 triangle, 2 saw, or 3 noise. Set control to 0 to silence a voice. The mixer produces 44.1 kHz mono audio. Audio initialization requires an available host output device.
+`OUTPUT_AUDIO` takes registers containing hardware voice (0-15), MIDI note and control. Gate bit 7 enables sound; waveform bits 0-2 select 0 square, 1 triangle, 2 saw, or 3 noise. Set control to 0 to silence a voice. The mixer produces 44.1 kHz mono audio. JV-DOS/JCTRL music files use eight of the sixteen hardware voices; their JM format accepts voice numbers 0-7. Audio initialization requires an available host output device.
 
-Each mounted storage device has 16 MiB, addressed as `(x << 16) | (y << 8) | z`, where x/y/z come from registers. Register 10 selects the device independently of its 24-bit address. Byte writes update that device's mapped disk image; shutdown flushes all mounted images. Device 0 uses `storage.img` relative to the working directory. Additional images are mounted with program arguments such as `--disk=1=secondary.img`. Stop the VM before exchanging disk files. See [Disk and media formats](Disk-and-media-formats).
+Each mounted storage device has 16 MiB, addressed as `(x << 16) | (y << 8) | z`, where x/y/z come from registers. Register 10 selects the device independently of its 24-bit address. Byte writes update that device's mapped disk image; shutdown flushes all mounted images. Device 0 uses `storage.img` relative to the working directory. Additional images are mounted with program arguments such as `--disk=1=secondary.img`. Stop the VM before exchanging disk files. See [Disk and media formats](Disk-and-media-formats.md).
 
 JV-DOS 2.0 uses a resident guest filesystem driver: bank-zero page 244 is its cache, 245 the DOS mailbox, 253 DOS extended state and 254 private driver state/handles. Files use 24-bit lengths and positions; the editor and executable buffers retain 16-bit offsets. `COMPARE_UNSIGNED` supports carry and bounds checks.
 
@@ -49,4 +50,4 @@ The shell reserves RAM bank-one pages 240-247 for sixteen 128-byte history recor
 
 RAM, storage and networking have separate address spaces and instruction controls. Each access transfers one byte through CPU registers, modeling a shared 8-bit data path without mapping devices into RAM. Storage retains its three-byte address plus device select; networking has its own 8-bit register address. Network operations run asynchronously so the CPU can poll status while other instructions execute.
 
-The network controller uses the host's existing internet connection (Wi-Fi or Ethernet). It does not emulate radio association, SSIDs or Wi-Fi authentication. It currently supports one outbound raw TCP connection; HTTP can be implemented by guest software over TCP. The device has no TLS, UDP or listening socket. Guest software supplies DOS BROWSE and JCTRL WEB; WEB can use the optional host gateway for verified HTTPS transport. See [Peripheral buses](Peripheral-buses) for the complete guest protocol and example.
+The network controller uses the host's existing internet connection (Wi-Fi or Ethernet). It does not emulate radio association, SSIDs or Wi-Fi authentication. It currently supports one outbound raw TCP connection; HTTP can be implemented by guest software over TCP. The device has no TLS, UDP or listening socket. Guest software supplies DOS BROWSE and JCTRL WEB; WEB can use the optional host gateway for verified HTTPS transport. See [Peripheral buses](Peripheral-buses.md) for the complete guest protocol and example.

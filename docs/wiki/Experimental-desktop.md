@@ -19,24 +19,24 @@ provide shared connected brush strokes and pixel-row transfers for image I/O.
 Changed pixels in the front graphics window update directly, including under the
 cursor; covered windows keep the normal compositor. See [Paint controls](../../examples/jctrl/README.md#jctrl-paint).
 
-For a manual copy, stop the VM, open `storage.img` in Workshop, select a folder and click **Add JCTRL bundle**, then download and replace the disk while stopped. The bundle includes JCTRL, TextEdit and Paint. Alternatively import `examples/dos/JCTRL.COM` for the desktop alone. The [setup wizard](Installers) packages all three in a single COM. Launch a manual copy with `RUN JCTRL.COM` in its folder. Manual copies are not automatically updated.
+For a manual copy, stop the VM, open `storage.img` in Workshop, select a folder and click **Add JCTRL bundle**, then download and replace the disk while stopped. The bundle includes JCTRL, TextEdit and Paint. Alternatively import `examples/dos/JCTRL.COM` for the desktop alone. The [setup wizard](Installers.md) packages all three in a single COM. Launch a manual copy with `RUN JCTRL.COM` in its folder. Manual copies are not automatically updated.
 
-The desktop opens the current folder on the currently selected storage device. Browsing and viewing do not modify files. Drag-and-drop and DOS file commands persist changes to the selected disk. Explorer navigation stays separate from DOS's location; commands in the DOS window update the real shell's location.
+The desktop opens the current folder on the currently selected storage device. Files navigation and the built-in text/image readers do not modify files. Applications can write files: Paint/TextEdit save explicitly and WEB creates completed text documents under WEB.CACHE when disk spooling is available. Drag-and-drop and DOS file commands persist changes to the selected disk. Explorer navigation stays separate from DOS's location; commands in the DOS window update the real shell's location.
 
-![Files and text windows in the guest desktop](images/desktop-files.png)
+![Files window listing bundled applications and sample media](images/desktop-files.png)
 
 ## Windows and applications
 
 | Tool | Supported behavior |
 | --- | --- |
-| Files (`DIR`) | Lists folders and files, follows child and parent folders, and pages large directories. Up/Down selects a highlighted row; Enter opens it. Page Up retraces directory pages; Home resets paging history. File rows identify COM programs, text, palette images, and music. Click text/JVS files to read them; COM, palette images, and music open directly. DRIVE- / DRIVE+ switches the browser drive without changing DOS's selection. The title shows the device ID in hexadecimal. |
-| Text (`VIEW` / `TYPE`) | Reads streamed text/JVS files in a clipped window with next-page and Home navigation. CRLF is accepted; tabs display as a space. Invalid chains stop with an error. |
-| System (`VER` / `MEM`) | Shows DOS version, installed RAM, and the desktop's execution model. |
-| Help (`HELP`) | Shows desktop controls in the system window. |
+| Files (F2) | Lists folders and files, follows child and parent folders, and pages large directories. Up/Down selects a highlighted row; Enter opens it. Page Up retraces directory pages; Home resets paging history. File rows identify COM programs, text, palette images, and music. Click text/JVS files to read them; COM, palette images, and music open directly. DRIVE- / DRIVE+ switches the browser drive without changing DOS's selection. The title shows the device ID in hexadecimal. |
+| Text (open a text entry) | Reads streamed text/JVS files in a clipped window with next-page and Home navigation. CRLF is accepted; tabs display as a space. Invalid chains stop with an error. |
+| System (F3 / About) | Shows DOS version, installed RAM, and the desktop's execution model. |
+| Help (F1) | Shows desktop controls in the system window. |
 
 ## DOS window and file operations
 
-Press **F4** to open or focus the existing DOS shell in the application window. This runs the resident DOS bytecode and its original parser, history, completion, editor, and filesystem routines through the guest interpreter; it is not a replacement command parser. Drag its title bar to move it. Only the focused application window receives keyboard events, including key-state reads. Click Files or press F2 to use the explorer without typing into DOS. Close with X; F4 reopens it. Esc goes to DOS for command cancellation while this window is focused. Use the top toolbar's DOS button to leave JCTRL.
+Press **F4** to open or focus the existing DOS shell in the application window. This runs the resident DOS bytecode and its original parser, history, completion, editor, and filesystem routines through the guest interpreter; it is not a replacement command parser. Drag its title bar to move it. Only the focused application window receives keyboard events, including key-state reads. Click Files or press F2 to use the explorer without typing into DOS. Close with X; F4 reopens it. Esc goes to DOS for command cancellation while this window is focused. Use the top toolbar's **EXIT DOS** button to leave JCTRL.
 
 The DOS window shares the single application execution slot with COM/JVS programs and media. Its file/program buffer is limited to the existing 8 KiB guest workspace; oversized loads report a DOS error. Text uses the original font at window geometry rather than scaling a fullscreen console. DOS display geometry lives in bank-zero state page 252, bytes 24..26 (wrap X, scroll trigger Y, post-scroll Y); JCTRL restores fullscreen geometry when returning to DOS. Normal startup updates the managed desktop together with the resident system; reimport manual copies after rebuilding.
 
@@ -59,11 +59,11 @@ Commands are not executed until Enter is pressed; edit or cancel them first. Ope
 
 Click a COM file to run it. For JVS source, open it in the text reader and click **Run / Open** or press **F5**. JCTRL opens its DOS console, queues `RUN filename` and executes it through the resident DOS parser, filesystem loader and JVS interpreter. Output remains in the console; run again from its prompt or reopen the source. COM output appears in the application window. COM execution and the shared DOS window are covered by guest regressions.
 
-![JVS program output inside JCTRL](images/jctrl-source.png)
+![JVS source displayed in JCTRL's reader before running](images/jctrl-source.png)
 
 The program runner is an interpreter **written in guest bytecode**. It executes inside the original machine. COMs up to 8 KiB keep a 32-page workspace and 128x128 pixel buffer. Larger document COMs use up to 91 pages of the same guest RAM, replacing pixel-buffer space with a retained 48-column text surface. It does not modify the Java CPU, install VM hooks, snapshot host memory, add opcodes, or provide native preemptive multitasking. One program or music stream runs at a time, yielding to JCTRL's event loop. Its output survives window dragging because it lives in guest RAM. Esc stops interpreted applications and returns to the desktop; X closes their window. The focused DOS window handles Esc itself. Stopping an interpreted STOP instruction finishes that application; the VM's STOP instruction itself is unchanged.
 
-COM compatibility includes all current opcode forms, with bounds checks on virtual registers, instruction fetches, and application RAM accesses. Small COM files start at virtual bank 0 page 248; larger files start at virtual bank 1 page 0. Virtual bank-one pages 0..31 provide the small-app workspace; larger document COMs can use 0..90; legacy bank-zero page 248 aliases its first page. Branches and code fetches must remain within the loaded file. Bank-zero DOS entries 249:0 and 249:9 are handled by the guest interpreter for print-and-return and application completion. The filesystem entry 249:30 is also supported, with block buffers mapped into the application workspace; RESET is reserved for boot. Other DOS internals and memory outside the workspace are unavailable. Graphics coordinates are reduced from 256x256 into the 128x128 buffer, while classic text uses a 32-column console. Document mode uses the shared 48-column window renderer; pixel operations address the RAM reused for the document program and should not be used for drawing in that mode. Storage/network/audio operations use the existing guest device instructions; normal application disk writes are persistent.
+COM compatibility includes all current opcode forms, with bounds checks on virtual registers, instruction fetches, and application RAM accesses. COM files of at most 240 bytes start at virtual bank 0 page 248; larger files start at virtual bank 1 page 0. The graphics workspace still spans 32 pages for files up to 8 KiB. Virtual bank-one pages 0..31 provide the small-app workspace; larger document COMs can use 0..90; legacy bank-zero page 248 aliases its first page. Branches and code fetches must remain within the loaded file. Bank-zero DOS entries 249:0 and 249:9 are handled by the guest interpreter for print-and-return and application completion. The filesystem entry 249:30 is also supported, with block buffers mapped into the application workspace; RESET is reserved for boot. Other DOS internals and memory outside the workspace are unavailable. Graphics coordinates are reduced from 256x256 into the 128x128 buffer, while classic text uses a 32-column console. Document mode uses the shared 48-column window renderer; pixel operations address the RAM reused for the document program and should not be used for drawing in that mode. Storage/network/audio operations use the existing guest device instructions; normal application disk writes are persistent.
 
 JVS uses the full resident DOS language, including comments and `CLEAR`; JCTRL no longer embeds a second source interpreter, tokenizer, number parser, register parser or line scanner. The DOS window keeps the existing 8 KiB file-buffer limit and checks Esc between statements. Source remains cooperative: the desktop can repaint, move windows and deliver cancellation while the resident interpreter runs.
 
@@ -79,9 +79,9 @@ Music (`JM`, type 3) supports versions 1 and 2, eight voices, and the existing f
 
 Ordinary pointer motion saves and restores the two pixels beneath the cursor, using four pixel writes per move instead of repainting the desktop. Frontmost graphics apps publish changed pixels directly and update the saved colors beneath the pointer. Window dragging, stacking changes and covered applications use the full compositor. Palette reads round to the nearest encoded color so repeated background restoration preserves every color exactly. Regression checks use the real RGB framebuffer and buffer swaps, covering all 128 palette colors, repeated motion over window/desktop colors, overlapping cursor positions, wrapping at screen edges and window redraws.
 
-JCTRL and media share the full drive. DRIVE- / DRIVE+ scans mounted devices, stops the active application and selects the chosen volume's root. The file explorer has 22 visible rows per page and retains the last 85 page starts; forward paging continues beyond that history. No swap file or hidden cache is used.
+JCTRL and media share the full drive. DRIVE- / DRIVE+ scans mounted devices, stops the active application and selects the chosen volume's root. The file explorer has 22 visible rows per page and retains the last 85 page starts; forward paging continues beyond that history. Explorer paging history lives in RAM and uses no swap file. WEB's separate, visible WEB.CACHE directory stores completed rendered documents.
 
-Drag a title bar to move its window; click any visible part of a window to bring it forward. X closes the window. The toolbar reopens Files, About, and Help; DOS exits the desktop. There is one instance of each tool window.
+Drag a title bar to move its window; click any visible part of a window to bring it forward. X closes the window. The toolbar reopens Files, About, and Help; **EXIT DOS** exits the desktop. There is one instance of each tool window.
 
 | Key / input | Action |
 | --- | --- |
@@ -145,7 +145,7 @@ The assembler performs branch relaxation before writing the executable: same-pag
 
 ## Shared services for applications
 
-The desktop now shares document rendering, block/packed text, packed network output, keyboard decoding and
+Application services v7 share connected strokes, pixel-row transfers, graphics text positioning, document rendering, block/packed text, packed network output, keyboard decoding and
 JVFS-backed page history with COM applications through virtual `0:249:42`.
 WEB.COM uses these services instead of carrying its own keyboard decoder or
 printing every page character through the interpreter. Text requests render up
@@ -162,7 +162,7 @@ and [browser controls](../../examples/jctrl/README.md#jctrl-web-browser).
 
 ## Application guides
 
-See [JCTRL applications](JCTRL-applications) for Paint, TextEdit, WEB and Pong controls, file limits and build/check tasks. Paint and TextEdit are bundled at startup; WEB and Pong are optional imports. [Installers](Installers) covers external media and portable setup.
+See [JCTRL applications](JCTRL-applications.md) for Paint, TextEdit, WEB and Pong controls, file limits and build/check tasks. Paint and TextEdit are bundled at startup; WEB and Pong are optional imports. [Installers](Installers.md) covers external media and portable setup.
 
 | Paint | TextEdit |
 | --- | --- |

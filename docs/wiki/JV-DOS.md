@@ -13,7 +13,7 @@ Programs can launch directly: enter `HI.COM`, `DEMO.JVS`, or a bare name such as
 | Command | Purpose / example |
 | --- | --- |
 | `HELP` | Everyday shell commands |
-| `DRIVE`, `DRIVE N` | Show/select a mounted storage device (0-255); resets to the volume root |
+| `DRIVE`, `DRIVE N` | Show the current device; selecting mounted N (0-255) resets to its volume root |
 | `INSTALL FILE.COM` | Copy a binary program from the current folder to drive 0 root; preserve the source and refuse collisions |
 | `MV FILE.COM 0:` | Move a binary program to drive 0 root; delete the source only after successful commit |
 | `DIR` | List the current folder; folders show `<DIR>` |
@@ -63,11 +63,11 @@ The document pager uses Down, Page Down or Space/Enter for the next page, Up/Pag
 | --- | --- |
 | ![IMAGE SMILE.IMG palette viewer](images/dos-image.png) | ![PLAY THEME.JMT active command](images/dos-music.png) |
 
-The [screenshot gallery](Screenshots) also shows startup, desktop applications and program execution.
+The [screenshot gallery](Screenshots.md) also shows startup, desktop applications and program execution.
 
 `RUN` dispatches image/music from their file type, interprets type-1 text, and otherwise validates and loads raw bytecode. It also heuristically treats binary content starting with printable bytes 32-90 as source. The supplied COM starts with opcode 2 to avoid that ambiguity. Filename extensions alone do not define the execution format.
 
-See [JVS programming](JVS-programming), [COM programming](COM-programming), and [Tooling and Disk Workshop](Tooling-and-Disk-Workshop).
+See [JVS programming](JVS-programming.md), [COM programming](COM-programming.md), and [Tooling and Disk Workshop](Tooling-and-Disk-Workshop.md).
 
 `JCTRL` launches the managed desktop from the root of system disk 0. Startup installs and updates an unchanged managed copy. Manual and modified copies are preserved. See [the desktop guide](Experimental-desktop.md).
 
@@ -87,11 +87,11 @@ Tab completes the word at the cursor. Repeated Tab cycles matching command names
 
 `src/main/java/xyz/ignite4inferneo/jvdos/JvDosImage.java` describes guest instructions with named `OPCode` values, one emitted instruction per line. `Asm.emit` checks operand counts before encoding bytes. Labels and the `get`/`put`, `call`/`ret` and file-buffer helpers hide address fixups and state layout.
 
-A-D hold working values, E/F support existing addressing sequences, and G/H implement far branches and the COM entry stubs. I/J handle indirect RAM reads without overwriting A-H. K/L hold glyph pixel coordinates, avoiding temporary RAM writes during rendering. M-P are available for future routines. Helpers can overwrite their documented scratch registers; guest JVS variables A-P live separately at bank 0, page 252, offsets 224-239.
+A-D hold working values, E/F support existing addressing sequences, and G/H implement far branches and the COM entry stubs. I/J handle indirect RAM reads without overwriting A-H. K/L hold glyph pixel coordinates, avoiding temporary RAM writes during rendering. M supplies glyph ink and N-P carry far-service return addresses in the resident glyph/filesystem conventions. Helpers can overwrite their documented scratch registers; guest JVS variables A-P live separately at bank 0, page 252, offsets 224-239.
 
 The kernel emits ordinary VCPU instructions. `GuestFileSystem.java` provides the shared driver; `DosFileSystem.java` and `DesktopFileSystem.java` are guest clients. Installation and Workshop implement the same disk format independently. The compact command dictionary, trimmed HELP and resident glyph renderer remain shared.
 
-## Experimental desktop
+## JCTRL desktop
 
 Enter `JCTRL` to start the managed desktop. Startup also bundles TextEdit and Paint. For a manual copy, use Workshop Add JCTRL bundle, then `RUN JCTRL.COM` from its folder. The [desktop guide](Experimental-desktop.md) covers mouse windows, the guest program runner, image/music playback, and installation.
 
@@ -103,4 +103,4 @@ For an automatic desktop launch, use `WRITE AUTOEXEC.JVS JCTRL`. `JCTRL` ends th
 
 ## Basic HTTP reader
 
-`BROWSE` is a fullscreen plain-HTTP text reader. It accepts a host/path or `http://host[:port]/path`, strips response headers and HTML tags, and retains up to 60,000 bytes in RAM. Up/Down scrolls, Home returns to the top, and Esc exits or cancels. HTTPS, redirects, JavaScript, CSS layout, entity decoding, clickable links and chunked responses are unsupported; the server must close the connection. Script/style contents can appear as text. For links, GET forms, redirects, chunked HTTP and the optional HTTPS gateway, use [WEB.COM under JCTRL](JCTRL-applications#web-text-browser).
+`BROWSE` is a fullscreen plain-HTTP text reader. It accepts a host/path or `http://host[:port]/path`, strips response headers and HTML tags, and retains up to 60,000 bytes in RAM. Up/Down scrolls, Home returns to the top, and Esc exits or cancels. HTTPS, redirects, JavaScript, CSS layout, entity decoding, clickable links and chunked responses are unsupported; the server must close the connection. Script/style contents can appear as text. For links, GET forms, redirects, chunked HTTP and the optional HTTPS gateway, use [WEB.COM under JCTRL](JCTRL-applications.md#web-text-browser).

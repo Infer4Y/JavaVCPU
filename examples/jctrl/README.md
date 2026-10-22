@@ -134,9 +134,9 @@ top and the winner's side lights up. Press **R** to restart and **Esc** to retur
 to JCTRL. Move the pointer away from the title bar when playing.
 
 With the VM stopped, open `storage.img` in `tools/disk-workshop/index.html`.
-Import `examples/jctrl/PONG.COM` as Binary / COM into a bank with free space,
+Import `examples/jctrl/PONG.COM` as Binary / COM into a folder with free space,
 download the updated disk and replace `storage.img`. Start the VM, enter
-`JCTRL`, browse to that bank using BANK-/BANK+, and click `PONG.COM` in Files.
+`JCTRL`, browse to that folder (DRIVE-/DRIVE+ selects mounted disks), and click `PONG.COM` in Files.
 The generator does not modify or mount your disk image. After rebuilding or
 updating Pong, replace the imported `PONG.COM` on your disk to use the new version.
 

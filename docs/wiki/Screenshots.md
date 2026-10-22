@@ -7,7 +7,7 @@ Current guest captures were regenerated on **October 22, 2026** from the working
 | Startup | Command help |
 | --- | --- |
 | ![JV-DOS 2.0 banner and drive-aware prompt](images/dos-shell.png) | ![Current HELP command list](images/dos-help.png) |
-| Click the display before typing; prompt starts at `0:\>`. | HELP covers everyday commands; programming syntax lives in the [JVS guide](JVS-programming). |
+| Click the display before typing; prompt starts at `0:\>`. | HELP covers everyday commands; programming syntax lives in the [JVS guide](JVS-programming.md). |
 
 | Directory | Source editor |
 | --- | --- |
@@ -19,7 +19,7 @@ Current guest captures were regenerated on **October 22, 2026** from the working
 | ![MATH printing 42 then zero after byte overflow](images/dos-jvs-run.png) | ![HELLO COM output and return to DOS](images/dos-com-run.png) |
 | Direct `MATH` resolves MATH.JVS. | Direct `HELLO` resolves HELLO.COM. |
 
-See [Getting started](Getting-started), [JV-DOS](JV-DOS) and [COM programming](COM-programming).
+See [Getting started](Getting-started.md), [JV-DOS](JV-DOS.md) and [COM programming](COM-programming.md).
 
 ## Documents and media
 
@@ -30,7 +30,7 @@ See [Getting started](Getting-started), [JV-DOS](JV-DOS) and [COM programming](C
 
 ![PLAY THEME.JMT active command](images/dos-music.png)
 
-The PLAY command remains visible while music runs; there is no graphical transport or waveform. Esc stops and silences playback. See [media formats](Disk-and-media-formats).
+The PLAY command remains visible while music runs; there is no graphical transport or waveform. Esc stops and silences playback. See [media formats](Disk-and-media-formats.md).
 
 ## JCTRL desktop
 
@@ -42,7 +42,7 @@ The PLAY command remains visible while music runs; there is no graphical transpo
 | --- | --- |
 | ![JCTRL source viewer for MATH.JVS](images/jctrl-source.png) | ![JCTRL viewing SMILE.IMG](images/jctrl-image.png) |
 
-See [JCTRL desktop](Experimental-desktop) for window controls, file moves, DOS commands and application memory.
+See [JCTRL desktop](Experimental-desktop.md) for window controls, file moves, DOS commands and application memory.
 
 ## Bundled apps and setup
 
@@ -53,7 +53,7 @@ See [JCTRL desktop](Experimental-desktop) for window controls, file moves, DOS c
 
 ![Self-contained JCTRLSET.COM setup wizard in DOS](images/jctrl-setup.png)
 
-The setup capture comes from `installerRegression`, before answering its install prompt. See [JCTRL applications](JCTRL-applications) and [Installers](Installers).
+The setup capture comes from `installerRegression`, before answering its install prompt. See [JCTRL applications](JCTRL-applications.md) and [Installers](Installers.md).
 
 ## Optional applications
 
@@ -65,11 +65,11 @@ The setup capture comes from `installerRegression`, before answering its install
 | --- | --- |
 | ![Editable GET form query in WEB](images/web-form.png) | ![Pong running in the graphics application window](images/jctrl-pong.png) |
 
-WEB captures use local regression-server fixtures, not live websites. See [application controls](JCTRL-applications) and [the gateway helper](Tooling-and-Disk-Workshop#optional-web-https-gateway).
+WEB captures use local regression-server fixtures, not live websites. See [application controls](JCTRL-applications.md) and [the gateway helper](Tooling-and-Disk-Workshop.md#optional-web-https-gateway).
 
 ## Earlier Disk Workshop captures
 
-The following browser captures are retained from **October 11, 2026**. They show the tool's editor/preview/composer layout, before the current JVFS folder and bundle-install updates. Current controls and limits are documented in [Tooling and Disk Workshop](Tooling-and-Disk-Workshop).
+These are **archival screenshots**, not a capture of the current Workshop. The following browser captures are retained from **October 11, 2026**. They show the tool's editor/preview/composer layout, before the current JVFS folder and bundle-install updates. Current controls and limits are documented in [Tooling and Disk Workshop](Tooling-and-Disk-Workshop.md).
 
 ![Earlier Workshop directory and text editor](images/workshop-text.png)
 

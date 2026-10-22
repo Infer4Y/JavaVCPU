@@ -20,7 +20,7 @@ REGISTERS[Registers.PAGE.address()] = 0;
 REGISTERS[Registers.COUNTER.address()] = 0;
 ```
 
-Build and run Main with JDK 26 from the project root. Device/disk initialization still runs, but BIOS and DOS are not executed. Change the path to select another example; restore the original boot call afterward. No runtime changes are included with these wiki sources.
+Build and run Main with JDK 26 from the project root. Device/disk initialization still runs, but BIOS and DOS are not executed. Change the path to select another example; restore the original boot call afterward. Restore the original boot call when returning to JV-DOS; this is a source-level experiment rather than a launcher option.
 
 | Source / binary | Behavior |
 | --- | --- |
@@ -60,9 +60,9 @@ BEEP
 END
 ```
 
-`EDIT HELLO.JVS` opens it in the guest editor; Esc saves. The [JVS programming](JVS-programming) page includes the complete math and counting listings. The [COM programming](COM-programming) page explains HI's character calls and return ABI. Import `HI.COM`, not `HI.hex`.
+`EDIT HELLO.JVS` opens it in the guest editor; Esc saves. The [JVS programming](JVS-programming.md) page includes the complete math and counting listings. The [COM programming](COM-programming.md) page explains HI's character calls and return ABI. Import `HI.COM`, not `HI.hex`.
 
-Workshop's **Add sample files** also provides a document, image and tune. See [Tooling and Disk Workshop](Tooling-and-Disk-Workshop) for the disk exchange workflow.
+Workshop's **Add sample files** also provides a document, image and tune. See [Tooling and Disk Workshop](Tooling-and-Disk-Workshop.md) for the disk exchange workflow.
 
 ## Built-in graphics demos
 
@@ -72,4 +72,18 @@ The `Programs` loader also includes these display examples. Select the correspon
 | --- | --- |
 | ![Built-in HELLO CPU display greeting](images/display-hello-cpu.png) | ![Still frame of the falling and settling pixel animation](images/snowfall.png) |
 
-The [complete screenshot gallery](Screenshots) includes DOS execution, its editor and all media viewers.
+These two built-in demo captures predate the October 22 guest screenshot refresh; they illustrate the selected demos rather than the current DOS shell. The [complete screenshot gallery](Screenshots.md) includes current DOS and JCTRL application views.
+
+## JCTRL examples
+
+Startup bundles JCTRL, TextEdit and Paint. WEB and Pong are optional imports into a JVFS folder with free space; DRIVE-/DRIVE+ selects mounted disks in Files. Import `.COM` files with Workshop, download the disk, restart, and open them from JCTRL Files.
+
+| Gradle task | Program / purpose |
+| --- | --- |
+| `paintExample` | `examples/jctrl/PAINT.COM`, palette painting and native JI save/load |
+| `textEditExample` | `examples/jctrl/TEXTEDIT.COM`, windowed text/hex editor |
+| `browserExample` | `examples/jctrl/WEB.COM`, HTTP text browser and optional HTTPS gateway |
+| `jctrlExamples` | `examples/jctrl/PONG.COM`, mouse-controlled game |
+| `desktopInstaller` | `examples/jctrl/JCTRLSET.COM`, fullscreen DOS bundle setup |
+
+See [JCTRL applications](JCTRL-applications.md) for controls and [Installers](Installers.md) for setup and portable transfer commands.

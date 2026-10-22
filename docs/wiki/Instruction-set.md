@@ -1,6 +1,6 @@
 # Instruction set
 
-Each instruction is one opcode byte followed by operands. `a`, `b`, `r`, `out`, `x`, `y`, `color`, `page` and `target` below are **register indices**. `value`, `address` and `port` are literal bytes. Operands are positional in the order shown. R is the register file; M is memory on MEMORY_BANK:PAGE.
+The current ISA has **31 opcodes (0-30)**. Each instruction is one opcode byte followed by operands. `a`, `b`, `r`, `out`, `x`, `y`, `color`, `page` and `target` below are **register indices**. `value`, `address` and `port` are literal bytes. Operands are positional in the order shown. R is the register file; M is memory on MEMORY_BANK:PAGE.
 
 | Decimal / hex | Instruction | Bytes | Effect |
 | --- | --- | --- | --- |
@@ -46,4 +46,4 @@ Bank operands are register indices whose values must be 0 or 1. Page and offset 
 
 Absolute memory instructions use literal bank/page/offset bytes, with bank 0 or 1, and retain the execution bank. For example, `1B 01 FF FF 04` reads address 0x1FFFF into E. Unsigned comparison uses byte values 0-255 and leaves its inputs unchanged unless the destination aliases one.
 
-Storage opcodes 18/19 use control register 10 as the device selector. Network opcodes use a separate 8-bit address bus; both operands are register indices. See [Peripheral buses](Peripheral-buses) for mounting disks, drive selection and the TCP register protocol.
+Storage opcodes 18/19 use control register 10 as the device selector. Network opcodes use a separate 8-bit address bus; both operands are register indices. See [Peripheral buses](Peripheral-buses.md) for mounting disks, drive selection and the TCP register protocol.

@@ -25,7 +25,7 @@ DRIVE 0
 DIR
 ```
 
-`DRIVE` shows the selected device. `DRIVE N` validates that it is mounted, then selects the volume root. Invalid or absent IDs preserve the current selection. Each medium has its own filesystem. COPY/REN operate within the current folder on the current drive; cross-drive copying is not implemented. Boot and DOS REBOOT select device 0.
+`DRIVE` shows the selected device. `DRIVE N` validates that it is mounted, then selects the volume root. Invalid or absent IDs preserve the current selection. Each medium has its own filesystem. COPY/REN operate within the current folder on the current drive. `INSTALL FILE.COM` copies a binary entry from the current drive/folder to drive 0's root; `MV FILE.COM 0:` removes its source after destination commit. These two commands preserve the caller's location and refuse collisions. General copying between arbitrary drives is not implemented. See [Installers](Installers.md). Boot and DOS REBOOT select device 0.
 
 For bytecode, control register 10 (`STORAGE_PAGE`, retained for compatibility) supplies the unsigned device ID for opcodes 18/19. Their x/y/z registers still form the 24-bit byte address; no RAM address is involved. `READ_INPUT 0x40 out` returns 1 if the currently selected storage device is mounted, otherwise 0. Direct reads/writes to an absent device raise an emulator error; check presence first. Host `Storage.readData`/`writeData` overloads accept a device ID, while the original signatures and installer range APIs always address device 0. Programs must restore their caller's selector before returning unless intentionally switching DOS's current device.
 
@@ -37,7 +37,7 @@ For bytecode, control register 10 (`STORAGE_PAGE`, retained for compatibility) s
 | --- | --- | --- |
 | 0 | Status flags | Command: 1 connect, 2 send, 3 disconnect, 4 reset |
 | 1 | Error code | Any value clears error |
-| 2 | 0 | Append printable ASCII hostname byte; 0 clears hostname |
+| 2 | 0 | Append hostname byte 33-126; 0 clears hostname |
 | 3 | TCP port high byte | Set TCP port high byte |
 | 4 | TCP port low byte | Set TCP port low byte |
 | 5 | 0 | Append a byte to transmit buffer |
@@ -47,11 +47,11 @@ For bytecode, control register 10 (`STORAGE_PAGE`, retained for compatibility) s
 
 Status bits: `01` connecting, `02` connected, `04` receive data available, `08` send busy, `10` peer EOF, `80` error (hex masks, combinable). Error codes: 0 none, 1 invalid command/register write, 2 invalid hostname/port, 3 connection failure, 4 transport/not-connected failure, 5 buffer overflow, 6 busy. Error status is sticky until cleared, disconnect, reset or the next accepted connect. Undefined register reads return 0. Empty receives also return 0: check status/count to distinguish an empty queue from a real zero byte. The two count registers are not an atomic snapshot; data may arrive between reads. The RX-ready flag is sufficient for consuming individual bytes.
 
-Set the hostname (up to 253 printable ASCII bytes) and a nonzero port, then issue connect. Poll status until connected or error. Connect clears old transmit/receive buffers and EOF. To send, append up to 4,096 bytes at register 5 and issue command 2. Sending takes a snapshot of that buffer; while send is busy you may stage the next buffer, but wait for busy to clear before issuing another send command. Excess bytes are rejected with overflow instead of overwriting earlier data. A successful send means bytes were passed to the host socket, not acknowledged by the application on the remote peer.
+Set the hostname (up to 253 ASCII bytes in the range 33-126) and a nonzero port, then issue connect. Poll status until connected or error. Connect clears old transmit/receive buffers and EOF. To send, append up to 4,096 bytes at register 5 and issue command 2. Sending takes a snapshot of that buffer; while send is busy you may stage the next buffer, but wait for busy to clear before issuing another send command. Excess bytes are rejected with overflow instead of overwriting earlier data. A successful send means bytes were passed to the host socket, not acknowledged by the application on the remote peer.
 
 Received bytes queue up to 65,535 bytes. When full, the worker stops draining the socket until the guest consumes bytes, applying TCP backpressure. The socket connect timeout is five seconds after hostname resolution; DNS and transfers run on background virtual threads. Byte instructions themselves never wait on network operations. A peer can take indefinitely to send or accept data; guest software should implement its own operation timeout and disconnect to cancel. EOF disconnects the socket but retains queued received bytes for draining. This version does not support TCP half-close.
 
-Disconnect cancels in-flight work, clears queues/status/errors and retains hostname/port. Reset also clears hostname/port. Results from canceled sessions cannot modify the next session. Startup makes no connection; only a guest connect command opens a socket. JVM shutdown closes it. Connections can reach whatever destinations the host OS and network allow. This controller supplies raw TCP; TLS, UDP, a web browser, radio/SSID simulation and inbound listening sockets are not implemented.
+Disconnect cancels in-flight work, clears queues/status/errors and retains hostname/port. Reset also clears hostname/port. Results from canceled sessions cannot modify the next session. Startup makes no connection; only a guest connect command opens a socket. JVM shutdown closes it. Connections can reach whatever destinations the host OS and network allow. This controller supplies raw TCP; it has no TLS, UDP, radio/SSID simulation or inbound listening sockets. DOS supplies the basic HTTP BROWSE reader; [WEB.COM under JCTRL](JCTRL-applications.md#web-text-browser) provides links, forms and optional verified HTTPS through the host gateway.
 
 ## Guest example
 

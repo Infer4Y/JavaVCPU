@@ -15,11 +15,11 @@ The seeded `HELLO.COM` uses guest services to print a greeting and return to the
 | page 249, offset 0 | D = ASCII character; A = return page; B = return offset | Prints one character and jumps back to A:B |
 | page 249, offset 9 | None | Returns to DOS shell |
 
-Call using `CHANGE_PAGE_JUMP` with registers containing service page and offset. The service and renderer may overwrite general registers. Reload arguments for each call; do not rely on register preservation. There is no stack-based call instruction.
+From bank 0, call using `CHANGE_PAGE_JUMP` with registers containing service page and offset. A bank-one caller must enter bank 0 with `CHANGE_BANK_PAGE_JUMP`. The character-print entry returns to page A, offset B **in bank 0**; a bank-one program needs a bank-zero return trampoline to resume its own code. `InstallerImage.java` demonstrates this. The service and renderer may overwrite general registers. Reload arguments for each call; do not rely on register preservation. There is no stack-based call instruction.
 
-System image revision 17 adds a shared graphics entry at bank zero, page 249, offset 18. Before using it, read bytes 27..29 of that page and require ASCII `J`, ASCII `G`, and version `1`. The entry takes K/L = X/Y, M = palette color, D = character, and E = rendering mode (0 = transparent 3x5 glyph, nonzero = opaque 4x6 cell with a black background). N/O/P specify the return bank/page/offset. Enter with `CHANGE_BANK_PAGE_JUMP`; the routine preserves N-P and all RAM but clobbers A-M. Coordinates wrap as bytes and unsupported characters draw `?`. It draws into the current framebuffer without calling `DISPLAY` or changing storage selection. The mode and register constants are documented in `JvDosServices.java`.
+The current system exposes a shared graphics entry at bank zero, page 249, offset 18. Before using it, read bytes 27..29 of that page and require ASCII `J`, ASCII `G`, and version `1`. The entry takes K/L = X/Y, M = palette color, D = character, and E = rendering mode (0 = transparent 3x5 glyph, nonzero = opaque 4x6 cell with a black background). N/O/P specify the return bank/page/offset. Enter with `CHANGE_BANK_PAGE_JUMP`; the routine preserves N-P and all RAM but clobbers A-M. Coordinates wrap as bytes and unsupported characters draw `?`. It draws into the current framebuffer without calling `DISPLAY` or changing storage selection. The mode and register constants are documented in `JvDosServices.java`.
 
-This graphics entry is available to native guest code. JCTRL's sandboxed COM interpreter continues to expose only the print and completion services listed below.
+This graphics entry is available to native guest code. JCTRL's bounded COM interpreter exposes virtual print/completion entries, resident filesystem entry `0:249:30`, and shared application entry `0:249:42`. It does not expose native glyph entry `0:249:18`; interpreted apps use TEXT/PACKED_TEXT and GRAPHICS_CURSOR instead. Raw storage instructions still access mounted disks, so application RAM bounds do not provide a filesystem security sandbox.
 
 To print H and return to program byte 18:
 
@@ -46,7 +46,7 @@ CPU opcode `STOP` halts the machine; it is not a DOS return. JVS `STOP` is inter
 
 In bank 0, the guest uses page 246 for font pointers, 247 for instruction descriptors, 248 for the transient program, 249 for service trampolines, and 250-252 for names, input and kernel variables. Page 244 holds the filesystem cache, 245 the DOS mailbox, 253 DOS state and 254 private filesystem state; the bootstrap uses page 255. Resident kernel/font/image data occupy other pages. Limit a small COM to its transient area and documented services; bank 1 is the file buffer and becomes the code area when a larger COM executes.
 
-DOS's validator walks the whole file as instructions, so embedded arbitrary data can be rejected. Instruction operands must fit inside the file and each fetched instruction must fit inside its page. The loader leaves the rest of transient RAM unchanged. Do not branch into stale bytes after the program's end. See [Instruction set](Instruction-set) for byte lengths and operand conventions.
+DOS's validator walks the whole file as instructions, so embedded arbitrary data can be rejected. Instruction operands must fit inside the file and each fetched instruction must fit inside its page. The loader leaves the rest of transient RAM unchanged. Do not branch into stale bytes after the program's end. See [Instruction set](Instruction-set.md) for byte lengths and operand conventions.
 
 ## Extended RAM
 
@@ -56,11 +56,11 @@ RAM bank-one pages 240-253 are reserved for the shell history, draft line, and c
 
 ## Storage and networking
 
-Control register 10 selects the storage medium for opcodes 18/19; preserve the caller's value when returning to DOS. Opcodes 29/30 provide byte access to a separate TCP controller register bus. See [Peripheral buses](Peripheral-buses) for the protocol and `NETECHO.COM` example.
+Control register 10 selects the storage medium for opcodes 18/19; preserve the caller's value when returning to DOS. Opcodes 29/30 provide byte access to a separate TCP controller register bus. See [Peripheral buses](Peripheral-buses.md) for the protocol and `NETECHO.COM` example.
 
 ## JCTRL guest program runner
 
-JCTRL interprets COM programs inside its application window without changes to the Java CPU or ISA. Programs up to 8192 bytes keep a 32-page virtual workspace and a 128 by 128 RAM-backed pixel buffer. Larger COMs automatically use document mode: up to 23,296 bytes (91 virtual pages), mapped to physical bank-one pages 128-218. Their retained text surface occupies 219-223. Document programs use shared text services; pixel operations address RAM reused by their code/data and should not be used for drawing. Instruction fetches remain limited to the loaded file; data reads/writes and text/filesystem buffers are bounded to the current app workspace. The native desktop and its state remain inaccessible. Small programs retain virtual 0:248 placement; larger ones start at virtual 1:0. Guest-handled DOS entries 0:249:0 and 0:249:9 provide character output and completion. STOP finishes the interpreted application while the real VM's STOP behavior remains unchanged. See [the desktop guide](Experimental-desktop.md) for supported JVS commands, memory limits, graphics scaling, and media playback.
+JCTRL interprets COM programs inside its application window without changes to the Java CPU or ISA. Programs up to 8192 bytes keep a 32-page virtual workspace and a 128 by 128 RAM-backed pixel buffer. Larger COMs automatically use document mode: up to 23,296 bytes (91 virtual pages), mapped to physical bank-one pages 128-218. Their retained text surface occupies 219-223. Document programs use shared text services; pixel operations address RAM reused by their code/data and should not be used for drawing. Instruction fetches remain limited to the loaded file; data reads/writes and text/filesystem buffers are bounded to the current app workspace. The native desktop and its state remain inaccessible. Programs of at most 240 bytes start at virtual 0:248; larger files start at virtual 1:0. Both layouts use the 32-page workspace until file size exceeds 8 KiB. Guest-handled DOS entries 0:249:0 and 0:249:9 provide character output and completion. STOP finishes the interpreted application while the real VM's STOP behavior remains unchanged. Interpreted OUTPUT prints unsigned decimal in the application window; native CPU OUTPUT prints signed byte values to the host console. See [the desktop guide](Experimental-desktop.md) for supported JVS commands, memory limits, graphics scaling, and media playback.
 
 
 ## Shared JCTRL application services
@@ -158,8 +158,9 @@ DOCUMENT restores the standard reader surface. See
 [TEXTEDIT](../../examples/jctrl/README.md#jctrl-text-editor) for a working client.
 Since v5, CLEAR_GRA clears the referenced character and color buffers through
 shared guest code, without publishing the cleared intermediate frame. Call
-DOCUMENT_FRAME after completing changes to request repaint. The bounded
-16-slice scheduling budget now applies to frame clients as well as the DOS window.
+DOCUMENT_FRAME after completing changes to request repaint. Frame clients receive up to sixteen 255-instruction slices (4,080 instructions)
+per desktop tick. The resident DOS window receives up to eight such slices
+(2,040 instructions). DISPLAY yields immediately in either case.
 
 The spool reserves **bytes 0-63 of virtual page 31** as its JVFS mailbox and
 **filesystem handle 3** until ABORT/close. Give it at least two buffer pages (three in DOCUMENT mode);

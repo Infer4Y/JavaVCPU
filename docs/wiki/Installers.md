@@ -78,7 +78,7 @@ for the large bundle installer.
 ## Creating another installer
 
 `InstallerImage` is a reusable offline generator. Supply the output COM followed
-by `NAME.COM=path` arguments; without arguments it packages the JCTRL bundle:
+by `NAME.COM=path` arguments; without component arguments it packages the JCTRL bundle:
 
 ```powershell
 .\gradlew.bat classes

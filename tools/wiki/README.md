@@ -41,11 +41,18 @@ and copy the named PNGs listed in `capture.ps1`.
 git submodule update --init wiki
 git -C wiki checkout master
 git -C wiki pull --ff-only
+python tools/wiki/check.py
 python tools/wiki/sync.py
 python tools/wiki/sync.py --check
 git -C wiki diff --check
 git -C wiki diff --stat
 ```
+
+`check.py` checks all source-page links and heading anchors, PNG headers/dimensions,
+ISA encodings and lengths against OPCode.java, current ABI/firmware references,
+and Workshop bundle bytes against the generated COM files. It needs only Python's
+standard library. Run it before syncing. Workshop filesystem/converter checks
+are separate; open `tools/disk-workshop/test.html` to run them in a browser.
 
 `sync.py` copies all source pages/assets, preserves remote-only files, converts
 relative image URLs to the wiki's own raw image URLs, resolves `../../` source
@@ -65,3 +72,7 @@ Include the staged submodule pointer and documentation/tools in the main
 repository's next commit. Push the wiki commit before publishing a main commit
 that refers to it. Newly added code linked by the wiki must also be committed
 and pushed in the main repository for those source links to resolve online.
+
+In IntelliJ, commit and push the **wiki** repository separately in the Commit/Push
+dialogs. Then commit/push the main repository with the updated submodule pointer.
+A main-repository push carries that pointer; it does not upload wiki commits.

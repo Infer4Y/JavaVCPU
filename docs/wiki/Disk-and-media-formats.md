@@ -56,7 +56,7 @@ Call bank 0, page 249, offset 30. A/B select the RAM bank/page of a 64-byte requ
 | 25..27 | Block RAM buffer bank/page/offset |
 | 32..43 / 44..55 | Name / new name |
 
-Operations: RESET=0, LOOKUP=1, NEXT=2, OPEN=3, READ=4, SEEK=5, CREATE=6, WRITE=7, CLOSE=8, ABORT=9, MKDIR=10, REMOVE=11, RENAME=12, MOVE=13, PARENT=14, READ_BLOCK=15, WRITE_BLOCK=16, STAT=17. NEXT returns EOF at the end; preserve its cookie for the next call. OPEN/STAT/REMOVE use an entry address returned by LOOKUP/NEXT. CREATE uses directory/name/type. Writes are sequential; SEEK applies to readers.
+Operations: RESET=0, LOOKUP=1, NEXT=2, OPEN=3, READ=4, SEEK=5, CREATE=6, WRITE=7, CLOSE=8, ABORT=9, MKDIR=10, REMOVE=11, RENAME=12, MOVE=13, PARENT=14, READ_BLOCK=15, WRITE_BLOCK=16, STAT=17. NEXT returns EOF at the end; preserve its cookie for the next call. OPEN/STAT/REMOVE use an entry address returned by LOOKUP/NEXT. CREATE uses directory/name/type. RENAME/MOVE use the source ADDRESS and DIR plus NEW_NAME; MOVE accepts a sibling folder, `..`, `/`, `\\`, or an unused new name in DIR. PARENT returns the parent directory entry in FIRST/TYPE and related decoded fields. Writes are sequential; SEEK applies to readers.
 
 Block requests transfer 1..256 bytes (COUNT=0 requests 256). COUNT returns the number transferred, with 0 representing a complete 256-byte transfer on OK; EOF/error distinguishes a zero-byte failure. Buffer pointers and position advance by the transferred amount. Call CLOSE or ABORT before reusing a handle. Handles 0/1 belong to DOS, 2 to desktop streams, 3 to guest applications. DOS uses mailbox 0:245, JCTRL uses 1:233. Private driver state is at 0:254 and cache at 0:244. Do not overwrite those pages.
 
@@ -68,7 +68,7 @@ Statuses: OK=0, NOT_FOUND=1, EXISTS=2, FULL=3, CORRUPT=4, BAD_ARGUMENT=5, IS_DIR
 4A 49 width height pixel0 pixel1 ...
 ```
 
-Width and height are 1-240. Each row-major pixel is one 0-127 `RRGGGBB` palette byte. The largest image is 57,604 bytes (4 + 240*240). DOS reads the RAM file buffer using 16-bit offsets. Images up to 15 by 15 retain 8 by 8 display blocks; larger images render at native resolution below the title. The file length must match its dimensions exactly.
+Width and height are 1-240. Each row-major pixel is one 0-127 `RRGGGBB` palette byte. The largest image is 57,604 bytes (4 + 240*240). DOS reads the RAM file buffer using 16-bit offsets. Images up to 15 by 15 retain 8 by 8 display blocks; larger images render at native resolution below the title. The file length must match its dimensions exactly. Paint saves `PAINT.JVI` with this same header and file type, fixed at 128 by 96 pixels (12,292 bytes total). The extension does not change the format. In Workshop, importing a `.JVI` currently defaults to Binary / COM; change Format to **Palette image** and Apply to disk before using it as media. A `.IMG` import with a JI header is recognized automatically.
 
 ## Music stream (JM)
 
@@ -79,6 +79,6 @@ duration voice note control
 ...
 ```
 
-Version 1 supports up to 255 four-byte events in a 1,024-byte file. Version 2 uses header `4A 4D 02 00` and derives the event count from file length, allowing streams larger than 64 KiB, limited by available disk space. Duration 0 updates a voice immediately; duration 1-255 waits that many roughly 33 ms frames after the update. Voice is 0-7, note is 0-127, control is 0 for off or 128-131 for gated square/triangle/saw/noise. Multiple duration-0 events can establish simultaneous notes before a waiting event. Esc stops playback and silences all voices.
+Version 1 supports up to 255 four-byte events in a 1,024-byte file. Version 2 uses header `4A 4D 02 00` and derives the event count from file length, allowing streams larger than 64 KiB, limited by available disk space. Duration 0 updates a voice immediately; duration 1-255 waits that many roughly 33 ms frames after the update. The JM format uses eight voices (0-7), although the hardware mixer has sixteen. Note is 0-127, control is 0 for off or 128-131 for gated square/triangle/saw/noise. Multiple duration-0 events can establish simultaneous notes before a waiting event. Esc stops playback and silences all voices.
 
 A host `.mid` file is not directly executable music for DOS; Workshop converts it into a `.JMT` stream. A host image similarly requires conversion into `JI` bytes, rather than simply renaming its extension.
