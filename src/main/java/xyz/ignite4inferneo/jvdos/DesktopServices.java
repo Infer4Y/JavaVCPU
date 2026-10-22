@@ -7,10 +7,27 @@ package xyz.ignite4inferneo.jvdos;
  */
 public final class DesktopServices {
     private DesktopServices() { }
-    public static final int ENTRY=42, VERSION=5;
+    public static final int ENTRY=42, VERSION=7;
     public static final int QUERY=0, TEXT=1, PACKED_TEXT=2, KEYBOARD=3, CONTEXT=4,
         CACHE_BEGIN=5,CACHE_FLUSH=6,CACHE_FINISH=7,CACHE_NAVIGATE=8,CACHE_ABORT=9, DOCUMENT=10, NETWORK_PACKED=11,
         DOCUMENT_FRAME=12;
+    /** GRAPHICS_SPAN (v6): B/C = app buffer page/offset, E = native row (0..127),
+     * I = direction (0 read pixels, 1 write pixels). Transfers a full 128-pixel row.
+     * The span must fit one buffer page (0..30); offset must be 0..128.
+     * Pixel mode only. Invalid spans/colors fail before changing RAM or pixels.
+     * Uses shared guest bytecode and marks the retained view dirty only on changes.
+     */
+    public static final int GRAPHICS_SPAN=13;
+    /** GRAPHICS_CURSOR (v6): B/C = column/row (0..31 / 0..20).
+     * Positions the shared pixel text renderer without clearing the canvas.
+     */
+    public static final int GRAPHICS_CURSOR=14;
+    /** GRAPHICS_LINE (v7): B/C = start x/y, D/E = end x/y (0..127),
+     * F = palette color (0..127), I = square brush size (1, 2 or 4).
+     * Draws a connected stroke in shared guest code, clipping the brush at edges.
+     * Invalid arguments fail before drawing. Other virtual registers are preserved.
+     */
+    public static final int GRAPHICS_LINE=15;
     public static final int OK=0, BAD_ARGUMENT=1, END=2;
     /** TEXT: B/C = virtual bank-one page/offset; D = length (0 means 256).
      * May cross pages, but must remain within the current app workspace (0..31 or 0..90). No terminator is required.

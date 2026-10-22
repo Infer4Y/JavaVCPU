@@ -25,7 +25,7 @@ The VM uses `storage.img` in its working directory. On first launch, the install
 | --- | --- |
 | ![JV-DOS startup and command prompt](docs/wiki/images/dos-shell.png) | ![JV-DOS editor showing an arithmetic JVS program](docs/wiki/images/dos-editor.png) |
 
-The [screenshot gallery](docs/wiki/Screenshots.md) shows the shell, documents, media, graphics demos, and Disk Workshop. Screenshots may show earlier DOS versions.
+The [screenshot gallery](docs/wiki/Screenshots.md) shows the shell, documents, media, graphics demos, and Disk Workshop. Guest captures were refreshed October 22, 2026; older Workshop captures are labeled in the gallery.
 
 ## Use JV-DOS
 
@@ -65,7 +65,7 @@ Open [Disk Workshop](tools/disk-workshop/index.html) locally in a browser to edi
 
 Workshop downloads an updated image and preserves the BIOS/OS bytes. **Stop the VM before replacing `storage.img`, then restart.** See the [Workshop guide](tools/disk-workshop/README.md) for formats and conversion limits.
 
-The DOS installer now includes and updates **JCTRL** automatically. Start the VM and enter `JCTRL` to open the managed desktop on the system disk; no manual import is needed. The installer stores `JCTRL.COM` in the root folder and preserves user-modified or manual desktop copies. JCTRL provides draggable windows, a file explorer, a DOS window, document/media viewing, and guest program execution. JVS source runs through the resident DOS interpreter. Workshop's **Add JCTRL desktop** and [the bundled executable](examples/dos/JCTRL.COM) remain available for manual copies, launched with `RUN JCTRL.COM`. See the [desktop guide](docs/wiki/Experimental-desktop.md) for installation, controls and limits.
+The DOS installer now includes and updates **JCTRL** automatically. Start the VM and enter `JCTRL` to open the managed desktop on the system disk; no manual import is needed. The installer stores `JCTRL.COM` in the root folder and preserves user-modified or manual desktop copies. JCTRL provides draggable windows, a file explorer, a DOS window, document/media viewing, and guest program execution. JVS source runs through the resident DOS interpreter. Workshop's **Add JCTRL bundle** and [the bundled executable](examples/dos/JCTRL.COM) remain available for manual copies, launched with `RUN JCTRL.COM`. See the [desktop guide](docs/wiki/Experimental-desktop.md) for installation, controls and limits.
 
 Rebuild the desktop executable and Workshop installation asset with:
 
@@ -78,6 +78,18 @@ Launch it from JCTRL Files, enter a filename, and use F7 to save. It highlights
 JVS and hex source and edits binary COM bytes in hex (4 KiB file limit).
 See [editor controls and installation](examples/jctrl/README.md#jctrl-text-editor).
 Rebuild its standalone COM with `gradlew.bat textEditExample`.
+
+Startup also bundles `PAINT.COM`: open it from JCTRL Files to draw on a 128 by
+96 pixel canvas with a palette, brush, eraser, and color picker. F7 saves
+`PAINT.JVI`; F6 opens it and F8 starts a blank painting. It reuses JCTRL's shared
+graphics/text and JVFS block routines. See [Paint controls](examples/jctrl/README.md#jctrl-paint).
+Rebuild with `gradlew.bat desktopImage paintExample`.
+
+The Workshop **Add JCTRL bundle** action includes JCTRL, TextEdit and Paint.
+For external-media installs, `INSTALL FILE.COM` copies a portable program to
+drive 0; `MV FILE.COM 0:` moves it after a successful copy. Build the single-file
+DOS setup wizard with `gradlew.bat desktopInstaller`, then run `JCTRLSET.COM`.
+See [installers and setup](docs/wiki/Installers.md).
 
 ## Virtual hardware
 
@@ -143,4 +155,8 @@ The `storageRegression` task compiles and runs without external test-library dep
 | `src/test/java/` | Headless regression checks |
 | `examples/` | Guest source, bytecode, and sample media |
 | `tools/disk-workshop/` | Browser-local disk editor and media converters |
-| `docs/wiki/` | Detailed usage, architecture, and programming guides |
+| `docs/wiki/`, `wiki/` | Editable guides and the linked GitHub wiki submodule |
+
+## GitHub wiki
+
+The [GitHub wiki](https://github.com/Infer4Y/JavaVCPU/wiki) covers JavaVCPU, JV-DOS 2.0, JCTRL applications and tooling. `wiki/` is a submodule linked to `https://github.com/Infer4Y/JavaVCPU.wiki.git`. Initialize it with `git submodule update --init wiki`. Edit `docs/wiki/`, then run `python tools/wiki/sync.py` to update the checkout. [Wiki maintenance](tools/wiki/README.md) documents screenshot regeneration, validation and the separate wiki commit/push.

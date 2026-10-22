@@ -32,9 +32,9 @@ public final class JvDosImage {
             L=Registers.L.address();
     static final int SOURCE_REGISTER_COUNT = 16;
     static final int SOURCE_REGISTER_BASE = 224;
-    private static final String[] COMMANDS={"BROWSE","MKDIR","MD","CD","CHDIR","RMDIR","RD","HELP","DRIVE","DIR","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","ERASE","WRITE","EDIT","APPEND","COPY","REN","RENAME","MOVE","DELETE","ECHO","PRINT","CLS","CLEAR","VER","MEM","RUN","SAVE","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","SOUND","JCTRL","REM","END","STOP","REBOOT","EXIT"};
+    private static final String[] COMMANDS={"BROWSE","MKDIR","MD","CD","CHDIR","RMDIR","RD","HELP","DRIVE","DIR","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","ERASE","WRITE","EDIT","APPEND","COPY","REN","RENAME","MOVE","DELETE","INSTALL","MV","ECHO","PRINT","CLS","CLEAR","VER","MEM","RUN","SAVE","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","SOUND","JCTRL","REM","END","STOP","REBOOT","EXIT"};
     private static final java.util.Set<String> SCRIPT_COMMANDS=java.util.Set.of("PRINT","ECHO","CLS","CLEAR","STORE","ADD","SUB","MULTIPLY","INC","OUTPUT","GOTO","IF","BEEP","REM","END","STOP","JCTRL");
-    private static final java.util.Set<String> FILE_COMMANDS=java.util.Set.of("CD","CHDIR","RMDIR","RD","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","DELETE","ERASE","WRITE","EDIT","APPEND","COPY","REN","RENAME","MOVE","RUN","SAVE");
+    private static final java.util.Set<String> FILE_COMMANDS=java.util.Set.of("CD","CHDIR","RMDIR","RD","TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","DELETE","ERASE","WRITE","EDIT","APPEND","COPY","REN","RENAME","MOVE","INSTALL","MV","RUN","SAVE");
     static final int NAME=250, LINE=251, STATE=252, TPA=248;
     static final int CH=64,X=65,Y=66,COUNT=67,ARG=68,SLOT=69,INDEX=70,
             LENGTH=71,FOUND=72,FREE=73,TEMP=74,MODE=75,SECOND=76,SOURCE=77,
@@ -74,7 +74,7 @@ public final class JvDosImage {
     public static void main(String[] args) throws java.io.IOException {
         if(args.length!=1) throw new IllegalArgumentException("Supply an output image path");
         byte[][] pages=Programs.bootImage(); byte[] image=new byte[65536];
-        byte[] header={'J','V','C','P','M',23,(byte)pages.length,1};
+        byte[] header={'J','V','C','P','M',24,(byte)pages.length,1};
         System.arraycopy(header,0,image,0,header.length);
         for(int page=0;page<pages.length;page++) System.arraycopy(pages[page],0,image,512+page*256,pages[page].length);
         java.nio.file.Files.write(java.nio.file.Path.of(args[0]),image);
@@ -654,11 +654,13 @@ public final class JvDosImage {
         s.store(8,B);
         s.store(0,C);
         s.emit(LOAD_MEM_ABSOLUTE,0,252,25,F);s.store(4,D);s.emit(ADD,F,D,F);
+        // Width stays fixed for the whole scroll; keep it outside the pixel loop.
+        s.emit(LOAD_MEM_ABSOLUTE,0,252,24,E);s.emit(ADD,E,D,E);
+        s.reserve(80);
         s.label("scroll.pixel");
         s.emit(READ_GRA_MEM,A,B,D);
         s.emit(PUSH_GRA_MEM,A,C,D);
         s.emit(INCREMENT_REGISTER,A);
-        s.emit(LOAD_MEM_ABSOLUTE,0,252,24,E);s.store(4,D);s.emit(ADD,E,D,E);
         s.ne(A,E,"scroll.pixel");s.store(0,A);
         s.emit(INCREMENT_REGISTER,B);
         s.emit(INCREMENT_REGISTER,C);

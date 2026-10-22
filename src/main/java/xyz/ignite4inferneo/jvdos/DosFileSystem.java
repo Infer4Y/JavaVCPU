@@ -12,7 +12,8 @@ final class DosFileSystem {
             PATH_LENGTH=306,IO_BYTE=307,IO_STATUS=308,VIEW_LINES=309,VIEW_LIMIT=310,VIEW_HISTORY=311,
             VIEW_PAGE=312,VIEW_END=313,VIEW_END_H=314,VIEW_END_TOP=315,
             DEC24=316,DEC24_H=317,DEC24_TOP=318,DEC24_DIGIT=319,DEC24_LEADING=320,DEC24_RETURN=321,
-            FS_COOKIE_SAVE=323,FS_COOKIE_SAVE_H=324,FS_ROW_SAVE=325,COPY_LEFT=326,COPY_MID=327,COPY_TOP=328,COPY_COUNT=329,DEST_PARSE_FLAG=330;
+            FS_COOKIE_SAVE=323,FS_COOKIE_SAVE_H=324,FS_ROW_SAVE=325,COPY_LEFT=326,COPY_MID=327,COPY_TOP=328,COPY_COUNT=329,DEST_PARSE_FLAG=330,
+            INSTALL_MOVE=334,INSTALL_DRIVE=335,INSTALL_SOURCE=336,INSTALL_ERROR=339,COPY_INSTALL=340,COPY_APPEND=341;
     private static void equal(Asm s,int r,int v,String target){s.store(v,B);s.eq(r,B,target);}
     private static void check(Asm s){String ok=s.unique("fs.client.ok");s.fget(A,FileSystemAbi.STATUS);s.store(0,B);s.eq(A,B,ok);s.jump("filesystem.error");s.label(ok);}
     private static void context(Asm s){s.get(A,CWD);s.fput(A,FileSystemAbi.DIR);s.get(A,CWD_H);s.fput(A,FileSystemAbi.DIR+1);}
@@ -40,7 +41,7 @@ final class DosFileSystem {
         s.label("dir.loop");s.fs(FileSystemAbi.NEXT);s.fget(A,FileSystemAbi.STATUS);equal(s,A,FileSystemAbi.EOF,"shell");check(s);for(int i=0;i<3;i++){s.fget(A,FileSystemAbi.COOKIE+i);s.put(A,DIR_COOKIE+i);}s.set(INDEX,0);
         s.label("dir.name");s.get(A,INDEX);s.store(FileSystemAbi.NAME,B);s.emit(ADD,A,B,C);s.store(0,I);s.store(FileSystemAbi.DOS_PAGE,J);s.emit(LOAD_MEM_ON_BANK,I,J,C,D);equal(s,D,0,"dir.size");s.put(D,CH);s.call("print",PRINT_RETURN);s.get(A,INDEX);s.emit(INCREMENT_REGISTER,A);s.put(A,INDEX);equal(s,A,12,"dir.size");s.jump("dir.name");
         s.label("dir.size");s.fget(A,FileSystemAbi.TYPE);equal(s,A,4,"dir.folder");s.text(" ");for(int i=0;i<3;i++){s.fget(A,FileSystemAbi.SIZE+i);s.put(A,DEC24+i);}s.call("number24",DEC24_RETURN);s.text("\n");s.jump("dir.next");s.label("dir.folder");s.text(" <DIR>\n");s.label("dir.next");context(s);for(int i=0;i<3;i++){s.get(A,DIR_COOKIE+i);s.fput(A,FileSystemAbi.COOKIE+i);}s.jump("dir.loop");
-        for(String command:new String[]{"TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","ERASE","WRITE","EDIT","APPEND","COPY","REN","RUN","SAVE","MKDIR","MD","CD","CHDIR","RMDIR","RD","MOVE"}) {
+        for(String command:new String[]{"TYPE","CAT","VIEW","MORE","IMAGE","SHOW","PLAY","DEL","ERASE","WRITE","EDIT","APPEND","COPY","REN","RUN","SAVE","MKDIR","MD","CD","CHDIR","RMDIR","RD","MOVE","INSTALL","MV"}) {
             s.label("cmd."+command);
             if(command.equals("CD")||command.equals("CHDIR")){s.jump("folder.change");continue;}
             s.call("parse.name",SEARCH_RETURN);
@@ -50,7 +51,7 @@ final class DosFileSystem {
             if(command.equals("EDIT")){s.jump("prepare.EDIT");continue;}
             s.get(A,FOUND);equal(s,A,255,"missing");
             if(command.equals("DEL")||command.equals("ERASE")||command.equals("RMDIR")||command.equals("RD")){s.get(A,FILE_TYPE);s.store(4,B);if(command.equals("RD")||command.equals("RMDIR"))s.ne(A,B,"usage");else s.eq(A,B,"directory.required.file");address(s);s.fs(FileSystemAbi.REMOVE);check(s);s.text("DELETED\n");s.jump("shell");continue;}
-            if(command.equals("REN")||command.equals("MOVE")||command.equals("COPY")||command.equals("APPEND")){s.jump("filesystem."+command);continue;}
+            if(command.equals("REN")||command.equals("MOVE")||command.equals("COPY")||command.equals("APPEND")||command.equals("INSTALL")||command.equals("MV")){s.jump("filesystem."+command);continue;}
             if(command.equals("TYPE")||command.equals("CAT")){s.jump("filesystem.type");continue;}
             if(command.equals("VIEW")||command.equals("MORE")){s.jump("filesystem.view");continue;}
             if(command.equals("PLAY")){s.jump("filesystem.music");continue;}
@@ -80,21 +81,39 @@ final class DosFileSystem {
         s.label("filesystem.open");address(s);s.fset(FileSystemAbi.HANDLE,0);s.fs(FileSystemAbi.OPEN);check(s);s.ret(IO_RETURN);
         s.label("filesystem.type");s.call("filesystem.open",IO_RETURN);
         s.label("filesystem.type.next");s.fs(FileSystemAbi.READ);s.fget(A,FileSystemAbi.STATUS);equal(s,A,FileSystemAbi.EOF,"filesystem.type.done");check(s);s.fget(D,FileSystemAbi.DATA);s.put(D,CH);s.call("print",PRINT_RETURN);s.jump("filesystem.type.next");s.label("filesystem.type.done");s.fs(FileSystemAbi.CLOSE);s.text("\n");s.jump("shell");
-        emitCopy(s);emitFolders(s);emitView(s);emitMusic(s);emitDecimal(s);
+        emitCopy(s);emitInstall(s);emitFolders(s);emitView(s);emitMusic(s);emitDecimal(s);
+    }
+    private static void emitInstall(Asm s) {
+        s.label("filesystem.MV");s.get(A,ARG);s.store(64,B);s.emit(ADD,A,B,C);s.readAt(LINE,C,D);s.store('0',B);s.ne(D,B,"usage");s.emit(INCREMENT_REGISTER,C);s.readAt(LINE,C,D);s.store(':',B);s.ne(D,B,"usage");s.store(2,B);s.emit(ADD,A,B,A);s.get(B,COUNT);s.ne(A,B,"usage");s.set(INSTALL_MOVE,1);s.jump("install.prepare");
+        s.label("filesystem.INSTALL");s.get(A,ARG);s.get(B,COUNT);s.ne(A,B,"usage");s.set(INSTALL_MOVE,0);
+        s.label("install.prepare");s.get(A,FILE_TYPE);equal(s,A,0,"install.binary");s.jump("usage");
+        s.label("install.binary");s.store(0,A);s.emit(ADD,10,A,D);s.put(D,INSTALL_DRIVE);
+        for(int i=0;i<3;i++){s.get(A,ENTRY_X+i);s.put(A,INSTALL_SOURCE+i);s.get(A,new int[]{LENGTH,LENGTH_H,LENGTH_TOP}[i]);s.put(A,COPY_LEFT+i);}
+        s.store(0,10);s.emit(READ_INPUT,0x40,A);equal(s,A,0,"install.not.ready");s.fset(FileSystemAbi.DIR,JvFileSystem.ROOT);s.fset(FileSystemAbi.DIR+1,0);name(s);s.fs(FileSystemAbi.LOOKUP);
+        s.fget(A,FileSystemAbi.STATUS);equal(s,A,FileSystemAbi.NOT_FOUND,"install.source");equal(s,A,0,"install.exists");s.jump("install.restore.error");
+        s.label("install.source");s.get(A,INSTALL_DRIVE);s.store(0,B);s.emit(ADD,A,B,10);for(int i=0;i<3;i++){s.get(A,INSTALL_SOURCE+i);s.fput(A,FileSystemAbi.ADDRESS+i);}s.fset(FileSystemAbi.HANDLE,0);s.fs(FileSystemAbi.OPEN);s.fget(A,FileSystemAbi.STATUS);equal(s,A,0,"install.create");s.jump("install.restore.error");
+        s.label("install.create");s.store(0,10);s.fset(FileSystemAbi.DIR,JvFileSystem.ROOT);s.fset(FileSystemAbi.DIR+1,0);name(s);s.fset(FileSystemAbi.TYPE,0);s.fset(FileSystemAbi.HANDLE,1);s.fs(FileSystemAbi.CREATE);s.fget(A,FileSystemAbi.STATUS);s.store(0,B);s.ne(A,B,"install.abort");s.set(COPY_INSTALL,1);s.set(COPY_APPEND,0);s.jump("filesystem.copy.next.COPY");
+        s.label("install.committed");
+        s.get(A,INSTALL_DRIVE);s.store(0,B);s.emit(ADD,A,B,10);s.get(A,INSTALL_MOVE);equal(s,A,0,"install.done");for(int i=0;i<3;i++){s.get(A,INSTALL_SOURCE+i);s.fput(A,FileSystemAbi.ADDRESS+i);}s.fs(FileSystemAbi.REMOVE);check(s);
+        s.label("install.done");s.text("INSTALLED ON DRIVE 0\n");s.jump("shell");
+        s.label("install.exists");s.get(A,INSTALL_DRIVE);s.store(0,B);s.emit(ADD,A,B,10);s.jump("exists");s.label("install.not.ready");s.fset(FileSystemAbi.STATUS,FileSystemAbi.UNFORMATTED);s.jump("install.restore.error");
+        s.label("install.abort");s.fget(A,FileSystemAbi.STATUS);s.put(A,INSTALL_ERROR);s.fset(FileSystemAbi.HANDLE,1);s.fs(FileSystemAbi.ABORT);s.fset(FileSystemAbi.HANDLE,0);s.fs(FileSystemAbi.CLOSE);s.get(A,INSTALL_ERROR);s.fput(A,FileSystemAbi.STATUS);
+        s.label("install.restore.error");s.get(A,INSTALL_DRIVE);s.store(0,B);s.emit(ADD,A,B,10);s.jump("filesystem.error");
     }
     private static void emitCopy(Asm s) {
         for(String op:new String[]{"COPY","APPEND"}) {
-            s.label("filesystem."+op);s.call("filesystem.open",IO_RETURN);s.get(A,LENGTH);s.put(A,COPY_LEFT);s.get(A,LENGTH_H);s.put(A,COPY_MID);s.get(A,LENGTH_TOP);s.put(A,COPY_TOP);
+            s.label("filesystem."+op);s.set(COPY_INSTALL,0);s.set(COPY_APPEND,op.equals("APPEND")?1:0);s.call("filesystem.open",IO_RETURN);s.get(A,LENGTH);s.put(A,COPY_LEFT);s.get(A,LENGTH_H);s.put(A,COPY_MID);s.get(A,LENGTH_TOP);s.put(A,COPY_TOP);
             if(op.equals("COPY")){s.call("parse.name",SEARCH_RETURN);s.call("search",SEARCH_RETURN);s.get(A,FOUND);s.store(255,B);s.ne(A,B,"exists");}
             context(s);name(s);s.get(A,FILE_TYPE);s.fput(A,FileSystemAbi.TYPE);s.fset(FileSystemAbi.HANDLE,1);s.fs(FileSystemAbi.CREATE);check(s);
+            if(op.equals("APPEND")){s.jump("filesystem.copy.next.COPY");continue;}
             s.label("filesystem.copy.next."+op);s.get(A,COPY_LEFT);s.get(B,COPY_MID);s.get(C,COPY_TOP);s.store(0,D);s.ne(A,D,"filesystem.copy.chunk."+op);s.ne(B,D,"filesystem.copy.chunk."+op);s.eq(C,D,"filesystem.copy.end."+op);
             s.label("filesystem.copy.chunk."+op);s.set(COPY_COUNT,0);s.get(A,COPY_MID);equal(s,A,0,"filesystem.copy.high."+op);s.jump("filesystem.copy.block."+op);s.label("filesystem.copy.high."+op);s.get(A,COPY_TOP);s.store(0,B);s.ne(A,B,"filesystem.copy.block."+op);s.get(A,COPY_LEFT);s.put(A,COPY_COUNT);
             s.label("filesystem.copy.block."+op);
-            for(int h=0;h<2;h++){s.fset(FileSystemAbi.HANDLE,h);s.get(A,COPY_COUNT);s.fput(A,FileSystemAbi.COUNT);s.fset(FileSystemAbi.BUFFER_BANK,1);s.fset(FileSystemAbi.BUFFER_PAGE,252);s.fset(FileSystemAbi.BUFFER_OFFSET,0);s.fs(h==0?FileSystemAbi.READ_BLOCK:FileSystemAbi.WRITE_BLOCK);s.fget(A,FileSystemAbi.STATUS);String ok=s.unique("copy.block.ok");equal(s,A,0,ok);s.fset(FileSystemAbi.HANDLE,1);s.fs(FileSystemAbi.ABORT);s.jump("file.full");s.label(ok);}
+            for(int h=0;h<2;h++){s.fset(FileSystemAbi.HANDLE,h);s.get(A,COPY_COUNT);s.fput(A,FileSystemAbi.COUNT);s.fset(FileSystemAbi.BUFFER_BANK,1);s.fset(FileSystemAbi.BUFFER_PAGE,252);s.fset(FileSystemAbi.BUFFER_OFFSET,0);s.fs(h==0?FileSystemAbi.READ_BLOCK:FileSystemAbi.WRITE_BLOCK);s.fget(A,FileSystemAbi.STATUS);String ok=s.unique("copy.block.ok");equal(s,A,0,ok);s.get(A,COPY_INSTALL);equal(s,A,1,"install.abort");s.fset(FileSystemAbi.HANDLE,1);s.fs(FileSystemAbi.ABORT);s.jump("file.full");s.label(ok);}
             s.get(A,COPY_COUNT);equal(s,A,0,"filesystem.copy.subtract."+op);s.set(COPY_LEFT,0);s.jump("filesystem.copy.next."+op);s.label("filesystem.copy.subtract."+op);s.get(A,COPY_MID);s.store(1,B);s.emit(SUB,A,B,A);s.put(A,COPY_MID);s.store(255,B);s.ne(A,B,"filesystem.copy.next."+op);s.get(A,COPY_TOP);s.store(1,B);s.emit(SUB,A,B,A);s.put(A,COPY_TOP);s.jump("filesystem.copy.next."+op);
             s.label("filesystem.copy.end."+op);s.fset(FileSystemAbi.HANDLE,0);s.fs(FileSystemAbi.CLOSE);s.fset(FileSystemAbi.HANDLE,1);
-            if(op.equals("APPEND")){s.label("filesystem.append.byte");s.get(A,ARG);s.get(B,COUNT);s.eq(A,B,"filesystem.copy.commit."+op);s.store(64,B);s.emit(ADD,A,B,C);s.readAt(LINE,C,D);s.fput(D,FileSystemAbi.DATA);s.fs(FileSystemAbi.WRITE);check(s);s.get(A,ARG);s.emit(INCREMENT_REGISTER,A);s.put(A,ARG);s.jump("filesystem.append.byte");}
-            s.label("filesystem.copy.commit."+op);s.fs(FileSystemAbi.CLOSE);check(s);s.text("OK\n");s.jump("shell");
+            s.get(A,COPY_APPEND);equal(s,A,0,"filesystem.copy.commit."+op);s.label("filesystem.append.byte");s.get(A,ARG);s.get(B,COUNT);s.eq(A,B,"filesystem.copy.commit."+op);s.store(64,B);s.emit(ADD,A,B,C);s.readAt(LINE,C,D);s.fput(D,FileSystemAbi.DATA);s.fs(FileSystemAbi.WRITE);check(s);s.get(A,ARG);s.emit(INCREMENT_REGISTER,A);s.put(A,ARG);s.jump("filesystem.append.byte");
+            s.label("filesystem.copy.commit."+op);s.fs(FileSystemAbi.CLOSE);s.fget(A,FileSystemAbi.STATUS);String closed=s.unique("copy.closed");equal(s,A,0,closed);s.get(A,COPY_INSTALL);equal(s,A,1,"install.abort");s.jump("filesystem.error");s.label(closed);s.get(A,COPY_INSTALL);equal(s,A,1,"install.committed");s.text("OK\n");s.jump("shell");
         }
         for(String op:new String[]{"REN","MOVE"}) {
             s.label("filesystem."+op);for(int i=0;i<3;i++){s.get(A,ENTRY_X+i);s.put(A,SAVED_ENTRY+i);}s.set(DEST_PARSE_FLAG,op.equals("MOVE")?1:0);s.call("parse.name",SEARCH_RETURN);s.set(DEST_PARSE_FLAG,0);s.get(A,ARG);s.get(B,COUNT);s.ne(A,B,"usage");name(s);for(int i=0;i<12;i++){s.fget(D,FileSystemAbi.NAME+i);s.fput(D,FileSystemAbi.NEW_NAME+i);}for(int i=0;i<3;i++){s.get(A,SAVED_ENTRY+i);s.fput(A,FileSystemAbi.ADDRESS+i);}context(s);s.fs(op.equals("REN")?FileSystemAbi.RENAME:FileSystemAbi.MOVE);check(s);s.text("OK\n");s.jump("shell");

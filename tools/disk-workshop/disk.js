@@ -130,5 +130,17 @@ globalThis.DosDisk = (() => {
     }
     for(const voice of active.values())events.push({frames:0,voice,note:60,control:0});return tune(events);
   }
-  return {Disk,SIZE,BASE,MAX,ROOT,FAT,CLUSTERS,BLOCK,types,textBytes,textOf,nameOf,image,decodeImage,tune,decodeTune,notes,midi};
+  function installBundle(disk,bundle) {
+    if(!Array.isArray(bundle)||!bundle.length)fail('Desktop bundle is missing. Rebuild desktopImage.');
+    const clone=disk.clone(),names=new Set();
+    for(const component of bundle){
+      const name=validName(component.name);if(names.has(name))fail('Duplicate bundle component.');names.add(name);
+      const data=Uint8Array.from(atob(component.base64),c=>c.charCodeAt(0)),type=component.type??0;
+      const existing=clone.list().find(f=>f.name===name);
+      if(existing){if(existing.type!==type||existing.data.length!==data.length||!data.every((b,i)=>existing.data[i]===b))fail(`${name} already exists with different contents. Rename or move it before installing.`);continue;}
+      clone.put(name,data,type);
+    }
+    return clone;
+  }
+  return {Disk,SIZE,BASE,MAX,ROOT,FAT,CLUSTERS,BLOCK,types,textBytes,textOf,nameOf,image,decodeImage,tune,decodeTune,notes,midi,installBundle};
 })();

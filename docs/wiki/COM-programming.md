@@ -65,7 +65,7 @@ JCTRL interprets COM programs inside its application window without changes to t
 
 ## Shared JCTRL application services
 
-JCTRL application ABI v5 exposes **virtual** `0:249:42` to interpreted COM clients.
+JCTRL application ABI v7 exposes **virtual** `0:249:42` to interpreted COM clients.
 It is implemented by ordinary desktop guest bytecode; it is not a CPU opcode,
 host callback, or a fullscreen DOS trampoline. Rebuild/update JCTRL before using
 it. Existing character-print, completion and filesystem entries remain valid.
@@ -80,7 +80,7 @@ request is bounded and yields to the desktop after returning.
 
 | Operation | Inputs | Outputs |
 | --- | --- | --- |
-| QUERY (0) | None | D = version (5) |
+| QUERY (0) | None | D = version (7) |
 | TEXT (1) | B/C = virtual bank-one page/offset; D = count, 0 means 256 | Status in A |
 | PACKED_TEXT (2) | B/C = `DesktopImage.Asm` packed literal pointer | Status in A |
 | KEYBOARD (3) | B = VK code; C = shift flag 0/1 | C = updated shift flag; D = ASCII, or 0 for no printable character |
@@ -93,6 +93,39 @@ request is bounded and yields to the desktop after returning.
 | DOCUMENT (10) | None | Clear and select the retained 48-column, 23-row reader surface |
 | NETWORK_PACKED (11) | B/C = packed literal pointer | Append up to 80 literal bytes to TCP TX port 5; status in A |
 | DOCUMENT_FRAME (12) | B = first page of a ten-page character/color frame | Retain the frame, select editor chrome and request repaint; status in A |
+| GRAPHICS_SPAN (13) | B/C = buffer page/offset; E = native row 0..127; I = 0 read / 1 write | Copy 128 palette pixels between the buffer and retained pixel surface |
+| GRAPHICS_CURSOR (14) | B/C = text column 0..31 / row 0..20 | Position the shared pixel text renderer without clearing pixels |
+| GRAPHICS_LINE (15, v7) | B/C = start x/y; D/E = end x/y, all 0..127; F = color 0..127; I = brush size 1, 2 or 4 | Connected square-brush stroke, clipped at the surface edges; status in A |
+
+The v6 graphics operations require pixel mode. GRAPHICS_SPAN buffers must fit
+one app page 0..30, with offset 0..128; page 31 is excluded to protect the JVFS
+mailbox. Writes validate all 128 colors before changing any pixel and request a
+repaint only when pixels change. Reads do not request repaint. These operations
+run through shared desktop guest bytecode and preserve other virtual registers.
+GRAPHICS_CURSOR changes only the text cursor; subsequent TEXT/PACKED_TEXT calls
+use that position. Invalid requests leave pixels, buffers and cursor unchanged.
+See [Paint](../../examples/jctrl/README.md#jctrl-paint) for an image-file client.
+
+GRAPHICS_LINE validates every argument before drawing and preserves the caller's
+other virtual registers. It stamps both endpoints and interpolates intermediate
+pixels in shared guest code. At most 128 stamps of a 4-by-4 brush execute per
+request, after which the desktop handles input again. Ordinary graphics clients
+receive up to 128 instructions per tick; DISPLAY and shared services yield sooner.
+Pixel writes and row transfers to the foremost graphics window update changed
+screen pixels directly, preserving the cursor's saved background. Covered windows,
+window raises and moves use the normal full compositor.
+
+Mouse ports 0x30/0x31 retain their clamped even coordinates (0..254) on the
+scaled graphics surface. Button port 0x32 reports zero outside the focused app
+surface or while dragging window chrome. This prevents an outside click from
+drawing at a clamped canvas edge. Button masks remain 1 left, 2 middle, 4 right.
+
+JCTRL's linked image allows up to 140 pages while its executable instructions
+remain below linked page 134. Overflow code uses physical bank-one pages
+234..239; literals use 231..232, free pages 254..255, and the unused tails of
+register page 228 (bytes 20..255) and mailbox page 233 (bytes 64..255). The
+assembler skips those live prefixes and can pack literals after page-link
+jumps. App/framebuffer bounds and shell history pages 240..253 are preserved.
 
 TEXT validates its entire span before drawing; it may cross pages but cannot
 leave the current application workspace (0-31, or 0-90 for larger document COMs). PACKED_TEXT reads the assembler's three-byte

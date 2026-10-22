@@ -14,12 +14,12 @@ public final class DiskInstaller {
     private static final byte BOOTSTRAP_PAGE = (byte) 255;
     // Bump this when the resident opcode image changes so an earlier boot image is replaced.
     // User files live well beyond IMAGE_OFFSET and are therefore preserved during that update.
-    private static final byte[] MAGIC = new byte[] {'J', 'V', 'C', 'P', 'M', 23};
+    private static final byte[] MAGIC = new byte[] {'J', 'V', 'C', 'P', 'M', 24};
 
     private DiskInstaller() {
     }
 
-    /** Updates firmware, the resident OS, JCTRL and TEXTEDIT before guest execution. */
+    /** Updates firmware, the resident OS and managed desktop apps before guest execution. */
     public static void installIfMissing() throws IOException {
         boolean changed=false;
         // Old experimental bank images are deliberately reformatted. The boot
@@ -42,8 +42,7 @@ public final class DiskInstaller {
             IO.println("Installed JVCPM system disk");changed=true;
         }
         // Desktop content is checked even when the kernel revision is already current.
-        changed|=BundledDesktopInstaller.install(xyz.ignite4inferneo.jvdos.DesktopImage.program());
-        changed|=BundledDesktopInstaller.installTextEditor(xyz.ignite4inferneo.jvdos.TextEditImage.program());
+        changed|=BundledDesktopInstaller.installBundle();
         if(changed)Storage.save();
     }
 

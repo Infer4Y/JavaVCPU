@@ -15,6 +15,11 @@ Text/JVS supports ASCII and LF newlines; tabs become four spaces. Binary files u
 
 The disk file limit differs from available program RAM: EDIT and fullscreen COM/JVS loading remain bounded to 61,200 bytes; windowed programs use 8 KiB. TYPE/VIEW, COPY/APPEND and music use streaming filesystem services.
 
-Add sample files creates WELCOME.TXT, SMILE.IMG and THEME.JMT. Add JCTRL desktop installs a manual copy in the current folder; the normal VM installer already manages JCTRL.COM in the system root. Manual copies are not automatically updated.
+Add sample files creates WELCOME.TXT, SMILE.IMG and THEME.JMT. **Add JCTRL bundle** installs JCTRL.COM, TEXTEDIT.COM and PAINT.COM together in the current folder. Identical copies are accepted; a different existing file or a full disk rejects the whole operation without partial changes. Normal VM startup manages these three applications in the system root. Manual copies are not automatically updated.
+
+Import `examples/jctrl/JCTRLSET.COM` as Binary / COM to create installation media.
+It is a self-contained DOS setup wizard for the same three-program bundle.
+Rebuild it with `gradlew.bat desktopInstaller`; see
+[portable installs and setup wizards](../../docs/wiki/Installers.md).
 
 Open `test.html` beside the tool to run browser-only checks for large files, growing directories, moves, cycles, full-disk preservation and media converters. The disk layout and guest ABI are documented in `docs/wiki/Disk-and-media-formats.md`.

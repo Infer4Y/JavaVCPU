@@ -18,7 +18,7 @@ Each instruction is one opcode byte followed by operands. `a`, `b`, `r`, `out`, 
 | 11 / 0B | `CHANGE_PAGE_COND_JUMP page a b address` | 5 | On equality, PAGE = R[page], jump to literal address |
 | 12 / 0C | `PUSH_GRA_MEM x y color` | 4 | Draw pixel from three registers |
 | 13 / 0D | `CLEAR_GRA` | 1 | Clear framebuffer |
-| 14 / 0E | `DISPLAY` | 1 | Present frame and sleep about 33 ms |
+| 14 / 0E | `DISPLAY` | 1 | Publish completed frame; pace toward 33 ms intervals |
 | 15 / 0F | `READ_GRA_MEM x y out` | 4 | Read pixel into R[out] |
 | 16 / 10 | `READ_INPUT port out` | 3 | Read literal device port |
 | 17 / 11 | `OUTPUT_AUDIO voice note control` | 4 | Set audio voice from three registers |

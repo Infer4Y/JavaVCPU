@@ -49,6 +49,19 @@ public final class DesktopAssemblyRegression {
         System.arraycopy(overflow.bytes(),0,relocated,0,128*256);
         System.arraycopy(overflow.bytes(),128*256,relocated,234*256,overflow.bytes().length-128*256);
         check(execute(relocated)[3]==42,"code fallthrough and branch targets relocate above page 127");
+        // Overflow literals share only the unused tails of register/mailbox RAM.
+        var packed=new DesktopImage.Asm(Set.of());packed.relocateData=true;packed.packStrings=true;packed.emit(STOP);
+        while(packed.page<133){packed.reserve(247);packed.store(0,0);}
+        packed.pageTails.clear(); // Force this fixture past the reclaimed page tails.
+        for(int n=0;n<12;n++)packed.strings.put(String.format("%02d",n)+"X".repeat(72),"literal."+n);
+        byte[] packedBytes=packed.finish();check(packedBytes.length==140*256,"fixture reaches both partial literal pages");
+        for(int n=0;n<20;n++)check(packedBytes[138*256+n]==STOP.code(),"register prefix excluded from literals");
+        for(int n=0;n<64;n++)check(packedBytes[139*256+n]==STOP.code(),"mailbox prefix excluded from literals");
+        for(int n=0;n<12;n++){
+            int address=packed.labels.get("literal."+n),page=address/256;
+            check(page!=138||(address&255)>=22,"register-tail literal address");
+            check(page!=139||(address&255)>=66,"mailbox-tail literal address");
+        }
         System.out.println("PASS: relaxed local/far branches, overflow relocation, backward loops, boundaries and deterministic layout");
     }
     private static void selection(DesktopImage.Asm s,boolean equal,int before,int between) {

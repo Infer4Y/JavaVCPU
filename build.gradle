@@ -138,3 +138,37 @@ tasks.named('compileTestJava', JavaCompile) {
     source file('examples/jctrl/BrowserImage.java')
 }
 check.dependsOn browserFormsRegression
+
+tasks.register('paintExample', JavaExec) {
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'xyz.ignite4inferneo.jvdos.PaintImage'
+    args file('examples/jctrl/PAINT.COM').absolutePath
+}
+
+tasks.register('paintRegression', JavaExec) {
+    dependsOn compileStorageRegression, paintExample
+    classpath = files(regressionClasses)
+    mainClass = 'xyz.ignite4inferneo.jvdos.PaintRegression'
+}
+check.dependsOn paintRegression
+
+tasks.register('paintInstallRegression', JavaExec) {
+    dependsOn compileStorageRegression
+    classpath = files(regressionClasses)
+    mainClass = 'xyz.ignite4inferneo.PaintInstallRegression'
+}
+check.dependsOn paintInstallRegression
+
+tasks.register('desktopInstaller', JavaExec) {
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'xyz.ignite4inferneo.jvdos.InstallerImage'
+    args file('examples/jctrl/JCTRLSET.COM').absolutePath
+}
+tasks.register('installerRegression', JavaExec) {
+    dependsOn compileStorageRegression, desktopInstaller
+    classpath = files(regressionClasses)
+    mainClass = 'xyz.ignite4inferneo.InstallerRegression'
+}
+check.dependsOn installerRegression

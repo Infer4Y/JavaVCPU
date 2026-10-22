@@ -1,69 +1,80 @@
 # Screenshots
 
-These captures show the current JavaVCPU display and Disk Workshop using a separate sample disk. VM images capture the actual Swing display content at 800 × 800 pixels, without desktop borders. Workshop images show the local browser interface. Captured October 11, 2026.
+Current guest captures were regenerated on **October 22, 2026** from the working-tree JavaVCPU/JV-DOS bytecode on disposable disks. They show the actual 256 by 256 palette framebuffer, enlarged exactly 3x to **768 by 768** by the headless regression runner. No host window borders are included. The normal Swing display scales to 800 by 800.
 
-## Boot and command line
+## JV-DOS 2.0
 
-| BIOS POST | JV-DOS shell |
+| Startup | Command help |
 | --- | --- |
-| ![BIOS power-on self-test reporting POST OK](images/bios-post.png) | ![JV-DOS 1.1 startup banner and command prompt](images/dos-shell.png) |
-| Normal boot briefly displays POST before entering DOS. | Click the display and type a command at `A>`. |
+| ![JV-DOS 2.0 banner and drive-aware prompt](images/dos-shell.png) | ![Current HELP command list](images/dos-help.png) |
+| Click the display before typing; prompt starts at `0:\>`. | HELP covers everyday commands; programming syntax lives in the [JVS guide](JVS-programming). |
 
-| Shell help | Programming help |
+| Directory | Source editor |
 | --- | --- |
-| ![HELP showing shell commands](images/dos-help.png) | ![CODEHELP showing JVS syntax and opcodes](images/dos-codehelp.png) |
-| `HELP` lists everyday commands; these captures show an earlier version. | Historical `CODEHELP` screen; revision 22 moves programming reference to the [JVS guide](JVS-programming.md). |
+| ![DIR listing bundled applications and sample files](images/dos-directory.png) | ![DOS EDIT with highlighted arithmetic JVS](images/dos-editor.png) |
+| One JVFS volume per disk, with folders and 24-bit file sizes. | `EDIT MATH.JVS`; Esc saves and exits. |
 
-| File directory | Source editor |
+| JVS source execution | COM execution |
 | --- | --- |
-| ![DIR showing sample filenames and byte lengths](images/dos-directory.png) | ![Highlighted arithmetic source in the JV-DOS editor](images/dos-editor.png) |
-| `DIR` lists files on the virtual disk. | `EDIT MATH.JVS`; Esc saves and returns to DOS. |
+| ![MATH printing 42 then zero after byte overflow](images/dos-jvs-run.png) | ![HELLO COM output and return to DOS](images/dos-com-run.png) |
+| Direct `MATH` resolves MATH.JVS. | Direct `HELLO` resolves HELLO.COM. |
 
-See [Getting started](Getting-started), [JV-DOS](JV-DOS) and [JVS programming](JVS-programming).
+See [Getting started](Getting-started), [JV-DOS](JV-DOS) and [COM programming](COM-programming).
 
 ## Documents and media
 
-| Document pager | Palette image viewer |
+| Document pager | Palette image |
 | --- | --- |
-| ![Document pager displaying WELCOME.TXT](images/dos-document.png) | ![Palette image viewer displaying a yellow smile](images/dos-image.png) |
-| `VIEW WELCOME.TXT`; arrows navigate, Esc closes. | `IMAGE SMILE.IMG`; Esc, Enter or Q closes. |
+| ![VIEW WELCOME.TXT](images/dos-document.png) | ![IMAGE SMILE.IMG](images/dos-image.png) |
+| Arrows/Page Up/Page Down navigate; Esc closes. | Esc, Enter or Q closes the image viewer. |
 
-`PLAY THEME.JMT` displays playback status while the synthesized voices play. Esc stops playback. This is a text status view; there is no graphical transport or waveform.
+![PLAY THEME.JMT active command](images/dos-music.png)
 
-![Music playback status with Esc to stop](images/dos-music.png)
+The PLAY command remains visible while music runs; there is no graphical transport or waveform. Esc stops and silences playback. See [media formats](Disk-and-media-formats).
 
-See [JV-DOS](JV-DOS) and [Disk and media formats](Disk-and-media-formats).
+## JCTRL desktop
 
-## Running programs
-
-| JVS source execution | COM bytecode execution |
+| Files | Resident DOS window |
 | --- | --- |
-| ![RUN MATH.JVS producing 42 and returning to the prompt](images/dos-jvs-run.png) | ![RUN HELLO.COM printing its greeting](images/dos-com-run.png) |
-| The captured arithmetic source multiplies 6 by 7. | The seeded guest executable prints a greeting and returns to DOS. |
+| ![JCTRL Files with bundled JCTRL, TextEdit and Paint](images/desktop-files.png) | ![Resident DOS directory listing in a movable window](images/jctrl-dos.png) |
 
-| Built-in display greeting | Snowfall animation |
+| JVS source reader | Palette viewer |
 | --- | --- |
-| ![DISPLAY_HELLO_CPU drawing its greeting](images/display-hello-cpu.png) | ![SNOWFALL with a falling pixel and settled snow](images/snowfall.png) |
-| `Programs.Program.DISPLAY_HELLO_CPU` | `Programs.Program.SNOWFALL`; a still frame of the pixel animation. |
+| ![JCTRL source viewer for MATH.JVS](images/jctrl-source.png) | ![JCTRL viewing SMILE.IMG](images/jctrl-image.png) |
 
-The built-in graphics demos require selecting their program in the loader; they are not DOS commands. Console-only arithmetic, memory and peripheral demos have no separate display view.
+See [JCTRL desktop](Experimental-desktop) for window controls, file moves, DOS commands and application memory.
 
-See [Example programs](Example-programs) and [COM programming](COM-programming).
+## Bundled apps and setup
 
-## Disk Workshop
+| Paint | TextEdit |
+| --- | --- |
+| ![Paint palette and connected red brush strokes](images/jctrl-paint.png) | ![TextEdit highlighted JVS source and caret](images/textedit-jvs.png) |
+| 128 by 96 canvas; F7 saves PAINT.JVI. | 4 KiB text/hex editor; F7 saves. |
 
-Open `tools/disk-workshop/index.html` locally and select a disk. The directory and file editor share one page.
+![Self-contained JCTRLSET.COM setup wizard in DOS](images/jctrl-setup.png)
 
-### Directory and text editor
+The setup capture comes from `installerRegression`, before answering its install prompt. See [JCTRL applications](JCTRL-applications) and [Installers](Installers).
 
-![Disk Workshop with sample directory and MATH.JVS source selected](images/workshop-text.png)
+## Optional applications
 
-### Palette image preview
+| WEB reader | Link chooser |
+| --- | --- |
+| ![WEB rendering a local test page](images/web-browser.png) | ![WEB numbered links from a local fixture](images/web-links.png) |
 
-![Disk Workshop with SMILE.IMG hex data and palette preview](images/workshop-image.png)
+| GET-form address editing | Pong |
+| --- | --- |
+| ![Editable GET form query in WEB](images/web-form.png) | ![Pong running in the graphics application window](images/jctrl-pong.png) |
 
-### Tune composer
+WEB captures use local regression-server fixtures, not live websites. See [application controls](JCTRL-applications) and [the gateway helper](Tooling-and-Disk-Workshop#optional-web-https-gateway).
 
-![Disk Workshop with the short-tune composer expanded](images/workshop-tune.png)
+## Earlier Disk Workshop captures
 
-See [Tooling and Disk Workshop](Tooling-and-Disk-Workshop) for importing, applying edits and downloading the updated disk.
+The following browser captures are retained from **October 11, 2026**. They show the tool's editor/preview/composer layout, before the current JVFS folder and bundle-install updates. Current controls and limits are documented in [Tooling and Disk Workshop](Tooling-and-Disk-Workshop).
+
+![Earlier Workshop directory and text editor](images/workshop-text.png)
+
+![Earlier Workshop palette preview](images/workshop-image.png)
+
+![Earlier Workshop tune composer](images/workshop-tune.png)
+
+Guest capture regeneration and wiki-image publishing are documented in [tools/wiki](../../tools/wiki/README.md).

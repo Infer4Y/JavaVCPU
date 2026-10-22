@@ -14,6 +14,8 @@ Programs can launch directly: enter `HI.COM`, `DEMO.JVS`, or a bare name such as
 | --- | --- |
 | `HELP` | Everyday shell commands |
 | `DRIVE`, `DRIVE N` | Show/select a mounted storage device (0-255); resets to the volume root |
+| `INSTALL FILE.COM` | Copy a binary program from the current folder to drive 0 root; preserve the source and refuse collisions |
+| `MV FILE.COM 0:` | Move a binary program to drive 0 root; delete the source only after successful commit |
 | `DIR` | List the current folder; folders show `<DIR>` |
 | `MKDIR NAME`, `MD NAME` | Create a folder |
 | `CD NAME`, `CHDIR NAME` | Enter a child folder |
@@ -34,6 +36,7 @@ Programs can launch directly: enter `HI.COM`, `DEMO.JVS`, or a bare name such as
 | `RUN NAME` | Interpret text, load bytecode, or open image/music by type |
 | `IMAGE NAME`, `SHOW NAME` | Display a palette image |
 | `PLAY NAME` | Play a MIDI-note stream |
+| `BROWSE HOST/PATH` | Basic HTTP text reader; optional port, e.g. `BROWSE http://localhost:8000/index.html` |
 | `PRINT TEXT`, `ECHO TEXT` | Print literal text |
 | `CLS`, `CLEAR` | Clear display |
 | `VER`, `MEM` | Version and memory/file limits |
@@ -56,11 +59,11 @@ The document pager uses Down, Page Down or Space/Enter for the next page, Up/Pag
 | --- | --- |
 | ![Highlighted source in EDIT MATH.JVS](images/dos-editor.png) | ![VIEW WELCOME.TXT in the document pager](images/dos-document.png) |
 
-| Palette image | Music playback status |
+| Palette image | Music command during playback |
 | --- | --- |
-| ![IMAGE SMILE.IMG palette viewer](images/dos-image.png) | ![PLAY THEME.JMT status](images/dos-music.png) |
+| ![IMAGE SMILE.IMG palette viewer](images/dos-image.png) | ![PLAY THEME.JMT active command](images/dos-music.png) |
 
-The [screenshot gallery](Screenshots) also shows startup, programming help and program execution.
+The [screenshot gallery](Screenshots) also shows startup, desktop applications and program execution.
 
 `RUN` dispatches image/music from their file type, interprets type-1 text, and otherwise validates and loads raw bytecode. It also heuristically treats binary content starting with printable bytes 32-90 as source. The supplied COM starts with opcode 2 to avoid that ambiguity. Filename extensions alone do not define the execution format.
 
@@ -70,9 +73,9 @@ See [JVS programming](JVS-programming), [COM programming](COM-programming), and 
 
 ## Storage and RAM limits
 
-JVFS replaces the old per-bank format. System revision 23 reformats old experimental test disks on startup; no migration is included. The CPU and storage instructions are unchanged. See [the byte format and service ABI](Disk-and-media-formats.md).
+JVFS replaces the old per-bank format. System revision 24 reformats old experimental test disks on startup; no migration is included. The CPU and storage instructions are unchanged. See [the byte format and service ABI](Disk-and-media-formats.md).
 
-EDIT and fullscreen executable/source loading still use a bounded 61,200-byte RAM buffer. Inside JCTRL the application buffer remains 8 KiB. Oversized loads report an error. A failed editor save keeps the old disk file and retains the buffer for shortening and retrying. These RAM limits do not restrict streaming commands or file moves.
+EDIT and fullscreen executable/source loading still use a bounded 61,200-byte RAM buffer. Inside JCTRL the DOS window and small graphics apps have an 8 KiB workspace; larger document COMs can use up to 91 pages. TextEdit has its own 4 KiB document limit. Oversized loads report an error. A failed editor save keeps the old disk file and retains the buffer for shortening and retrying. These RAM limits do not restrict streaming commands or file moves.
 
 ## Shell history and completion
 
@@ -90,10 +93,14 @@ The kernel emits ordinary VCPU instructions. `GuestFileSystem.java` provides the
 
 ## Experimental desktop
 
-Run `RUN JCTRL.COM` after adding it through Disk Workshop. The [desktop guide](Experimental-desktop.md) covers mouse windows, the guest program runner, image/music playback, and installation.
+Enter `JCTRL` to start the managed desktop. Startup also bundles TextEdit and Paint. For a manual copy, use Workshop Add JCTRL bundle, then `RUN JCTRL.COM` from its folder. The [desktop guide](Experimental-desktop.md) covers mouse windows, the guest program runner, image/music playback, and installation.
 
 ## Startup script
 
 After DOS initializes, it runs `AUTOEXEC.JVS` from the volume root on system disk 0, if present. This also runs on `REBOOT`. Create it with `EDIT AUTOEXEC.JVS` while in the system root; Esc saves. It uses the normal JVS language and returns to the prompt when finished. Esc between statements stops it. Delete or rename the file to disable it.
 
 For an automatic desktop launch, use `WRITE AUTOEXEC.JVS JCTRL`. `JCTRL` ends the current script and launches the bundled desktop; closing the desktop returns to DOS.
+
+## Basic HTTP reader
+
+`BROWSE` is a fullscreen plain-HTTP text reader. It accepts a host/path or `http://host[:port]/path`, strips response headers and HTML tags, and retains up to 60,000 bytes in RAM. Up/Down scrolls, Home returns to the top, and Esc exits or cancels. HTTPS, redirects, JavaScript, CSS layout, entity decoding, clickable links and chunked responses are unsupported; the server must close the connection. Script/style contents can appear as text. For links, GET forms, redirects, chunked HTTP and the optional HTTPS gateway, use [WEB.COM under JCTRL](JCTRL-applications#web-text-browser).

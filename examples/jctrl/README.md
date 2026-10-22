@@ -1,4 +1,62 @@
-# JCTRL Pong
+# JCTRL applications
+
+JCTRL, TextEdit and Paint share one desktop bundle for boot and Workshop.
+`gradlew.bat desktopInstaller` builds **JCTRLSET.COM**, a self-contained DOS setup
+wizard. It can run from external media or after copying/moving it to drive 0.
+See [installation and installer creation](../../docs/wiki/Installers.md).
+
+## JCTRL paint
+
+Startup installs and updates `PAINT.COM` alongside JCTRL and TEXTEDIT. Start the
+VM, enter `JCTRL`, and open `PAINT.COM` from Files. Paint requires JCTRL services
+v7; fullscreen DOS execution returns to the prompt. Manual/modified copies are
+preserved by the installer.
+
+The white canvas is **128 by 96 pixels**. Click a palette swatch, then drag on
+the canvas to paint. Strokes connect sampled pointer positions. The small color
+sample beside the status shows the selected color; `*` means unsaved changes.
+
+| Input | Action |
+| --- | --- |
+| B / E / I | Brush / white eraser / pick a canvas color |
+| Right click | Pick a canvas color without changing the painting |
+| 1 / 2 / 3 | Square brush of 1 / 2 / 4 pixels |
+| F6 | Open `PAINT.JVI` in the folder where Paint was launched |
+| F7 | Save or replace `PAINT.JVI` in that folder |
+| F8 | Start a blank white painting |
+| Y / any other key at DISCARD? | Confirm / cancel opening or clearing a modified painting |
+| Esc / window X | Close; save first to keep changes |
+
+Key releases and Shift/Ctrl/Alt do not dismiss the discard confirmation. Press Y
+to proceed or another ordinary key to keep the current painting.
+
+`PAINT.JVI` is an ordinary type-2 JVFS palette image: `JI`, width 128, height 96,
+then 12,288 row-major palette bytes. It can be opened by the existing image
+viewer or exported with Disk Workshop. Paint opens this fixed size and filename;
+rename/export paintings through Files, DOS, or Workshop to keep multiple images.
+An invalid header, size, type, or palette byte is refused before changing the
+canvas. A failed replacement save aborts its staged chain and keeps the prior
+file and the modified painting.
+
+```powershell
+.\gradlew.bat desktopImage paintExample
+.\gradlew.bat paintRegression desktopServicesRegression
+```
+
+`src/main/java/xyz/ignite4inferneo/jvdos/PaintImage.java` assembles the guest COM.
+It fits the existing 32-page graphics workspace: code/literals below page 28,
+row staging on page 28, an even-coordinate lookup on page 29, state on page 30,
+and the resident JVFS mailbox on page 31. There is no host painting callback,
+new opcode, or additional RAM. The shared renderer draws labels; pixel-row
+transfers and resident JVFS block I/O handle image files. Mouse coordinate
+conversion uses the lookup instead of interpreted division. The v7 GRAPHICS_LINE
+service rasterizes a whole connected stroke in JCTRL guest code. The front canvas
+publishes only changed pixels, preserving the pointer background; window overlap
+and movement retain full compositing. The first dirty marker updates separately
+from the rest of the status line. A stationary held brush does not repaint. Regression
+checks execute the actual desktop interpreter, including clipped strokes,
+palette/picker/eraser, unsaved guards, disk failure, validation, window movement,
+and execution cost.
 
 ## JCTRL text editor
 

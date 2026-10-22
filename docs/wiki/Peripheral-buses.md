@@ -1,6 +1,6 @@
 # Storage and network buses
 
-The CPU accesses RAM, storage and networking through separate address spaces. Data transfers remain byte-wide. Existing opcode encodings stay unchanged; network access adds opcodes 29 and 30. System-image revision 13 updates the DOS loader descriptors and drive command while preserving files.
+The CPU accesses RAM, storage and networking through separate address spaces. Data transfers remain byte-wide. The current instruction set includes network opcodes 29 and 30 alongside storage opcodes 18 and 19. Firmware revision 24 provides JV-DOS 2.0 and JVFS 1; valid JVFS files survive firmware updates, while incompatible old disk formats are reformatted.
 
 ## Multiple storage devices
 

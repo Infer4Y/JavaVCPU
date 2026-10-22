@@ -17,7 +17,7 @@ final class DesktopAppServices {
         s.equal(A,QUERY,"app.service.query");s.equal(A,TEXT,"app.service.text");
         s.equal(A,PACKED_TEXT,"app.service.packed");s.equal(A,NETWORK_PACKED,"app.service.packed");s.equal(A,KEYBOARD,"app.service.key");
         s.equal(A,CONTEXT,"app.service.context");s.equal(A,DOCUMENT,"document.enable");
-        s.equal(A,DOCUMENT_FRAME,"document.frame");
+        s.equal(A,DOCUMENT_FRAME,"document.frame");s.equal(A,GRAPHICS_SPAN,"app.service.graphics");s.equal(A,GRAPHICS_CURSOR,"app.service.cursor");s.equal(A,GRAPHICS_LINE,"app.service.line");
         s.equal(A,CACHE_BEGIN,"app.cache.begin");s.equal(A,CACHE_FLUSH,"app.cache.flush");s.equal(A,CACHE_FINISH,"app.cache.finish");s.equal(A,CACHE_NAVIGATE,"app.cache.navigate");s.equal(A,CACHE_ABORT,"app.cache.abort");s.jump("app.service.bad");
         s.label("app.service.query");s.store(DesktopServices.VERSION,A);s.vwriteLiteral(3,A);s.jump("app.service.return");
         s.label("app.service.context");s.get(A,CWD);s.vwriteLiteral(1,A);s.get(A,DesktopFileSystem.CWD_H);s.vwriteLiteral(2,A);s.jump("app.service.return");
@@ -55,7 +55,31 @@ final class DesktopAppServices {
         // One bounded service per desktop slice: repaint once per block and let
         // input/window dragging run before another request is accepted.
         s.set(BUDGET,1);s.jump("vm.done");
+        emitGraphics(s);DesktopGraphicsLine.emit(s);
         s.lateData.add(DesktopAppServices::emitKeys);DesktopPageCache.emit(s);DesktopDocument.emit(s);
+    }
+    private static void emitGraphics(Asm s) {
+        s.label("app.service.cursor");s.get(A,DesktopDocument.MODE);s.notEqual(A,0,"app.service.bad");
+        s.vreadLiteral(1,B);s.vreadLiteral(2,C);s.less(B,32,"graphics.cursor.column");s.jump("app.service.bad");
+        s.label("graphics.cursor.column");s.less(C,21,"graphics.cursor.row");s.jump("app.service.bad");
+        s.label("graphics.cursor.row");s.put(B,PRINT_COL);s.put(C,PRINT_ROW);s.jump("app.service.return");
+        s.label("app.service.graphics");s.get(A,DesktopDocument.MODE);s.notEqual(A,0,"app.service.bad");
+        s.vreadLiteral(1,J);s.less(J,31,"graphics.page");s.jump("app.service.bad");
+        s.label("graphics.page");s.appPage(J);s.vreadLiteral(2,K);s.vreadLiteral(4,M);s.vreadLiteral(12,E);s.put(E,PART);
+        s.less(M,128,"graphics.y");s.jump("app.service.bad");s.label("graphics.y");s.less(E,2,"graphics.mode");s.jump("app.service.bad");
+        s.label("graphics.mode");s.less(K,129,"graphics.buffer");s.jump("app.service.bad");
+        s.label("graphics.buffer");s.store(1,I);s.equal(E,0,"graphics.address");
+        // Check every incoming color before publishing any part of the row.
+        s.store(0,A);s.emit(ADD,K,A,B);s.store(128,C);
+        s.label("graphics.validate");s.emit(LOAD_MEM_ON_BANK,I,J,B,D);s.less(D,128,"graphics.valid");s.jump("app.service.bad");
+        s.label("graphics.valid");s.emit(INCREMENT_REGISTER,B);s.store(1,A);s.emit(SUB,C,A,C);s.notEqual(C,0,"graphics.validate");
+        s.label("graphics.address");s.store(0,B);s.store(2,C);
+        s.label("graphics.divide");s.less(M,2,"graphics.offset");s.emit(SUB,M,C,M);s.emit(INCREMENT_REGISTER,B);s.jump("graphics.divide");
+        s.label("graphics.offset");s.store(128,A);s.emit(MULTIPLY,M,A,M);s.store(160,A);s.emit(ADD,B,A,L);s.store(128,N);s.get(O,PART);
+        s.label("graphics.copy");s.equal(O,1,"graphics.write");s.emit(LOAD_MEM_ON_BANK,I,L,M,D);s.emit(STORE_MEM_ON_BANK,D,I,J,K);s.jump("graphics.next");
+        s.label("graphics.write");s.emit(LOAD_MEM_ON_BANK,I,J,K,D);s.emit(LOAD_MEM_ON_BANK,I,L,M,E);s.eq(D,E,"graphics.next");s.emit(STORE_MEM_ON_BANK,D,I,L,M);s.put(D,PCOLOR);
+        s.store(128,A);s.emit(SUB,A,N,A);s.put(A,PX);s.vreadLiteral(4,A);s.put(A,PY);s.call("frame.changed",RET_PIXEL);
+        s.label("graphics.next");s.emit(INCREMENT_REGISTER,K);s.emit(INCREMENT_REGISTER,M);s.store(1,A);s.emit(SUB,N,A,N);s.notEqual(N,0,"graphics.copy");s.jump("app.service.return");
     }
     private static void emitKeys(Asm s) {
         int[][] keys={{32,32,32},{44,44,60},{45,45,95},{46,46,62},{47,47,63},

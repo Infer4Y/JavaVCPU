@@ -9,8 +9,10 @@ The installer reformats older experimental disk formats on startup. There is no 
 | Byte offset | Contents |
 | --- | --- |
 | `0..0x1FFFF` | Reserved firmware area |
-| `0..7` | `JVCPM`, revision 23, image page count, entry metadata |
+| `0..7` | `JVCPM`, revision 24, image page count, entry metadata |
 | `256..295` | Managed desktop ownership record |
+| `296..335` | Managed TEXTEDIT ownership record |
+| `336..375` | Managed PAINT ownership record |
 | `512` onward | Flattened BIOS/resident DOS pages |
 | `0x20000` | Superblock: `4A 56 46 53 01 0A A1 00` (`JVFS`, version 1, cluster shift 10, root cluster 161) |
 | `0x20400..0x283FF` | 16,384 little-endian 16-bit FAT entries |

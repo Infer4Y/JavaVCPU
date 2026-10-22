@@ -68,5 +68,15 @@ globalThis.runDiskTests = function () {
     const payload=Uint8Array.from(atob(DosDesktop),c=>c.charCodeAt(0));disk.put('JCTRL.COM',payload);
     check(disk.list().find(f=>f.name==='JCTRL.COM').data.every((b,i)=>b===payload[i]),'Bundled desktop import');
   }
+  if(typeof DosDesktopBundle!=='undefined') {
+    const clean=D.Disk.format(bytes),installed=D.installBundle(clean,DosDesktopBundle);
+    check(clean.list().length===0,'Bundle leaves input disk untouched');
+    check(installed.list().map(f=>f.name).join()==='JCTRL.COM,TEXTEDIT.COM,PAINT.COM','Complete desktop bundle');
+    check(D.installBundle(installed,DosDesktopBundle).bytes.every((b,i)=>b===installed.bytes[i]),'Idempotent bundle');
+    clean.put('PAINT.COM',Uint8Array.of(4));const before=clean.bytes.slice();rejects(()=>D.installBundle(clean,DosDesktopBundle));
+    check(before.every((b,i)=>b===clean.bytes[i]),'Bundle conflict makes no partial changes');
+    const full=D.Disk.format(bytes);full.put('FILL.BIN',new Uint8Array(full.capacity().freeBytes));
+    const snapshot=full.bytes.slice();rejects(()=>D.installBundle(full,DosDesktopBundle));check(snapshot.every((b,i)=>b===full.bytes[i]),'Full bundle leaves disk intact');
+  }
   return 'PASS: JVFS large files, growing directories, parent navigation, moves/cycles, full-disk preservation, converters and corruption checks.';
 };

@@ -1,4 +1,4 @@
-# Experimental DOS desktop
+# JCTRL desktop
 
 The desktop is a separate JavaVCPU guest application, `JCTRL.COM`, launched with the `JCTRL` command (or `RUN JCTRL.COM` for a manual copy). DOS remains resident underneath it. Its windows, file browser, and text renderer run entirely on the guest CPU, using the existing instruction set, 128 KiB RAM, and normal device ports.
 
@@ -12,7 +12,14 @@ other manual or modified copies are preserved. Open TEXTEDIT from Files for
 highlighted JVS/HEX editing or binary COM byte editing. It uses shared guest
 services and cached caret/line updates. See [editor controls](../../examples/jctrl/README.md#jctrl-text-editor).
 
-For a manual copy, stop the VM, open `storage.img` in Workshop, select a folder and click **Add JCTRL desktop**, then download and replace the disk while stopped. Alternatively import `examples/dos/JCTRL.COM`. Launch a manual copy with `RUN JCTRL.COM` in its folder. Manual copies are not automatically updated.
+`PAINT.COM` is also managed, with its ownership record at bytes 336..375.
+Open it from Files for a 128 by 96 pixel canvas, palette, brush, eraser and color
+picker. F7 saves `PAINT.JVI` in the launch folder; F6 opens it. JCTRL services v7
+provide shared connected brush strokes and pixel-row transfers for image I/O.
+Changed pixels in the front graphics window update directly, including under the
+cursor; covered windows keep the normal compositor. See [Paint controls](../../examples/jctrl/README.md#jctrl-paint).
+
+For a manual copy, stop the VM, open `storage.img` in Workshop, select a folder and click **Add JCTRL bundle**, then download and replace the disk while stopped. The bundle includes JCTRL, TextEdit and Paint. Alternatively import `examples/dos/JCTRL.COM` for the desktop alone. The [setup wizard](Installers) packages all three in a single COM. Launch a manual copy with `RUN JCTRL.COM` in its folder. Manual copies are not automatically updated.
 
 The desktop opens the current folder on the currently selected storage device. Browsing and viewing do not modify files. Drag-and-drop and DOS file commands persist changes to the selected disk. Explorer navigation stays separate from DOS's location; commands in the DOS window update the real shell's location.
 
@@ -70,7 +77,7 @@ Music (`JM`, type 3) supports versions 1 and 2, eight voices, and the existing f
 
 `DISPLAY` uses a monotonic 33 ms target interval. Guest execution consumes that budget, so presentation waits only for the remaining time. Overruns rebase the next deadline without catch-up bursts. Sustained-note regression checks require fewer than 1,000 guest instructions per idle playback tick and zero pixel writes. They also verify note durations and zero-duration event grouping. Window dragging and other expensive UI operations can still delay playback; music still counts display intervals rather than reading an independent clock.
 
-Ordinary pointer motion saves and restores the two pixels beneath the cursor, using four pixel writes per move instead of repainting the desktop. Window dragging and changed application surfaces still repaint normally. Palette reads round to the nearest encoded color so repeated background restoration preserves every color exactly. Regression checks use the real RGB framebuffer and buffer swaps, covering all 128 palette colors, repeated motion over window/desktop colors, overlapping cursor positions, wrapping at screen edges and window redraws.
+Ordinary pointer motion saves and restores the two pixels beneath the cursor, using four pixel writes per move instead of repainting the desktop. Frontmost graphics apps publish changed pixels directly and update the saved colors beneath the pointer. Window dragging, stacking changes and covered applications use the full compositor. Palette reads round to the nearest encoded color so repeated background restoration preserves every color exactly. Regression checks use the real RGB framebuffer and buffer swaps, covering all 128 palette colors, repeated motion over window/desktop colors, overlapping cursor positions, wrapping at screen edges and window redraws.
 
 JCTRL and media share the full drive. DRIVE- / DRIVE+ scans mounted devices, stops the active application and selects the chosen volume's root. The file explorer has 22 visible rows per page and retains the last 85 page starts; forward paging continues beyond that history. No swap file or hidden cache is used.
 
@@ -94,7 +101,7 @@ Drag a title bar to move its window; click any visible part of a window to bring
 
 ## Resident DOS services
 
-System image revision 23 provides JVFS ABI v1 alongside graphics ABI v1. Startup upgrades the kernel and managed desktop together. If either signature is missing, JCTRL returns to DOS before initialization. Desktop filesystem calls use their own mailbox/handle; DOS-window calls enter the shared guest driver atomically so repainting cannot corrupt paused filesystem work.
+System image revision 24 provides JVFS ABI v1 alongside graphics ABI v1. Startup upgrades the kernel and managed desktop together. If either signature is missing, JCTRL returns to DOS before initialization. Desktop filesystem calls use their own mailbox/handle; DOS-window calls enter the shared guest driver atomically so repainting cannot corrupt paused filesystem work.
 
 DOS and JCTRL now share one resident glyph renderer through bank-zero service `249:18`. Both use the existing font table; DOS requests opaque 4x6 character cells and JCTRL requests transparent 3x5 glyphs. The renderer keeps its scratch values in registers and writes no RAM, so desktop drawing cannot corrupt a paused DOS-window operation. The existing print and shell service addresses remain unchanged. See [COM programming](COM-programming.md) for the service contract.
 
@@ -102,7 +109,7 @@ The machine still has 128 KiB RAM. Small apps and the embedded DOS shell retain 
 
 ## Application layout and rebuilding
 
-`DesktopImage.java` emits a flat executable using the existing instruction set. The ordinary COM loader validates it and runs it in RAM bank one at page 0, offset 0. Code pages 128..133 and overflow data are relocated before application RAM is used. Startup copies loaded pages 128..133 to 234..239, and 134..135 to 231..232. The current image relocates its overflow literals and packed keyboard table before launching apps. All literal references are relocated by the assembler; this uses only ordinary guest loads and stores. Strings are packed into literal operands of nonexecuted data instructions so the existing validator can check every instruction, including the data pages.
+`DesktopImage.java` emits a flat executable using the existing instruction set. The ordinary COM loader validates it and runs it in RAM bank one at page 0, offset 0. Code pages 128..133 and overflow data are relocated before application RAM is used. Startup copies loaded pages 128..133 to 234..239, 134..135 to 231..232, and 136..137 to free pages 254..255. Further literals can occupy page 228 after its twenty virtual registers and page 233 after its 64-byte filesystem mailbox. Those live prefixes are excluded from literal allocation. All literal references are relocated by the assembler; this uses only ordinary guest loads and stores. Strings are packed into literal operands of nonexecuted data instructions, including unused tails after page-link jumps, so the existing validator can check every instruction.
 
 The application memory layout is entirely within the original 128 KiB:
 
@@ -116,15 +123,16 @@ The application memory layout is entirely within the original 128 KiB:
 | 225 | Guest interpreter and media state |
 | 226 | Reserved |
 | 227 | Directory row-to-entry address map (3 bytes per row) |
-| 228 | Virtual application registers |
+| 228 | Virtual application registers (0..19), overflow literals (20..255) |
 | 229 | Explorer directory-page history (85 retained page starts) |
 | 230 | Focused DOS keyboard queue |
 | 231..232, 234..239 | Relocated desktop code and literals |
-| 233 | Desktop filesystem mailbox |
+| 233 | Desktop filesystem mailbox (0..63), overflow literals (64..255) |
 | 251 | DOS path buffer |
 | 252 | DOS block-copy buffer |
 | 253 | DOS document-page history |
 | 240..250 | Existing DOS history/draft buffers, preserved |
+| 254..255 | Overflow desktop literals |
 
 Bank-zero DOS and its font table remain resident; the renderer reads the font through ordinary bank-zero loads. Mouse input uses existing ports 0x30..0x33. The bytecode interpreter implements a dynamic READ_INPUT port by patching one literal operand in its own guest code, using normal RAM writes.
 
@@ -132,7 +140,7 @@ On exit it clears the screen, resets the shell's text position, and uses `CHANGE
 
 Run `gradlew.bat desktopImage` to regenerate `examples/dos/JCTRL.COM` and `tools/disk-workshop/desktop.js`. `storageRegression` checks actual guest filesystem operations, large files/directories, corruption, full-disk recovery, package ownership, glyph rendering, cursor restoration and Pong. `browserRegression` checks WEB storage/rendering, and `browserNavigationRegression` covers redirects, links, Back, framing and gateway requests with local fixtures. `browserFormsRegression` covers GET queries, select defaults, cursor editing and later link groups. Disposable images and previews live under `build/`.
 
-The assembler performs branch relaxation before writing the executable: same-page unconditional and equality branches use `JMP` (2 bytes) and `COND_JUMP` (4 bytes). Cross-page targets retain `CHANGE_PAGE_JUMP` and `CHANGE_PAGE_COND_JUMP` sequences. It recomputes labels and page layout after each change; any shortened branch that crosses a page boundary in a later pass is pinned to its far form. This also relocates string pointers, return addresses, and the self-modifying input operand. The build prints baseline/optimized byte counts and selected branch counts. The assembler bounds code to 134 pages and relocates overflow code, fallthrough jumps and literal references into reserved guest RAM.
+The assembler performs branch relaxation before writing the executable: same-page unconditional and equality branches use `JMP` (2 bytes) and `COND_JUMP` (4 bytes). Cross-page targets retain `CHANGE_PAGE_JUMP` and `CHANGE_PAGE_COND_JUMP` sequences. It recomputes labels and page layout after each change; any shortened branch that crosses a page boundary in a later pass is pinned to its far form. This also relocates string pointers, return addresses, and the self-modifying input operand. The build prints baseline/optimized byte counts and selected branch counts. The assembler bounds executable code to 134 pages and the complete image to 140 pages. It relocates overflow code, fallthrough jumps and literal references into reserved guest RAM.
 
 
 ## Shared services for applications
@@ -144,10 +152,18 @@ printing every page character through the interpreter. Text requests render up
 to 256 characters before returning to the event loop, so window movement and
 cancellation remain cooperative. Existing COM programs keep their original ABI.
 
-The generated JCTRL image is 34,816 bytes; WEB.COM is 19,968 bytes and uses
+The current generated JCTRL image is 35,584 bytes; WEB.COM is 19,968 bytes and uses
 the larger guest document layout. WEB supports bounded redirects, relative links,
 a link chooser with groups beyond nine destinations, editable GET form queries, Back and chunked HTTP. An optional localhost gateway provides
 verified TLS and decompression; HTML parsing stays in the guest. Completed WEB documents are saved under
 `WEB.CACHE` in the selected directory. Update both manual executables when
 installing this version. See [the application ABI](COM-programming.md#shared-jctrl-application-services)
 and [browser controls](../../examples/jctrl/README.md#jctrl-web-browser).
+
+## Application guides
+
+See [JCTRL applications](JCTRL-applications) for Paint, TextEdit, WEB and Pong controls, file limits and build/check tasks. Paint and TextEdit are bundled at startup; WEB and Pong are optional imports. [Installers](Installers) covers external media and portable setup.
+
+| Paint | TextEdit |
+| --- | --- |
+| ![Paint canvas and palette](images/jctrl-paint.png) | ![TextEdit source highlighting](images/textedit-jvs.png) |
